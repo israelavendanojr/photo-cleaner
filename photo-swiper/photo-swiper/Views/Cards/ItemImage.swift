@@ -12,18 +12,55 @@ struct ItemImage: View {
     var body: some View {
         DS.Palette.muted
             .overlay {
-                image
-                    .resizable()
-                    .scaledToFill()
+                switch reference {
+                case .bundled(let name):
+                    Image(name)
+                        .resizable()
+                        .scaledToFill()
+                case .photoKit(let id):
+                    PhotoKitImage(id: id)
+                }
             }
             .clipped()
             .accessibilityHidden(true)
     }
+}
 
-    private var image: Image {
-        switch reference {
-        case .bundled(let name): Image(name)
-        }
+/// Loads a library image sized to this view. Shows nothing (the muted fill) until the first,
+/// possibly low-quality, image arrives; never blocks interaction.
+private struct PhotoKitImage: View {
+    private struct Request: Equatable {
+        let id: String
+        let pixelSize: CGSize
+    }
+
+    let id: String
+    @Environment(\.displayScale) private var displayScale
+    @State private var size = CGSize.zero
+    @State private var image: UIImage?
+    @State private var loadedID: String?
+
+    var body: some View {
+        Color.clear
+            .overlay {
+                if let image {
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFill()
+                }
+            }
+            .onGeometryChange(for: CGSize.self, of: \.size) { size = $0 }
+            .task(id: Request(id: id, pixelSize: ThumbnailPipeline.pixelSize(for: size, scale: displayScale))) {
+                guard size != .zero else { return }
+                if loadedID != id {
+                    image = nil
+                    loadedID = id
+                }
+                let pixelSize = ThumbnailPipeline.pixelSize(for: size, scale: displayScale)
+                for await next in ThumbnailPipeline.shared.images(for: id, pixelSize: pixelSize) {
+                    image = next
+                }
+            }
     }
 }
 

@@ -76,7 +76,8 @@ final class photo_swiperUITests: XCTestCase {
 
     private func launch(_ arguments: String...) -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchArguments = arguments
+        // Always the mock library, so tests never hit the photo permission prompt.
+        app.launchArguments = ["-mockLibrary", "YES"] + arguments
         app.launch()
         return app
     }

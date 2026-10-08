@@ -29,7 +29,7 @@ struct PhotoCardView: View {
             Text(Format.day(item.date))
                 .dsSerif(26, relativeTo: .title)
             HStack(spacing: 6) {
-                Text("\(item.location) · \(Format.size(item.bytes))")
+                Text([item.location, Format.size(item.bytes)].compactMap { $0 }.joined(separator: " · "))
                 if item.isFavorite {
                     Image(systemName: "heart.fill").imageScale(.small)
                 }
@@ -43,7 +43,7 @@ struct PhotoCardView: View {
     }
 
     private var accessibilityText: String {
-        var parts = ["Photo", Format.day(item.date), item.location, Format.size(item.bytes)]
+        var parts = ["Photo", Format.day(item.date), item.location, Format.size(item.bytes)].compactMap { $0 }
         if let flag = item.reviewFlag { parts.insert(flag.label, at: 1) }
         if item.isFavorite { parts.append("Favorite") }
         return parts.joined(separator: ", ")

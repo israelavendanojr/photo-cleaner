@@ -2,6 +2,10 @@ import SwiftUI
 
 /// A batch of low-value items (screenshots, forwards) decided all at once.
 struct ScreenshotBatchCardView: View {
+    /// Size of each fanned thumbnail, and how many are shown. Pre-caching requests the same.
+    static let tileSize = CGSize(width: 130, height: 230)
+    static let fannedCount = 5
+
     let batch: ItemBatch
 
     private var totalBytes: Int64 { batch.items.reduce(0) { $0 + $1.bytes } }
@@ -18,7 +22,7 @@ struct ScreenshotBatchCardView: View {
                 .font(.subheadline)
                 .foregroundStyle(DS.Palette.secondary)
                 .padding(.top, DS.Spacing.xs)
-            FannedThumbnails(items: Array(batch.items.prefix(5)))
+            FannedThumbnails(items: Array(batch.items.prefix(Self.fannedCount)))
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .accessibilityHidden(true)
             HStack {
@@ -46,7 +50,7 @@ private struct FannedThumbnails: View {
     let items: [LibraryItem]
     @State private var isFanned = false
 
-    private let tile = CGSize(width: 130, height: 230)
+    private let tile = ScreenshotBatchCardView.tileSize
     private let spread: CGFloat = 52
 
     var body: some View {

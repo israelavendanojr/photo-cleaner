@@ -23,9 +23,12 @@ struct photo_swiperApp: App {
 }
 
 private extension FeedViewModel {
-    /// Mock services by default. Pass `-startAt similar|batch|video|end|celebrated|caughtUp`
-    /// as a launch argument to jump straight to a state.
+    /// The real library by default. In debug builds, `-mockLibrary YES` uses mock services, and
+    /// `-startAt similar|batch|video|end|celebrated|caughtUp` jumps straight to a mock state.
     static func launch() -> FeedViewModel {
+        guard LibraryServices.usesMock else {
+            return FeedViewModel(library: PhotoKitLibrary(), builder: PhotoKitFeedBuilder())
+        }
         if let raw = UserDefaults.standard.string(forKey: "startAt"), let start = MockStart(rawValue: raw) {
             return .mock(startingAt: start)
         }

@@ -3,7 +3,8 @@ import Foundation
 /// A bounded run of cards the user works through before confirming.
 struct Session: Identifiable, Sendable {
     let number: Int
-    let cards: [FeedCard]
+    /// Upcoming cards can be pruned when items vanish from the library.
+    var cards: [FeedCard]
     /// Library analysis still in progress when the session starts, 0...100. Nil once done.
     var scanPercentAtStart: Int?
 

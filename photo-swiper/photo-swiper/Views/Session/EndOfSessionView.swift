@@ -37,6 +37,9 @@ struct EndOfSessionView: View {
         } message: {
             Text("This frees \(Format.size(vm.pendingBytes)). They'll stay in Recently Deleted for 30 days.")
         }
+        .alert(vm.deleteNotice ?? "", isPresented: hasDeleteNotice) {
+            Button("OK", role: .cancel) {}
+        }
     }
 
     // MARK: Sections
@@ -154,6 +157,10 @@ struct EndOfSessionView: View {
     }
 
     // MARK: Helpers
+
+    private var hasDeleteNotice: Binding<Bool> {
+        Binding(get: { vm.deleteNotice != nil }, set: { if !$0 { vm.deleteNotice = nil } })
+    }
 
     private func count(_ value: Int, _ label: String) -> Text {
         Text("\(Text("\(value)").fontWeight(.semibold).foregroundStyle(DS.Palette.ink)) \(label)")

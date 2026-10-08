@@ -9,6 +9,8 @@ import Observation
 final class FeedViewModel {
     enum Phase: Equatable {
         case loading
+        /// The user denied photo access.
+        case noAccess
         case feed
         case endOfSession
         /// Pending items were confirmed and deleted.
@@ -52,6 +54,9 @@ final class FeedViewModel {
     private(set) var returningCard: ReturningCard?
     private(set) var celebration: Celebration?
     private(set) var stats = LibraryStats(totalItems: 0, reviewedItems: 0, freedBytes: 0)
+    private(set) var access = LibraryAccess.full
+    /// Something about the last delete the user should know, e.g. items the system refused.
+    var deleteNotice: String?
     /// Applies to the next session built.
     var skipFavorites = true
 
@@ -60,9 +65,10 @@ final class FeedViewModel {
     private var history: [Snapshot] = []
     /// Unconfirmed deletes from earlier sessions the user skipped confirming.
     private var carriedPending: [LibraryItem] = []
-    /// Items already deleted this session; they stay decided but are no longer pending.
-    private var deletedIDs: Set<LibraryItem.ID> = []
+    /// Items deleted, gone from the library, or undeletable. They stay decided but are no longer pending.
+    private var settledIDs: Set<LibraryItem.ID> = []
     private var chipTask: Task<Void, Never>?
+    private var changesTask: Task<Void, Never>?
 
     private let library: any PhotoLibraryProviding
     private let builder: any FeedBuilding
@@ -99,8 +105,8 @@ final class FeedViewModel {
     var canUndo: Bool { !history.isEmpty && (phase == .feed || phase == .endOfSession) }
 
     var pendingItems: [LibraryItem] {
-        let current = session?.items.filter { decisions[$0.id] == .delete && !deletedIDs.contains($0.id) } ?? []
-        return carriedPending + current
+        let current = session?.items.filter { decisions[$0.id] == .delete } ?? []
+        return (carriedPending + current).filter { !settledIDs.contains($0.id) }
     }
     var pendingBytes: Int64 { pendingItems.reduce(0) { $0 + $1.bytes } }
     var keptCount: Int { decisions.values.filter { $0 == .keep }.count }
@@ -142,9 +148,17 @@ final class FeedViewModel {
 
     // MARK: Intents
 
+    /// Also called again from the no-access screen when the app returns from Settings.
     func start() async {
-        guard phase == .loading else { return }
+        guard phase == .loading || phase == .noAccess else { return }
+        access = await library.requestAccess()
+        guard access != .denied else {
+            phase = .noAccess
+            return
+        }
+        phase = .loading
         stats = await library.stats()
+        observeLibraryChanges()
         await loadSession(number: 1)
     }
 
@@ -179,17 +193,34 @@ final class FeedViewModel {
         phase = .feed
     }
 
-    /// Deletes everything pending. Returns false if the library refused.
+    /// Deletes everything pending. Returns false if nothing was deleted, including when
+    /// the user cancels the system prompt (everything then stays pending).
     @discardableResult
     func confirmDelete() async -> Bool {
         let items = pendingItems
         guard !items.isEmpty else { return false }
+        let outcome: DeletionOutcome
         do {
-            try await library.delete(items)
+            outcome = try await library.delete(items)
+        } catch DeletionError.cancelled {
+            return false
         } catch {
+            deleteNotice = "Couldn't delete right now. Nothing was removed."
             return false
         }
-        applyConfirmedDelete(items)
+
+        // Gone or undeletable items can't be cleared, so they leave the pile without counting as freed.
+        settledIDs.formUnion(outcome.missing)
+        settledIDs.formUnion(outcome.undeletable)
+        if !outcome.undeletable.isEmpty {
+            let n = outcome.undeletable.count
+            deleteNotice = "\(n) \(n == 1 ? "item" : "items") can't be deleted from this app and stayed in your library."
+        }
+
+        let deleted = Set(outcome.deleted)
+        let deletedItems = items.filter { deleted.contains($0.id) }
+        guard !deletedItems.isEmpty else { return false }
+        applyConfirmedDelete(deletedItems)
         return true
     }
 
@@ -229,10 +260,31 @@ final class FeedViewModel {
         let bytes = items.reduce(0) { $0 + $1.bytes }
         stats.freedBytes += bytes
         celebration = Celebration(bytes: bytes, count: items.count)
-        deletedIDs.formUnion(items.map(\.id))
+        settledIDs.formUnion(items.map(\.id))
         carriedPending = []
         history.removeAll()
         phase = .celebrated
+    }
+
+    private func observeLibraryChanges() {
+        guard changesTask == nil else { return }
+        let changes = library.vanishedItems()
+        changesTask = Task { [weak self] in
+            for await ids in changes { self?.forget(ids) }
+        }
+    }
+
+    /// Drops items deleted outside the app from the pile and from cards not yet shown.
+    /// The current and earlier cards stay put so undo history remains valid.
+    private func forget(_ ids: Set<LibraryItem.ID>) {
+        // Our own confirmed deletes come back through here too; they're already settled.
+        let gone = ids.subtracting(settledIDs)
+        guard !gone.isEmpty else { return }
+        settledIDs.formUnion(gone)
+        guard var current = session, current.cards.count > index + 1 else { return }
+        current.cards = Array(current.cards.prefix(index + 1))
+            + current.cards.dropFirst(index + 1).compactMap { $0.removing(gone) }
+        session = current
     }
 
     private func loadSession(number: Int) async {
@@ -246,7 +298,6 @@ final class FeedViewModel {
         decisions = [:]
         marks = [:]
         history = []
-        deletedIDs = []
         celebration = nil
         returningCard = nil
         dismissChip()
@@ -267,6 +318,29 @@ final class FeedViewModel {
     private func dismissChip() {
         chipTask?.cancel()
         deleteChip = nil
+    }
+}
+
+// MARK: - Pruning
+
+private extension FeedCard {
+    /// This card without `ids`, or nil if nothing worth showing is left.
+    func removing(_ ids: Set<LibraryItem.ID>) -> FeedCard? {
+        switch self {
+        case .photo(let item), .video(let item):
+            return ids.contains(item.id) ? nil : self
+        case .similar(let group):
+            let rest = group.items.filter { !ids.contains($0.id) }
+            guard rest.count > 1, !ids.contains(group.bestID) else { return nil }
+            return .similar(SimilarGroup(id: group.id, items: rest, bestID: group.bestID, reason: group.reason))
+        case .batch(let batch):
+            let rest = batch.items.filter { !ids.contains($0.id) }
+            guard !rest.isEmpty else { return nil }
+            // Titles lead with the count, e.g. "14 screenshots from last week".
+            let oldCount = "\(batch.items.count) "
+            let title = batch.title.hasPrefix(oldCount) ? "\(rest.count) " + batch.title.dropFirst(oldCount.count) : batch.title
+            return .batch(ItemBatch(id: batch.id, kind: batch.kind, label: batch.label, title: title, items: rest))
+        }
     }
 }
 

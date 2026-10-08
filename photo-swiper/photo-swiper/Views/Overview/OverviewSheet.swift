@@ -1,9 +1,11 @@
 import SwiftUI
+import UIKit
 
 /// Library-wide progress, what's pending, and feed preferences.
 struct OverviewSheet: View {
     @Environment(FeedViewModel.self) private var vm
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.openURL) private var openURL
 
     var body: some View {
         @Bindable var vm = vm
@@ -99,6 +101,18 @@ struct OverviewSheet: View {
                 .overlay(DS.Palette.line)
                 .padding(.leading, 52)
             OverviewRow(icon: "clock", title: "Saved for later", value: "\(vm.laterCount)")
+            if vm.access == .limited {
+                Divider()
+                    .overlay(DS.Palette.line)
+                    .padding(.leading, 52)
+                Button {
+                    if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
+                } label: {
+                    OverviewRow(icon: "lock", title: "Photo access", value: "Selected photos only")
+                }
+                .buttonStyle(.plain)
+                .accessibilityHint("Opens Settings")
+            }
         }
         .background(DS.Palette.card, in: RoundedRectangle(cornerRadius: DS.Radius.inner, style: .continuous))
         .softShadow()

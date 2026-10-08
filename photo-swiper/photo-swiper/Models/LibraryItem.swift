@@ -27,7 +27,8 @@ struct LibraryItem: Identifiable, Hashable, Sendable {
     let id: ID
     let kind: Kind
     let date: Date
-    let location: String
+    /// Place name, e.g. "Santa Monica". Nil when the item has no location or it couldn't be resolved.
+    let location: String?
     let bytes: Int64
     var flags: [Flag] = []
     var isFavorite = false
@@ -51,5 +52,6 @@ struct LibraryItem: Identifiable, Hashable, Sendable {
 enum ImageReference: Hashable, Sendable {
     /// An image in the asset catalog (mock data).
     case bundled(String)
-    // Later: case photoKit(localIdentifier: String)
+    /// A `PHAsset` in the user's library.
+    case photoKit(localIdentifier: String)
 }

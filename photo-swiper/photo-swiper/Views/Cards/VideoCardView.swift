@@ -41,9 +41,11 @@ struct VideoCardView: View {
             Text(Format.day(item.date))
                 .dsSerif(20, relativeTo: .title3)
                 .padding(.top, 4)
-            Text(item.location)
-                .font(.subheadline)
-                .opacity(0.9)
+            if let location = item.location {
+                Text(location)
+                    .font(.subheadline)
+                    .opacity(0.9)
+            }
         }
         .foregroundStyle(.white)
         .padding(.horizontal, 22)
@@ -52,7 +54,9 @@ struct VideoCardView: View {
 
     private var accessibilityText: String {
         let length = item.duration.map { Format.duration($0) } ?? ""
-        return "Video, \(length), \(Format.size(item.bytes)), \(Format.day(item.date)), \(item.location)"
+        return [
+            "Video", length, Format.size(item.bytes), Format.day(item.date), item.location,
+        ].compactMap { $0 }.joined(separator: ", ")
     }
 }
 

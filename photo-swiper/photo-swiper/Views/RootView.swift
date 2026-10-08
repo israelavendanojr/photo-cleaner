@@ -12,6 +12,9 @@ struct RootView: View {
             case .loading:
                 ProgressView()
                     .tint(DS.Palette.secondary)
+            case .noAccess:
+                LibraryAccessView()
+                    .transition(.opacity)
             case .feed:
                 FeedView { isOverviewPresented = true }
                     .transition(.opacity)
