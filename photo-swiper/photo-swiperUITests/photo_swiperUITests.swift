@@ -166,6 +166,31 @@ final class photo_swiperUITests: XCTestCase {
         XCTAssertTrue(element(app, containing: "0 MB to clear").exists, "Looking decides nothing")
     }
 
+    @MainActor
+    func testPendingPileShowsDeletesAndKeepsInstead() throws {
+        let app = launch()
+        XCTAssertTrue(element(app, containing: "1 of 20").waitForExistence(timeout: 5))
+        drag(app, to: CGVector(dx: 0.02, dy: 0.5))
+        XCTAssertTrue(element(app, containing: "2 of 20").waitForExistence(timeout: 3))
+
+        tapCenter(element(app, containing: "to clear"))
+        let tile = app.descendants(matching: .any)["pendingTile"]
+        XCTAssertTrue(tile.waitForExistence(timeout: 3), "The pile shows the deleted photo")
+        attachScreenshot(app, "pile")
+
+        tile.tap()
+        let keep = app.buttons["Keep instead"]
+        XCTAssertTrue(keep.waitForExistence(timeout: 3))
+        keep.tap()
+
+        XCTAssertTrue(tile.waitForNonExistence(timeout: 3), "Keeping takes it out of the pile")
+        XCTAssertTrue(element(app, containing: "Nothing marked to clear").exists)
+        app.buttons["Done"].tap()
+
+        XCTAssertTrue(element(app, containing: "0 MB to clear").waitForExistence(timeout: 3))
+        XCTAssertTrue(element(app, containing: "2 of 20").exists, "Keeping from the pile doesn't move the feed")
+    }
+
     // MARK: Helpers
 
     /// The full-screen batch review leaves the feed's buttons in the tree underneath it.

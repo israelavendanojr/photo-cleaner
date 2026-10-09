@@ -94,6 +94,24 @@ struct FeedViewModelLibraryTests {
         #expect(vm.deleteNotice != nil)
     }
 
+    @Test func keepingInsteadTakesAnItemOutOfThePileEvenAcrossUndo() async throws {
+        let vm = await started()
+        vm.decide(.left)
+        vm.decide(.left)
+        let kept = try #require(vm.pendingItems.first)
+        let other = try #require(vm.pendingItems.last)
+
+        vm.keepInstead(kept)
+
+        #expect(vm.pendingItems.map(\.id) == [other.id])
+        #expect(vm.pendingBytes == other.bytes)
+        #expect(vm.decisions[kept.id] == .keep)
+
+        vm.undo()
+        #expect(vm.pendingItems.isEmpty, "Undoing a later swipe doesn't bring it back")
+        #expect(vm.decisions[kept.id] == .keep)
+    }
+
     @Test func itemsDeletedOutsideTheAppLeaveUpcomingCardsAndThePile() async throws {
         let vm = await started()
         vm.decide(.left)

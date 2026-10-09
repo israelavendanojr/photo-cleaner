@@ -39,12 +39,12 @@ final class FeedViewModel {
 
     private struct Snapshot {
         let index: Int
-        let decisions: [LibraryItem.ID: Decision]
-        let marks: [SimilarGroup.ID: Set<LibraryItem.ID>]
+        var decisions: [LibraryItem.ID: Decision]
+        var marks: [SimilarGroup.ID: Set<LibraryItem.ID>]
         let cardID: FeedCard.ID
         let direction: SwipeDirection
         /// Saved decisions for the card's items before the swipe; nil where there were none.
-        let stored: [LibraryItem.ID: StoredDecision?]
+        var stored: [LibraryItem.ID: StoredDecision?]
     }
 
     // MARK: State
@@ -224,6 +224,31 @@ final class FeedViewModel {
         returningCard = ReturningCard(cardID: last.cardID, direction: last.direction)
         dismissChip()
         phase = .feed
+        saveProgress()
+        refreshTotals(includingFreed: false)
+    }
+
+    /// Takes an item out of the pile by keeping it instead, here, in the store, and in undo history.
+    func keepInstead(_ item: LibraryItem) {
+        guard pendingItems.contains(where: { $0.id == item.id }) else { return }
+        if decisions[item.id] == .delete {
+            decisions[item.id] = .keep
+        } else {
+            carriedPending.removeAll { $0.id == item.id }
+        }
+        let sessionNumber = store.decisions(for: [item.id])[item.id]?.sessionNumber ?? session?.number ?? 0
+        store.save([item.id: StoredDecision(decision: .keep, decidedAt: now(), sessionNumber: sessionNumber, item: item)])
+
+        // Undoing a later swipe must not put it back in the pile.
+        for i in history.indices {
+            if history[i].decisions[item.id] == .delete { history[i].decisions[item.id] = .keep }
+            if case .some(.some(var record)) = history[i].stored[item.id], record.decision == .delete {
+                record.decision = .keep
+                history[i].stored[item.id] = record
+            }
+            for group in history[i].marks.keys { history[i].marks[group]?.remove(item.id) }
+        }
+        for group in marks.keys { marks[group]?.remove(item.id) }
         saveProgress()
         refreshTotals(includingFreed: false)
     }

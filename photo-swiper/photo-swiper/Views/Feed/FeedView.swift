@@ -4,13 +4,14 @@ import SwiftUI
 struct FeedView: View {
     @Environment(FeedViewModel.self) private var vm
     let onOpenOverview: () -> Void
+    var onOpenPile: () -> Void = {}
 
     var body: some View {
         VStack(spacing: 0) {
             OverviewHandle(onOpen: onOpenOverview)
-            FeedTopBar {
+            FeedTopBar(onUndo: {
                 withAnimation(DS.Motion.calm) { vm.undo() }
-            }
+            }, onOpenPile: onOpenPile)
             .padding(.horizontal, DS.Spacing.l)
             .padding(.top, DS.Spacing.xxs)
             .padding(.bottom, DS.Spacing.m)

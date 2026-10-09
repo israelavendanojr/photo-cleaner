@@ -4,6 +4,7 @@ import SwiftUI
 struct RootView: View {
     @Environment(FeedViewModel.self) private var vm
     @State private var isOverviewPresented = false
+    @State private var isPilePresented = false
 
     var body: some View {
         ZStack {
@@ -16,7 +17,7 @@ struct RootView: View {
                 LibraryAccessView()
                     .transition(.opacity)
             case .feed:
-                FeedView { isOverviewPresented = true }
+                FeedView(onOpenOverview: { isOverviewPresented = true }, onOpenPile: { isPilePresented = true })
                     .transition(.opacity)
             case .endOfSession, .celebrated:
                 EndOfSessionView()
@@ -30,11 +31,20 @@ struct RootView: View {
         .sheet(isPresented: $isOverviewPresented) {
             OverviewSheet()
         }
+        .sheet(isPresented: $isPilePresented) {
+            PendingPileView(showsDone: true)
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+                .presentationBackground(DS.Palette.paper)
+                .presentationCornerRadius(DS.Radius.card)
+        }
         .task {
             await vm.start()
             #if DEBUG
             // `-showOverview YES` opens the sheet at launch, for screenshots.
             if UserDefaults.standard.bool(forKey: "showOverview") { isOverviewPresented = true }
+            // `-showPile YES` opens the pending pile at launch.
+            if UserDefaults.standard.bool(forKey: "showPile") { isPilePresented = true }
             #endif
         }
     }

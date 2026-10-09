@@ -192,6 +192,26 @@ struct FeedViewModelPersistenceTests {
     }
 
     @Test(arguments: ProgressStoreTests.Kind.allCases)
+    func keepingInsteadStaysOutOfThePileAfterARelaunch(_ kind: ProgressStoreTests.Kind) async throws {
+        let store = try makeStore(kind)
+        let vm = await launch(store)
+        for _ in 0..<3 { vm.decide(.left) }
+        await vm.startNewSession()
+        vm.decide(.left)
+        // One carried from the first session, one from this one.
+        let carried = try #require(vm.pendingItems.first)
+        let current = try #require(vm.pendingItems.last)
+        vm.keepInstead(carried)
+        vm.keepInstead(current)
+
+        let relaunched = await launch(store)
+
+        #expect(relaunched.pendingItems.count == 2)
+        #expect(!relaunched.pendingItems.contains { $0.id == carried.id || $0.id == current.id })
+        #expect(relaunched.decisions[current.id] == .keep)
+    }
+
+    @Test(arguments: ProgressStoreTests.Kind.allCases)
     func skipFavoritesIsRemembered(_ kind: ProgressStoreTests.Kind) async throws {
         let store = try makeStore(kind)
         let vm = await launch(store)

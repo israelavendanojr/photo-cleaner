@@ -3,10 +3,13 @@ import SwiftUI
 
 /// Full-screen playback for a video card, with play/pause and a scrubbable timeline.
 ///
-/// Only for watching: decisions still happen on the card once this closes.
+/// Only for watching: decisions still happen on the card once this closes, except from the
+/// pending pile, which passes `onKeep` to offer taking the video back out.
 struct VideoPreviewView: View {
     @Environment(\.dismiss) private var dismiss
     let item: LibraryItem
+    /// Shows a "Keep instead" button under the controls that calls this and closes.
+    var onKeep: (() -> Void)?
 
     @State private var playback = VideoPlayback()
     @State private var showsControls = true
@@ -98,6 +101,10 @@ struct VideoPreviewView: View {
             }
             .font(.footnote.monospacedDigit())
             .foregroundStyle(.white.opacity(0.85))
+            if let onKeep {
+                KeepInsteadButton(onKeep: onKeep)
+                    .padding(.top, DS.Spacing.xs)
+            }
         }
         .padding(.horizontal, DS.Spacing.l)
         .padding(.top, DS.Spacing.xxl)
