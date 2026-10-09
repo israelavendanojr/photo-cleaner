@@ -12,6 +12,8 @@ struct CardStackView: View {
     @State private var batchOutcome: [LibraryItem.ID: Decision]?
     /// The video open in the full-screen player. Watching never decides anything.
     @State private var previewingVideo: LibraryItem?
+    /// The photo open full screen. Looking never decides anything either.
+    @State private var previewingPhoto: LibraryItem?
     @Environment(\.displayScale) private var displayScale
 
     var body: some View {
@@ -32,7 +34,8 @@ struct CardStackView: View {
                         CardContentView(
                             card: card,
                             onOpenBatch: { reviewingBatch = $0 },
-                            onPlayVideo: { previewingVideo = $0 }
+                            onPlayVideo: { previewingVideo = $0 },
+                            onOpenPhoto: { previewingPhoto = $0 }
                         )
                     }
                     .scaleEffect(isTop ? 1 : 0.95 + 0.05 * progress)
@@ -57,6 +60,9 @@ struct CardStackView: View {
         }
         .fullScreenCover(item: $previewingVideo) { item in
             VideoPreviewView(item: item)
+        }
+        .fullScreenCover(item: $previewingPhoto) { item in
+            PhotoPreviewView(item: item)
         }
         .task(id: preheatWindow) {
             ThumbnailPipeline.shared.preheat(preheatWindow)

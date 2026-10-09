@@ -6,11 +6,12 @@ struct CardContentView: View {
     let card: FeedCard
     var onOpenBatch: (ItemBatch) -> Void = { _ in }
     var onPlayVideo: (LibraryItem) -> Void = { _ in }
+    var onOpenPhoto: (LibraryItem) -> Void = { _ in }
 
     var body: some View {
         switch card {
         case .photo(let item):
-            PhotoCardView(item: item)
+            PhotoCardView(item: item) { onOpenPhoto(item) }
         case .video(let item):
             VideoCardView(item: item) { onPlayVideo(item) }
         case .similar(let group):

@@ -3,6 +3,7 @@ import SwiftUI
 /// Full-bleed single photo with date, place, size, and an optional review flag.
 struct PhotoCardView: View {
     let item: LibraryItem
+    var onOpen: () -> Void = {}
 
     private var isBlurry: Bool { item.reviewFlag == .blurry }
 
@@ -20,8 +21,10 @@ struct PhotoCardView: View {
             }
             .clipShape(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
             .cardShadow()
+            .onTapGesture(perform: onOpen)
             .accessibilityElement(children: .combine)
             .accessibilityLabel(accessibilityText)
+            .accessibilityAction(named: "View full screen", onOpen)
     }
 
     private var caption: some View {

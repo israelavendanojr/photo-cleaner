@@ -146,6 +146,26 @@ final class photo_swiperUITests: XCTestCase {
         XCTAssertTrue(element(app, containing: "0 MB to clear").exists, "Watching decides nothing")
     }
 
+    @MainActor
+    func testPhotoPreviewOpensZoomsAndClosesWithoutDeciding() throws {
+        let app = launch()
+        XCTAssertTrue(element(app, containing: "1 of 50").waitForExistence(timeout: 5))
+
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        let preview = app.descendants(matching: .any)["photoPreview"]
+        XCTAssertTrue(preview.waitForExistence(timeout: 3))
+        attachScreenshot(app, "fit")
+
+        preview.doubleTap()
+        sleep(1)
+        attachScreenshot(app, "zoomed")
+
+        tapCenter(onScreen(app, "Close"))
+        XCTAssertTrue(preview.waitForNonExistence(timeout: 3), "The preview closes")
+        XCTAssertTrue(element(app, containing: "1 of 50").exists, "Looking doesn't move the feed")
+        XCTAssertTrue(element(app, containing: "0 MB to clear").exists, "Looking decides nothing")
+    }
+
     // MARK: Helpers
 
     /// The full-screen batch review leaves the feed's buttons in the tree underneath it.

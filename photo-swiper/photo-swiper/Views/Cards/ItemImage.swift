@@ -1,12 +1,14 @@
 import SwiftUI
 
-/// Fills its frame with an item's image. The single place an `ImageReference` becomes pixels,
-/// so a PhotoKit-backed loader only needs to change here.
+/// Fills (or, with `.fit`, fits) its frame with an item's image. The single place an
+/// `ImageReference` becomes pixels, so a PhotoKit-backed loader only needs to change here.
 struct ItemImage: View {
     let reference: ImageReference
+    var contentMode: ContentMode = .fill
 
-    init(_ reference: ImageReference) {
+    init(_ reference: ImageReference, contentMode: ContentMode = .fill) {
         self.reference = reference
+        self.contentMode = contentMode
     }
 
     var body: some View {
@@ -16,9 +18,9 @@ struct ItemImage: View {
                 case .bundled(let name):
                     Image(name)
                         .resizable()
-                        .scaledToFill()
+                        .aspectRatio(contentMode: contentMode)
                 case .photoKit(let id):
-                    PhotoKitImage(id: id)
+                    PhotoKitImage(id: id, contentMode: contentMode)
                 }
             }
             .clipped()
@@ -37,6 +39,7 @@ private struct PhotoKitImage: View {
     }
 
     let id: String
+    let contentMode: ContentMode
     @Environment(\.displayScale) private var displayScale
     @State private var size = CGSize.zero
     @State private var image: UIImage?
@@ -48,7 +51,7 @@ private struct PhotoKitImage: View {
                 if let image {
                     Image(uiImage: image)
                         .resizable()
-                        .scaledToFill()
+                        .aspectRatio(contentMode: contentMode)
                 }
             }
             .onGeometryChange(for: CGSize.self, of: \.size) { size = $0 }
