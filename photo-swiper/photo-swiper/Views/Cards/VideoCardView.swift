@@ -3,6 +3,7 @@ import SwiftUI
 /// A video still with duration and a prominent file size. Large videos are the biggest wins.
 struct VideoCardView: View {
     let item: LibraryItem
+    var onPlay: () -> Void = {}
 
     var body: some View {
         ItemImage(item.image)
@@ -19,17 +20,23 @@ struct VideoCardView: View {
             .cardShadow()
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(accessibilityText)
+            .accessibilityAction(named: "Play video", onPlay)
     }
 
     private var playButton: some View {
-        Image(systemName: "play.fill")
-            .font(.system(size: 30))
-            .foregroundStyle(.white)
-            .offset(x: 3)
-            .frame(width: 80, height: 80)
-            .background {
-                Circle().fill(.ultraThinMaterial).environment(\.colorScheme, .dark)
-            }
+        Button(action: onPlay) {
+            Image(systemName: "play.fill")
+                .font(.system(size: 30))
+                .foregroundStyle(.white)
+                .offset(x: 3)
+                .frame(width: 80, height: 80)
+                .background {
+                    Circle().fill(.ultraThinMaterial).environment(\.colorScheme, .dark)
+                }
+                .contentShape(Circle())
+        }
+        .buttonStyle(PressScaleStyle())
+        .accessibilityLabel("Play video")
     }
 
     private var caption: some View {

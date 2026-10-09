@@ -10,6 +10,8 @@ struct CardStackView: View {
     /// The batch being gone through one by one, and its outcome once finished.
     @State private var reviewingBatch: ItemBatch?
     @State private var batchOutcome: [LibraryItem.ID: Decision]?
+    /// The video open in the full-screen player. Watching never decides anything.
+    @State private var previewingVideo: LibraryItem?
     @Environment(\.displayScale) private var displayScale
 
     var body: some View {
@@ -27,7 +29,11 @@ struct CardStackView: View {
                         progress: isTop ? $progress : .constant(0),
                         onSwipe: { commit($0, card: card) }
                     ) {
-                        CardContentView(card: card) { reviewingBatch = $0 }
+                        CardContentView(
+                            card: card,
+                            onOpenBatch: { reviewingBatch = $0 },
+                            onPlayVideo: { previewingVideo = $0 }
+                        )
                     }
                     .scaleEffect(isTop ? 1 : 0.95 + 0.05 * progress)
                     .offset(y: isTop ? 0 : 12 * (1 - progress))
@@ -48,6 +54,9 @@ struct CardStackView: View {
                 batchOutcome = outcome
                 reviewingBatch = nil
             }
+        }
+        .fullScreenCover(item: $previewingVideo) { item in
+            VideoPreviewView(item: item)
         }
         .task(id: preheatWindow) {
             ThumbnailPipeline.shared.preheat(preheatWindow)

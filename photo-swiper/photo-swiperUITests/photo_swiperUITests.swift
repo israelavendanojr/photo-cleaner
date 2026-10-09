@@ -116,6 +116,36 @@ final class photo_swiperUITests: XCTestCase {
         XCTAssertTrue(element(app, containing: "0 MB to clear").exists)
     }
 
+    @MainActor
+    func testVideoPreviewPlaysScrubsAndClosesWithoutDeciding() throws {
+        let app = launch("-startAt", "video")
+        XCTAssertTrue(element(app, containing: "Video ·").waitForExistence(timeout: 5))
+        let position = element(app, containing: " of 50").label
+
+        // The play button sits in the middle of the card.
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        let scrubber = app.descendants(matching: .any)["videoScrubber"]
+        XCTAssertTrue(scrubber.waitForExistence(timeout: 3))
+        let pause = onScreen(app, "Pause")
+        XCTAssertTrue(pause.waitForExistence(timeout: 5), "Playback starts on open")
+        sleep(1)
+        attachScreenshot(app, "playing")
+
+        tapCenter(pause)
+        XCTAssertTrue(onScreen(app, "Play").waitForExistence(timeout: 2))
+
+        let before = scrubber.value as? String
+        scrubber.coordinate(withNormalizedOffset: CGVector(dx: 0.05, dy: 0.5))
+            .press(forDuration: 0.05, thenDragTo: scrubber.coordinate(withNormalizedOffset: CGVector(dx: 0.75, dy: 0.5)))
+        XCTAssertNotEqual(scrubber.value as? String, before, "Dragging the timeline seeks")
+        attachScreenshot(app, "scrubbed")
+
+        tapCenter(onScreen(app, "Close"))
+        XCTAssertTrue(scrubber.waitForNonExistence(timeout: 3), "The preview closes")
+        XCTAssertTrue(element(app, containing: position).exists, "Watching doesn't move the feed")
+        XCTAssertTrue(element(app, containing: "0 MB to clear").exists, "Watching decides nothing")
+    }
+
     // MARK: Helpers
 
     /// The full-screen batch review leaves the feed's buttons in the tree underneath it.
