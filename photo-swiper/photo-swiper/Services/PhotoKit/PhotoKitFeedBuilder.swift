@@ -59,46 +59,32 @@ actor PhotoKitFeedBuilder: FeedBuilding {
         return Session(number: number, cards: cards, scanPercentAtStart: nil)
     }
 
-    /// Walks the library newest first until the session has enough photos. Screenshots are pulled
-    /// out into one slot per calendar week, placed where that week's newest screenshot appears.
-    /// The oldest week's screenshots are then gathered in full, so its bundle can push the session
-    /// past `photosPerSession`.
+    /// Walks the library newest first until the session has `photosPerSession` photos. Screenshots
+    /// are pulled out into one slot per calendar week, placed where that week's newest screenshot appears.
     private func pickSlots(_ options: FeedOptions) -> ([Slot], [Date: [PHAsset]]) {
         let result = PHAsset.fetchAssets(with: PhotoKitLibrary.fetchOptions(skipFavorites: options.skipFavorites))
         let calendar = Calendar.current
         var slots: [Slot] = []
         var weeks: [Date: [PHAsset]] = [:]
-        var oldestWeek: Date?
         var photoCount = 0
         var index = 0
 
-        while index < result.count {
+        while index < result.count, photoCount < Self.photosPerSession {
             let asset = result.object(at: index)
             index += 1
             guard !options.excluding.contains(asset.localIdentifier) else { continue }
-            let full = photoCount >= Self.photosPerSession
-            let isScreenshot = AssetMapper.isScreenshot(asset)
 
-            guard isScreenshot else {
-                if full { continue }
+            guard AssetMapper.isScreenshot(asset) else {
                 slots.append(.single(asset))
                 photoCount += 1
                 continue
             }
             let date = asset.creationDate ?? .distantPast
             let week = calendar.dateInterval(of: .weekOfYear, for: date)?.start ?? date
-            if full {
-                // Once full, only top up the week still in progress; anything older waits.
-                guard let oldestWeek, week >= oldestWeek else { break }
-                guard week == oldestWeek else { continue }
-            }
             let shots = weeks[week, default: []]
             // Overflow waits for a later session.
             guard shots.count < Self.maxBatch else { continue }
-            if shots.isEmpty {
-                slots.append(.screenshots(week: week))
-                oldestWeek = week
-            }
+            if shots.isEmpty { slots.append(.screenshots(week: week)) }
             weeks[week] = shots + [asset]
             photoCount += 1
         }
