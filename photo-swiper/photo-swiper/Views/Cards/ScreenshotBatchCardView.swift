@@ -1,12 +1,14 @@
 import SwiftUI
 
-/// A batch of low-value items (screenshots, forwards) decided all at once.
+/// A batch of low-value items (screenshots, forwards) decided all at once,
+/// or opened with a tap to go through one by one.
 struct ScreenshotBatchCardView: View {
     /// Size of each fanned thumbnail, and how many are shown. Pre-caching requests the same.
     static let tileSize = CGSize(width: 130, height: 230)
     static let fannedCount = 5
 
     let batch: ItemBatch
+    let onOpen: () -> Void
 
     private var totalBytes: Int64 { batch.items.reduce(0) { $0 + $1.bytes } }
 
@@ -22,17 +24,24 @@ struct ScreenshotBatchCardView: View {
                 .font(.subheadline)
                 .foregroundStyle(DS.Palette.secondary)
                 .padding(.top, DS.Spacing.xs)
-            FannedThumbnails(items: Array(batch.items.prefix(Self.fannedCount)))
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .accessibilityHidden(true)
+            Button(action: onOpen) {
+                FannedThumbnails(items: Array(batch.items.prefix(Self.fannedCount)))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(PressScaleStyle())
+            .accessibilityHidden(true)
             HStack {
                 Text("\(Image(systemName: "arrow.left")) Clear all \(batch.items.count)")
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(DS.Palette.brick)
                 Spacer(minLength: DS.Spacing.xs)
-                Text("Right keeps all")
-                    .font(.subheadline)
-                    .foregroundStyle(DS.Palette.secondary)
+                Button(action: onOpen) {
+                    Text("Tap to go one by one")
+                        .font(.subheadline)
+                        .foregroundStyle(DS.Palette.secondary)
+                }
+                .buttonStyle(.plain)
             }
             .lineLimit(1)
             .minimumScaleFactor(0.8)
@@ -42,6 +51,7 @@ struct ScreenshotBatchCardView: View {
         .clipShape(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
         .cardShadow()
         .accessibilityElement(children: .combine)
+        .accessibilityAction(named: "Go one by one", onOpen)
     }
 }
 
@@ -77,7 +87,7 @@ private struct FannedThumbnails: View {
 }
 
 #Preview {
-    ScreenshotBatchCardView(batch: PreviewSamples.screenshotBatch)
+    ScreenshotBatchCardView(batch: PreviewSamples.screenshotBatch, onOpen: {})
         .frame(height: 600)
         .padding(14)
         .background(DS.Palette.paper)

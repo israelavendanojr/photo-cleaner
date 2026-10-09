@@ -4,6 +4,7 @@ import SwiftUI
 struct CardContentView: View {
     @Environment(FeedViewModel.self) private var vm
     let card: FeedCard
+    var onOpenBatch: (ItemBatch) -> Void = { _ in }
 
     var body: some View {
         switch card {
@@ -16,7 +17,7 @@ struct CardContentView: View {
                 vm.toggleMark(id, in: group)
             }
         case .batch(let batch):
-            ScreenshotBatchCardView(batch: batch)
+            ScreenshotBatchCardView(batch: batch) { onOpenBatch(batch) }
         }
     }
 }

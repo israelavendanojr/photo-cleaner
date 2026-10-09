@@ -72,7 +72,76 @@ final class photo_swiperUITests: XCTestCase {
         XCTAssertFalse(element(app, containing: "0 MB to clear").exists)
     }
 
+    @MainActor
+    func testBatchOneByOneClearsOnlyDeletedItems() throws {
+        let app = launch("-startAt", "batch")
+        XCTAssertTrue(element(app, containing: "15 of 50").waitForExistence(timeout: 5))
+        attachScreenshot(app, "batch card")
+
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        XCTAssertTrue(element(app, containing: "1 of 14").waitForExistence(timeout: 3))
+        attachScreenshot(app, "drill-in")
+
+        drag(app, to: CGVector(dx: 0.02, dy: 0.5))
+        XCTAssertTrue(element(app, containing: "2 of 14").waitForExistence(timeout: 3))
+        tapCenter(onScreen(app, "Undo"))
+        XCTAssertTrue(element(app, containing: "1 of 14").waitForExistence(timeout: 3))
+
+        for _ in 0..<3 { tapAndWait(onScreen(app, "Delete")) }
+        attachScreenshot(app, "after three deletes")
+        for _ in 0..<11 { tapAndWait(onScreen(app, "Keep")) }
+
+        XCTAssertTrue(element(app, containing: "16 of 50").waitForExistence(timeout: 5))
+        XCTAssertFalse(element(app, containing: "0 MB to clear").exists, "Deleted items join the pile")
+        attachScreenshot(app, "back in feed")
+
+        tapCenter(onScreen(app, "Undo"))
+        XCTAssertTrue(element(app, containing: "15 of 50").waitForExistence(timeout: 3))
+        XCTAssertTrue(element(app, containing: "0 MB to clear").waitForExistence(timeout: 3), "Undo restores the whole batch")
+    }
+
+    @MainActor
+    func testClosingBatchReviewEarlyChangesNothing() throws {
+        let app = launch("-startAt", "batch")
+        XCTAssertTrue(element(app, containing: "15 of 50").waitForExistence(timeout: 5))
+
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        XCTAssertTrue(element(app, containing: "1 of 14").waitForExistence(timeout: 3))
+        tapAndWait(onScreen(app, "Delete"))
+        XCTAssertTrue(element(app, containing: "2 of 14").waitForExistence(timeout: 3))
+        tapCenter(onScreen(app, "Close"))
+
+        XCTAssertTrue(element(app, containing: "of 14").waitForNonExistence(timeout: 3), "The review closes")
+        XCTAssertTrue(element(app, containing: "15 of 50").exists)
+        XCTAssertTrue(element(app, containing: "0 MB to clear").exists)
+    }
+
     // MARK: Helpers
+
+    /// The full-screen batch review leaves the feed's buttons in the tree underneath it.
+    /// Prefer an enabled match (the feed's Undo is disabled behind the review); tapping its
+    /// center skips the scroll-to-visible step that fails on covered elements.
+    private func onScreen(_ app: XCUIApplication, _ label: String) -> XCUIElement {
+        let matches = app.buttons.matching(NSPredicate(format: "label == %@", label)).allElementsBoundByIndex
+        return matches.last { $0.isEnabled } ?? matches.last ?? app.buttons[label]
+    }
+
+    private func tapAndWait(_ button: XCUIElement) {
+        tapCenter(button)
+        // Let the fly-out finish before the next card accepts input.
+        usleep(550_000)
+    }
+
+    private func tapCenter(_ element: XCUIElement) {
+        element.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+    }
+
+    private func attachScreenshot(_ app: XCUIApplication, _ name: String) {
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
 
     private func launch(_ arguments: String...) -> XCUIApplication {
         let app = XCUIApplication()

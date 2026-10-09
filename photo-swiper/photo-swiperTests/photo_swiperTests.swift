@@ -104,3 +104,64 @@ struct FeedViewModelLibraryTests {
         #expect(pruned.title.hasPrefix("\(batch.items.count - 1) "))
     }
 }
+
+@MainActor
+struct BatchReviewTests {
+    private func batchCard(_ vm: FeedViewModel) throws -> ItemBatch {
+        guard case .batch(let batch) = try #require(vm.currentCard) else {
+            Issue.record("Expected a batch card on top")
+            throw CancellationError()
+        }
+        return batch
+    }
+
+    @Test func decidingOneByOneClearsOnlyTheDeletedItems() throws {
+        let vm = FeedViewModel.mock(startingAt: .batch)
+        let start = vm.index
+        let batch = try batchCard(vm)
+        let deleted = Array(batch.items.prefix(3))
+        var outcome = Dictionary(uniqueKeysWithValues: batch.items.map { ($0.id, Decision.keep) })
+        for item in deleted { outcome[item.id] = .delete }
+
+        vm.decideIndividually(outcome)
+
+        #expect(vm.index == start + 1)
+        #expect(Set(vm.pendingItems.map(\.id)) == Set(deleted.map(\.id)))
+        #expect(vm.pendingBytes == deleted.reduce(0) { $0 + $1.bytes })
+        #expect(vm.keptCount == batch.items.count - deleted.count)
+    }
+
+    @Test func itemsLeftOutCountAsLater() throws {
+        let vm = FeedViewModel.mock(startingAt: .batch)
+        let batch = try batchCard(vm)
+
+        vm.decideIndividually([batch.items[0].id: .delete])
+
+        #expect(vm.pendingItems.map(\.id) == [batch.items[0].id])
+        #expect(vm.laterCount == batch.items.count - 1)
+    }
+
+    @Test func undoRestoresTheWholeBatch() throws {
+        let vm = FeedViewModel.mock(startingAt: .batch)
+        let start = vm.index
+        let batch = try batchCard(vm)
+
+        vm.decideIndividually([batch.items[0].id: .delete, batch.items[1].id: .keep])
+        vm.undo()
+
+        #expect(vm.index == start)
+        #expect(vm.currentCard?.id == batch.id)
+        #expect(vm.decisions.isEmpty)
+        #expect(vm.returningCard?.direction == .left)
+    }
+
+    @Test func ignoredWhenTheTopCardIsNotABatch() throws {
+        let vm = FeedViewModel.mock(startingAt: .first)
+        let item = try #require(vm.currentCard?.items.first)
+
+        vm.decideIndividually([item.id: .delete])
+
+        #expect(vm.index == 0)
+        #expect(vm.decisions.isEmpty)
+    }
+}

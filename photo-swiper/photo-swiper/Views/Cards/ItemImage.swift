@@ -22,6 +22,8 @@ struct ItemImage: View {
                 }
             }
             .clipped()
+            // `clipped()` only clips drawing; without this a tall fill steals taps above the card.
+            .contentShape(Rectangle())
             .accessibilityHidden(true)
     }
 }

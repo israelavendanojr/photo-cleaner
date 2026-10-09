@@ -7,6 +7,9 @@ struct CardStackView: View {
     /// How far the top card is toward committing, 0...1.
     @State private var progress = 0.0
     @State private var cardSize = CGSize.zero
+    /// The batch being gone through one by one, and its outcome once finished.
+    @State private var reviewingBatch: ItemBatch?
+    @State private var batchOutcome: [LibraryItem.ID: Decision]?
     @Environment(\.displayScale) private var displayScale
 
     var body: some View {
@@ -24,7 +27,7 @@ struct CardStackView: View {
                         progress: isTop ? $progress : .constant(0),
                         onSwipe: { commit($0, card: card) }
                     ) {
-                        CardContentView(card: card)
+                        CardContentView(card: card) { reviewingBatch = $0 }
                     }
                     .scaleEffect(isTop ? 1 : 0.95 + 0.05 * progress)
                     .offset(y: isTop ? 0 : 12 * (1 - progress))
@@ -39,6 +42,12 @@ struct CardStackView: View {
 
             ActionBar { request = $0 }
                 .disabled(vm.currentCard == nil)
+        }
+        .fullScreenCover(item: $reviewingBatch, onDismiss: flyOutReviewedBatch) { batch in
+            BatchReviewView(batch: batch) { outcome in
+                batchOutcome = outcome
+                reviewingBatch = nil
+            }
         }
         .task(id: preheatWindow) {
             ThumbnailPipeline.shared.preheat(preheatWindow)
@@ -76,7 +85,21 @@ struct CardStackView: View {
         return returning.direction
     }
 
+    /// Once the review cover is gone, the batch card leaves like a normal swipe.
+    private func flyOutReviewedBatch() {
+        guard let outcome = batchOutcome else { return }
+        request = outcome.values.contains(.delete) ? .left : .right
+    }
+
     private func commit(_ direction: SwipeDirection, card: FeedCard) {
+        if let outcome = batchOutcome {
+            batchOutcome = nil
+            withAnimation(DS.Motion.calm) {
+                progress = 0
+                vm.decideIndividually(outcome)
+            }
+            return
+        }
         if direction == .left, vm.bytesToClear(for: card) > 0 {
             Haptics.delete()
         }

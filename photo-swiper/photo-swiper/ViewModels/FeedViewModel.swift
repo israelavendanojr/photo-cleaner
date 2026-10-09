@@ -164,17 +164,14 @@ final class FeedViewModel {
 
     func decide(_ direction: SwipeDirection) {
         guard phase == .feed, let card = currentCard else { return }
-        history.append(Snapshot(index: index, decisions: decisions, marks: marks, cardID: card.id, direction: direction))
+        commit(itemDecisions(for: card, direction: direction), card: card, direction: direction)
+    }
 
-        let outcome = itemDecisions(for: card, direction: direction)
-        decisions.merge(outcome) { _, new in new }
-        returningCard = nil
-
-        let cleared = card.items.filter { outcome[$0.id] == .delete }.reduce(0) { $0 + $1.bytes }
-        if cleared > 0 { showChip(bytes: cleared) }
-
-        index += 1
-        if index >= cards.count { phase = .endOfSession }
+    /// Settles the current batch card from a one-by-one review. Items left out count as "later".
+    func decideIndividually(_ outcome: [LibraryItem.ID: Decision]) {
+        guard phase == .feed, let card = currentCard, case .batch = card else { return }
+        let complete = Dictionary(uniqueKeysWithValues: card.items.map { ($0.id, outcome[$0.id] ?? .later) })
+        commit(complete, card: card, direction: complete.values.contains(.delete) ? .left : .right)
     }
 
     func toggleMark(_ itemID: LibraryItem.ID, in group: SimilarGroup) {
@@ -239,6 +236,20 @@ final class FeedViewModel {
     }
 
     // MARK: Internals
+
+    /// Records per-item decisions for the current card and moves on.
+    /// `direction` is the side the card left from, so undo brings it back the same way.
+    private func commit(_ outcome: [LibraryItem.ID: Decision], card: FeedCard, direction: SwipeDirection) {
+        history.append(Snapshot(index: index, decisions: decisions, marks: marks, cardID: card.id, direction: direction))
+        decisions.merge(outcome) { _, new in new }
+        returningCard = nil
+
+        let cleared = card.items.filter { outcome[$0.id] == .delete }.reduce(0) { $0 + $1.bytes }
+        if cleared > 0 { showChip(bytes: cleared) }
+
+        index += 1
+        if index >= cards.count { phase = .endOfSession }
+    }
 
     /// Per-item outcome of swiping a card in a direction.
     private func itemDecisions(for card: FeedCard, direction: SwipeDirection) -> [LibraryItem.ID: Decision] {
