@@ -31,7 +31,7 @@ final class PhotoKitLibrary: NSObject, PhotoLibraryProviding, @unchecked Sendabl
 
     func stats() async -> LibraryStats {
         let total = lock.withLock { allAssets?.count } ?? 0
-        // Reviewed and freed totals need persistence, which comes later.
+        // Reviewed and freed totals come from saved progress.
         return LibraryStats(totalItems: total, reviewedItems: 0, freedBytes: 0)
     }
 
@@ -70,6 +70,15 @@ final class PhotoKitLibrary: NSObject, PhotoLibraryProviding, @unchecked Sendabl
                 lock.withLock { self.listeners[id] = nil }
             }
         }
+    }
+
+    func missing(from ids: Set<LibraryItem.ID>) async -> Set<LibraryItem.ID> {
+        guard !ids.isEmpty else { return [] }
+        var found = Set<LibraryItem.ID>()
+        PHAsset.fetchAssets(withLocalIdentifiers: Array(ids), options: nil).enumerateObjects { asset, _, _ in
+            found.insert(asset.localIdentifier)
+        }
+        return ids.subtracting(found)
     }
 
     // MARK: Queries

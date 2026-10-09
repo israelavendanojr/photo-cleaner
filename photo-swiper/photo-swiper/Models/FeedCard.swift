@@ -1,7 +1,7 @@
 import Foundation
 
 /// One swipeable card in the feed.
-enum FeedCard: Identifiable, Hashable, Sendable {
+enum FeedCard: Identifiable, Hashable, Sendable, Codable {
     case photo(LibraryItem)
     case video(LibraryItem)
     case similar(SimilarGroup)
@@ -25,7 +25,7 @@ enum FeedCard: Identifiable, Hashable, Sendable {
 }
 
 /// A burst of near-identical shots with one suggested keeper.
-struct SimilarGroup: Identifiable, Hashable, Sendable {
+struct SimilarGroup: Identifiable, Hashable, Sendable, Codable {
     let id: String
     let items: [LibraryItem]
     let bestID: LibraryItem.ID
@@ -37,8 +37,8 @@ struct SimilarGroup: Identifiable, Hashable, Sendable {
 }
 
 /// A group of low-value items cleared or kept together.
-struct ItemBatch: Identifiable, Hashable, Sendable {
-    enum Kind: Hashable, Sendable {
+struct ItemBatch: Identifiable, Hashable, Sendable, Codable {
+    enum Kind: Hashable, Sendable, Codable {
         case screenshots, forwarded
     }
 

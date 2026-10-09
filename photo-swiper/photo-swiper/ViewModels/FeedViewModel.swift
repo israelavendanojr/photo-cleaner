@@ -4,6 +4,7 @@ import Observation
 /// Owns the swipe session: cards, decisions, undo, and the running totals.
 ///
 /// Views read from it and call its intents. Animation and haptics stay in the views.
+/// Every decision is written through to `store` as it happens, so relaunching resumes in place.
 @Observable
 @MainActor
 final class FeedViewModel {
@@ -42,6 +43,8 @@ final class FeedViewModel {
         let marks: [SimilarGroup.ID: Set<LibraryItem.ID>]
         let cardID: FeedCard.ID
         let direction: SwipeDirection
+        /// Saved decisions for the card's items before the swipe; nil where there were none.
+        let stored: [LibraryItem.ID: StoredDecision?]
     }
 
     // MARK: State
@@ -58,7 +61,9 @@ final class FeedViewModel {
     /// Something about the last delete the user should know, e.g. items the system refused.
     var deleteNotice: String?
     /// Applies to the next session built.
-    var skipFavorites = true
+    var skipFavorites = true {
+        didSet { store.skipFavorites = skipFavorites }
+    }
 
     /// Similar-group overrides. Missing means "everything but the best pick".
     private var marks: [SimilarGroup.ID: Set<LibraryItem.ID>] = [:]
@@ -67,23 +72,47 @@ final class FeedViewModel {
     private var carriedPending: [LibraryItem] = []
     /// Items deleted, gone from the library, or undeletable. They stay decided but are no longer pending.
     private var settledIDs: Set<LibraryItem.ID> = []
+    /// The user is done with this session ("Done for now" or confirmed); relaunch shows caught-up.
+    private var finished = false
+    /// Totals the library reports itself; saved progress is added on top.
+    private var libraryStats = LibraryStats(totalItems: 0, reviewedItems: 0, freedBytes: 0)
     private var chipTask: Task<Void, Never>?
     private var changesTask: Task<Void, Never>?
 
     private let library: any PhotoLibraryProviding
     private let builder: any FeedBuilding
+    private let store: any ProgressStoring
+    private let now: () -> Date
 
-    init(library: any PhotoLibraryProviding, builder: any FeedBuilding) {
+    init(
+        library: any PhotoLibraryProviding,
+        builder: any FeedBuilding,
+        store: any ProgressStoring = InMemoryProgressStore(),
+        now: @escaping () -> Date = Date.init
+    ) {
         self.library = library
         self.builder = builder
+        self.store = store
+        self.now = now
+        skipFavorites = store.skipFavorites
     }
 
     /// Starts already loaded. Used by previews and launch-time setup.
-    init(library: any PhotoLibraryProviding, builder: any FeedBuilding, session: Session, stats: LibraryStats) {
+    init(
+        library: any PhotoLibraryProviding,
+        builder: any FeedBuilding,
+        store: any ProgressStoring = InMemoryProgressStore(),
+        session: Session,
+        stats: LibraryStats
+    ) {
         self.library = library
         self.builder = builder
-        self.stats = stats
+        self.store = store
+        now = Date.init
+        skipFavorites = store.skipFavorites
+        libraryStats = stats
         apply(session)
+        refreshTotals()
     }
 
     // MARK: Derived
@@ -113,10 +142,10 @@ final class FeedViewModel {
     var laterCount: Int { decisions.values.filter { $0 == .later }.count }
 
     /// "Later" doesn't count as reviewed.
-    private var reviewedInSession: Int { decisions.values.filter { $0 != .later }.count }
-    var libraryReviewedCount: Int { stats.reviewedItems + reviewedInSession }
+    var libraryReviewedCount: Int { stats.reviewedItems }
     var libraryReviewedFraction: Double {
-        stats.totalItems == 0 ? 0 : Double(libraryReviewedCount) / Double(stats.totalItems)
+        // Reviewed items deleted elsewhere still count, so this can overshoot a shrinking library.
+        stats.totalItems == 0 ? 0 : min(1, Double(libraryReviewedCount) / Double(stats.totalItems))
     }
     var freedBytes: Int64 { stats.freedBytes }
 
@@ -157,9 +186,14 @@ final class FeedViewModel {
             return
         }
         phase = .loading
-        stats = await library.stats()
+        libraryStats = await library.stats()
         observeLibraryChanges()
-        await loadSession(number: 1)
+        if let saved = store.loadSession() {
+            await restore(saved)
+        } else {
+            await loadSession(number: store.lastSessionNumber() + 1)
+        }
+        refreshTotals()
     }
 
     func decide(_ direction: SwipeDirection) {
@@ -178,6 +212,7 @@ final class FeedViewModel {
         var marked = markedForClearing(in: group)
         if marked.contains(itemID) { marked.remove(itemID) } else { marked.insert(itemID) }
         marks[group.id] = marked
+        saveProgress()
     }
 
     func undo() {
@@ -185,9 +220,12 @@ final class FeedViewModel {
         index = last.index
         decisions = last.decisions
         marks = last.marks
+        store.save(last.stored)
         returningCard = ReturningCard(cardID: last.cardID, direction: last.direction)
         dismissChip()
         phase = .feed
+        saveProgress()
+        refreshTotals(includingFreed: false)
     }
 
     /// Deletes everything pending. Returns false if nothing was deleted, including when
@@ -207,8 +245,8 @@ final class FeedViewModel {
         }
 
         // Gone or undeletable items can't be cleared, so they leave the pile without counting as freed.
-        settledIDs.formUnion(outcome.missing)
-        settledIDs.formUnion(outcome.undeletable)
+        settle(Set(outcome.missing), as: .gone)
+        settle(Set(outcome.undeletable), as: .undeletable)
         if !outcome.undeletable.isEmpty {
             let n = outcome.undeletable.count
             deleteNotice = "\(n) \(n == 1 ? "item" : "items") can't be deleted from this app and stayed in your library."
@@ -222,13 +260,13 @@ final class FeedViewModel {
     }
 
     func startNewSession() async {
-        stats.reviewedItems += reviewedInSession
-        carriedPending = pendingItems
-        await loadSession(number: (session?.number ?? 0) + 1)
+        await loadSession(number: max(session?.number ?? 0, store.lastSessionNumber()) + 1)
     }
 
     func finishForNow() {
+        finished = true
         phase = .caughtUp
+        saveProgress()
     }
 
     func clearReturningCard() {
@@ -240,15 +278,26 @@ final class FeedViewModel {
     /// Records per-item decisions for the current card and moves on.
     /// `direction` is the side the card left from, so undo brings it back the same way.
     private func commit(_ outcome: [LibraryItem.ID: Decision], card: FeedCard, direction: SwipeDirection) {
-        history.append(Snapshot(index: index, decisions: decisions, marks: marks, cardID: card.id, direction: direction))
+        let ids = card.items.map(\.id)
+        let before = store.decisions(for: Set(ids))
+        let stored = Dictionary(uniqueKeysWithValues: ids.map { ($0, before[$0]) })
+        history.append(Snapshot(index: index, decisions: decisions, marks: marks, cardID: card.id, direction: direction, stored: stored))
         decisions.merge(outcome) { _, new in new }
         returningCard = nil
+
+        let decidedAt = now()
+        let sessionNumber = session?.number ?? 0
+        store.save(Dictionary(uniqueKeysWithValues: card.items.compactMap { item in
+            outcome[item.id].map { (item.id, StoredDecision(decision: $0, decidedAt: decidedAt, sessionNumber: sessionNumber, item: item)) }
+        }))
 
         let cleared = card.items.filter { outcome[$0.id] == .delete }.reduce(0) { $0 + $1.bytes }
         if cleared > 0 { showChip(bytes: cleared) }
 
         index += 1
         if index >= cards.count { phase = .endOfSession }
+        saveProgress()
+        refreshTotals(includingFreed: false)
     }
 
     /// Per-item outcome of swiping a card in a direction.
@@ -269,12 +318,21 @@ final class FeedViewModel {
 
     private func applyConfirmedDelete(_ items: [LibraryItem]) {
         let bytes = items.reduce(0) { $0 + $1.bytes }
-        stats.freedBytes += bytes
+        settle(Set(items.map(\.id)), as: .deleted)
         celebration = Celebration(bytes: bytes, count: items.count)
-        settledIDs.formUnion(items.map(\.id))
         carriedPending = []
         history.removeAll()
+        finished = true
         phase = .celebrated
+        saveProgress()
+        refreshTotals()
+    }
+
+    /// Takes items out of the pile for good, here and in the store.
+    private func settle(_ ids: Set<LibraryItem.ID>, as settlement: Settlement) {
+        guard !ids.isEmpty else { return }
+        settledIDs.formUnion(ids)
+        store.settle(ids, as: settlement)
     }
 
     private func observeLibraryChanges() {
@@ -291,15 +349,17 @@ final class FeedViewModel {
         // Our own confirmed deletes come back through here too; they're already settled.
         let gone = ids.subtracting(settledIDs)
         guard !gone.isEmpty else { return }
-        settledIDs.formUnion(gone)
+        settle(gone, as: .gone)
         guard var current = session, current.cards.count > index + 1 else { return }
         current.cards = Array(current.cards.prefix(index + 1))
             + current.cards.dropFirst(index + 1).compactMap { $0.removing(gone) }
         session = current
+        saveProgress()
     }
 
     private func loadSession(number: Int) async {
-        let next = await builder.makeSession(number: number, options: FeedOptions(skipFavorites: skipFavorites))
+        let options = FeedOptions(skipFavorites: skipFavorites, excluding: store.excludedFromNewSession(asOf: now()))
+        let next = await builder.makeSession(number: number, options: options)
         apply(next)
     }
 
@@ -309,10 +369,60 @@ final class FeedViewModel {
         decisions = [:]
         marks = [:]
         history = []
+        finished = false
+        let ids = Set(next.items.map(\.id))
+        carriedPending = store.pile().filter { !ids.contains($0.id) }
         celebration = nil
         returningCard = nil
         dismissChip()
         phase = next.cards.isEmpty ? .caughtUp : .feed
+        saveProgress()
+    }
+
+    /// Picks up a saved session, dropping anything deleted outside the app while it was closed.
+    private func restore(_ saved: SavedSession) async {
+        var restored = saved.session
+        var position = saved.index
+        let gone = await library.missing(from: Set(restored.items.map(\.id)).union(store.pile().map(\.id)))
+        if !gone.isEmpty {
+            // Undo history starts empty, so earlier cards can be pruned too.
+            var cards: [FeedCard] = []
+            position = 0
+            for (offset, card) in restored.cards.enumerated() {
+                guard let kept = card.removing(gone) else { continue }
+                cards.append(kept)
+                if offset < saved.index { position += 1 }
+            }
+            restored.cards = cards
+            store.settle(gone, as: .gone)
+        }
+
+        let ids = Set(restored.items.map(\.id))
+        let records = store.decisions(for: ids).filter { $0.value.sessionNumber == restored.number }
+        session = restored
+        index = position
+        marks = saved.marks
+        decisions = records.mapValues(\.decision)
+        settledIDs = Set(records.filter { $0.value.settlement != nil }.keys).union(gone)
+        carriedPending = store.pile().filter { !ids.contains($0.id) }
+        finished = saved.finished
+        history = []
+        celebration = nil
+        returningCard = nil
+        phase = if finished || cards.isEmpty { .caughtUp } else if index < cards.count { .feed } else { .endOfSession }
+        if !gone.isEmpty { saveProgress() }
+    }
+
+    private func saveProgress() {
+        guard let session else { return }
+        store.saveSession(SavedSession(session: session, index: index, marks: marks, finished: finished))
+    }
+
+    /// Recomputes library totals from saved progress. The freed sum only changes on confirm.
+    private func refreshTotals(includingFreed: Bool = true) {
+        stats.totalItems = libraryStats.totalItems
+        stats.reviewedItems = libraryStats.reviewedItems + store.reviewedCount()
+        if includingFreed { stats.freedBytes = libraryStats.freedBytes + store.freedBytes() }
     }
 
     private func showChip(bytes: Int64) {

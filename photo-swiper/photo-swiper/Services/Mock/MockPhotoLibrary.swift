@@ -23,4 +23,8 @@ struct MockPhotoLibrary: PhotoLibraryProviding {
     func vanishedItems() -> AsyncStream<Set<LibraryItem.ID>> {
         AsyncStream { $0.finish() }
     }
+
+    func missing(from ids: Set<LibraryItem.ID>) async -> Set<LibraryItem.ID> {
+        []
+    }
 }

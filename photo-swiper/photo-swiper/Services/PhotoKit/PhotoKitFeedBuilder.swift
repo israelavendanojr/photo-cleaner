@@ -5,15 +5,14 @@ import Photos
 /// Builds sessions from the real library, newest first.
 ///
 /// Phase 1 cards are single photos, videos, and weekly screenshot batches. Similar shots and
-/// blur/accidental flags need on-device ML and come later. Anything shown during this run is
-/// skipped by later sessions.
+/// blur/accidental flags need on-device ML and come later. Items in `FeedOptions.excluding`,
+/// such as ones already decided, are skipped.
 actor PhotoKitFeedBuilder: FeedBuilding {
     static let cardsPerSession = 20
     /// Fewer screenshots than this in a week show up as ordinary photo cards.
     static let minBatch = 3
     static let maxBatch = 40
 
-    private var seenIDs: Set<LibraryItem.ID> = []
     private let places = PlaceNamer()
 
     private enum Slot {
@@ -22,14 +21,13 @@ actor PhotoKitFeedBuilder: FeedBuilding {
     }
 
     func makeSession(number: Int, options: FeedOptions) async -> Session {
-        let (slots, weeks) = pickSlots(skipFavorites: options.skipFavorites)
+        let (slots, weeks) = pickSlots(options)
         let assets = slots.flatMap { slot -> [PHAsset] in
             switch slot {
             case .single(let asset): [asset]
             case .screenshots(let week): weeks[week] ?? []
             }
         }
-        seenIDs.formUnion(assets.map(\.localIdentifier))
 
         let locations = Dictionary(
             assets.compactMap { asset in asset.location.map { (asset.localIdentifier, $0) } },
@@ -63,8 +61,8 @@ actor PhotoKitFeedBuilder: FeedBuilding {
 
     /// Walks the library newest first until the session is full. Screenshots are pulled out into
     /// one slot per calendar week, placed where that week's newest screenshot appears.
-    private func pickSlots(skipFavorites: Bool) -> ([Slot], [Date: [PHAsset]]) {
-        let result = PHAsset.fetchAssets(with: PhotoKitLibrary.fetchOptions(skipFavorites: skipFavorites))
+    private func pickSlots(_ options: FeedOptions) -> ([Slot], [Date: [PHAsset]]) {
+        let result = PHAsset.fetchAssets(with: PhotoKitLibrary.fetchOptions(skipFavorites: options.skipFavorites))
         let calendar = Calendar.current
         var slots: [Slot] = []
         var weeks: [Date: [PHAsset]] = [:]
@@ -74,7 +72,7 @@ actor PhotoKitFeedBuilder: FeedBuilding {
         while index < result.count, cardCount < Self.cardsPerSession {
             let asset = result.object(at: index)
             index += 1
-            guard !seenIDs.contains(asset.localIdentifier) else { continue }
+            guard !options.excluding.contains(asset.localIdentifier) else { continue }
 
             guard AssetMapper.isScreenshot(asset) else {
                 slots.append(.single(asset))

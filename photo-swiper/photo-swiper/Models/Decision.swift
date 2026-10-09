@@ -1,7 +1,7 @@
 import Foundation
 
 /// What the user decided for a single item.
-enum Decision: Hashable, Sendable {
+enum Decision: String, Hashable, Sendable, Codable {
     /// Pending deletion; nothing is removed until the session is confirmed.
     case delete
     case keep

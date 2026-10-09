@@ -1,7 +1,7 @@
 import Foundation
 
 /// A bounded run of cards the user works through before confirming.
-struct Session: Identifiable, Sendable {
+struct Session: Identifiable, Hashable, Sendable, Codable {
     let number: Int
     /// Upcoming cards can be pruned when items vanish from the library.
     var cards: [FeedCard]
@@ -24,4 +24,6 @@ struct LibraryStats: Sendable {
 /// User preferences that shape how feeds are built.
 struct FeedOptions: Sendable {
     var skipFavorites = true
+    /// Items a session must not offer, e.g. ones already decided.
+    var excluding: Set<LibraryItem.ID> = []
 }

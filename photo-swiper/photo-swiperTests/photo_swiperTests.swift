@@ -10,15 +10,27 @@ import Testing
 @testable import photo_swiper
 
 /// A library whose access, delete results, and outside changes the test controls.
-private final class FakeLibrary: PhotoLibraryProviding, @unchecked Sendable {
+final class FakeLibrary: PhotoLibraryProviding, @unchecked Sendable {
     var access = LibraryAccess.full
     var onDelete: ([LibraryItem]) throws -> DeletionOutcome = { DeletionOutcome(deleted: $0.map(\.id)) }
-    let (changes, changesContinuation) = AsyncStream.makeStream(of: Set<LibraryItem.ID>.self)
+    /// Items gone from the library, as reported to launch-time reconciliation.
+    var gone: Set<LibraryItem.ID> = []
+    private var listeners: [AsyncStream<Set<LibraryItem.ID>>.Continuation] = []
 
     func requestAccess() async -> LibraryAccess { access }
     func stats() async -> LibraryStats { LibraryStats(totalItems: 100, reviewedItems: 0, freedBytes: 0) }
     func delete(_ items: [LibraryItem]) async throws -> DeletionOutcome { try onDelete(items) }
-    func vanishedItems() -> AsyncStream<Set<LibraryItem.ID>> { changes }
+    func vanishedItems() -> AsyncStream<Set<LibraryItem.ID>> {
+        let (stream, continuation) = AsyncStream.makeStream(of: Set<LibraryItem.ID>.self)
+        listeners.append(continuation)
+        return stream
+    }
+    func missing(from ids: Set<LibraryItem.ID>) async -> Set<LibraryItem.ID> { ids.intersection(gone) }
+
+    /// Simulates items deleted outside the app while it runs.
+    func vanish(_ ids: Set<LibraryItem.ID>) {
+        for listener in listeners { listener.yield(ids) }
+    }
 }
 
 @MainActor
@@ -92,7 +104,7 @@ struct FeedViewModelLibraryTests {
         guard case .batch(let batch) = vm.cards[batchIndex] else { return }
         let countBefore = vm.cards.count
 
-        library.changesContinuation.yield([pendingID, current.items[0].id, upcomingPhoto.items[0].id, batch.items[0].id])
+        library.vanish([pendingID, current.items[0].id, upcomingPhoto.items[0].id, batch.items[0].id])
         await settle { vm.cards.count < countBefore }
 
         #expect(vm.pendingItems.isEmpty)
@@ -163,5 +175,13 @@ struct BatchReviewTests {
 
         #expect(vm.index == 0)
         #expect(vm.decisions.isEmpty)
+    }
+}
+
+struct SessionCodingTests {
+    @Test func sessionsRoundTripThroughJSON() throws {
+        let session = MockFeedBuilder().makeSessionNow(number: 2, options: FeedOptions(skipFavorites: false))
+        let decoded = try JSONDecoder().decode(Session.self, from: JSONEncoder().encode(session))
+        #expect(decoded == session)
     }
 }
