@@ -7,6 +7,9 @@ struct CardStackView: View {
     /// How far the top card is toward committing, 0...1.
     @State private var progress = 0.0
     @State private var cardSize = CGSize.zero
+    /// Cards already decided but still flying off. They stay in the stack until the animation
+    /// ends, so the next card is live the moment the previous one is released.
+    @State private var departing: [FeedCard] = []
     /// The batch being gone through one by one, and its outcome once finished.
     @State private var reviewingBatch: ItemBatch?
     @State private var batchOutcome: [LibraryItem.ID: Decision]?
@@ -23,13 +26,16 @@ struct CardStackView: View {
                 // between "behind" and "on top" (promotion after a swipe, demotion on undo).
                 ForEach(visibleCards) { card in
                     let isTop = card.id == vm.currentCard?.id
+                    let isDeparting = !isTop && departing.contains { $0.id == card.id }
+                    let isFront = isTop || isDeparting
                     SwipeableCard(
                         isEnabled: isTop,
                         entrance: entrance(for: card),
                         label: { vm.swipeLabel($0, for: card) },
                         request: isTop ? $request : .constant(nil),
                         progress: isTop ? $progress : .constant(0),
-                        onSwipe: { commit($0, card: card) }
+                        onRelease: { release($0, card: card) },
+                        onSwipe: { finish($0, card: card) }
                     ) {
                         CardContentView(
                             card: card,
@@ -38,11 +44,11 @@ struct CardStackView: View {
                             onOpenPhoto: { previewingPhoto = $0 }
                         )
                     }
-                    .scaleEffect(isTop ? 1 : 0.95 + 0.05 * progress)
-                    .offset(y: isTop ? 0 : 12 * (1 - progress))
+                    .scaleEffect(isFront ? 1 : 0.95 + 0.05 * progress)
+                    .offset(y: isFront ? 0 : 12 * (1 - progress))
                     .allowsHitTesting(isTop)
-                    .zIndex(isTop ? 1 : 0)
-                    .transition(isTop ? .identity : .opacity.combined(with: .scale(scale: 0.92)))
+                    .zIndex(isDeparting ? 2 : isTop ? 1 : 0)
+                    .transition(isFront ? .identity : .opacity.combined(with: .scale(scale: 0.92)))
                 }
             }
             .onGeometryChange(for: CGSize.self, of: \.size) { cardSize = $0 }
@@ -63,6 +69,11 @@ struct CardStackView: View {
         }
         .fullScreenCover(item: $previewingPhoto) { item in
             PhotoPreviewView(item: item)
+        }
+        .onChange(of: vm.returningCard) { _, returning in
+            // Undo can bring back a card that is still flying; it's the top card again.
+            guard let returning else { return }
+            departing.removeAll { $0.id == returning.cardID }
         }
         .task(id: preheatWindow) {
             ThumbnailPipeline.shared.preheat(preheatWindow)
@@ -92,7 +103,8 @@ struct CardStackView: View {
     }
 
     private var visibleCards: [FeedCard] {
-        [vm.currentCard, vm.nextCard].compactMap { $0 }
+        let stack = [vm.currentCard, vm.nextCard].compactMap { $0 }
+        return departing.filter { card in !stack.contains { $0.id == card.id } } + stack
     }
 
     private func entrance(for card: FeedCard) -> SwipeDirection? {
@@ -104,6 +116,22 @@ struct CardStackView: View {
     private func flyOutReviewedBatch() {
         guard let outcome = batchOutcome else { return }
         request = outcome.values.contains(.delete) ? .left : .right
+    }
+
+    /// Decides as soon as the card is released, unless it's the last one: that one finishes
+    /// flying before the session ends so the end screen doesn't cut it off.
+    private func release(_ direction: SwipeDirection, card: FeedCard) {
+        guard vm.nextCard != nil else { return }
+        departing.append(card)
+        commit(direction, card: card)
+    }
+
+    private func finish(_ direction: SwipeDirection, card: FeedCard) {
+        if let i = departing.firstIndex(where: { $0.id == card.id }) {
+            departing.remove(at: i)
+        } else {
+            commit(direction, card: card)
+        }
     }
 
     private func commit(_ direction: SwipeDirection, card: FeedCard) {

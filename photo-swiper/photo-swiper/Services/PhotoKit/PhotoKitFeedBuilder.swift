@@ -8,7 +8,7 @@ import Photos
 /// blur/accidental flags need on-device ML and come later. Anything shown during this run is
 /// skipped by later sessions.
 actor PhotoKitFeedBuilder: FeedBuilding {
-    static let cardsPerSession = 50
+    static let cardsPerSession = 20
     /// Fewer screenshots than this in a week show up as ordinary photo cards.
     static let minBatch = 3
     static let maxBatch = 40

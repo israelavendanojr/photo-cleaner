@@ -92,7 +92,7 @@ final class FeedViewModel {
     var currentCard: FeedCard? { cards.indices.contains(index) ? cards[index] : nil }
     var nextCard: FeedCard? { cards.indices.contains(index + 1) ? cards[index + 1] : nil }
 
-    /// 1-based position shown as "12 of 50".
+    /// 1-based position shown as "12 of 20".
     var position: Int { min(index + 1, cards.count) }
     var sessionProgress: Double { cards.isEmpty ? 0 : Double(position) / Double(cards.count) }
 
