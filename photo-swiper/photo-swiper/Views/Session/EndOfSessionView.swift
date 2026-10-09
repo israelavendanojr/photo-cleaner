@@ -64,7 +64,7 @@ struct EndOfSessionView: View {
 
     private var summary: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("Session complete · \(vm.cards.count) photos")
+            Text("Session complete · \(vm.photoTotal) photos")
                 .font(.footnote)
                 .foregroundStyle(DS.Palette.secondary)
             Text(isCelebrated ? "Lighter already." : "A little lighter.")

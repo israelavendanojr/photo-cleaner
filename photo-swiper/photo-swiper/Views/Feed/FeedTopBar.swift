@@ -39,11 +39,11 @@ struct FeedTopBar: View {
 
     private var progress: some View {
         VStack(spacing: 6) {
-            Text("\(vm.position) of \(vm.cards.count)")
+            Text("\(vm.photosReviewed) of \(vm.photoTotal)")
                 .font(.footnote)
                 .monospacedDigit()
                 .foregroundStyle(DS.Palette.secondary)
-                .contentTransition(.numericText(value: Double(vm.position)))
+                .contentTransition(.numericText(value: Double(vm.photosReviewed)))
             ProgressLine(value: vm.sessionProgress)
                 .frame(width: 96)
             if let percent = vm.scanningPercent {

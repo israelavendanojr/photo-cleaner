@@ -8,7 +8,7 @@ import Photos
 /// blur/accidental flags need on-device ML and come later. Items in `FeedOptions.excluding`,
 /// such as ones already decided, are skipped.
 actor PhotoKitFeedBuilder: FeedBuilding {
-    static let cardsPerSession = 20
+    static let photosPerSession = 20
     /// Fewer screenshots than this in a week show up as ordinary photo cards.
     static let minBatch = 3
     static let maxBatch = 40
@@ -59,39 +59,48 @@ actor PhotoKitFeedBuilder: FeedBuilding {
         return Session(number: number, cards: cards, scanPercentAtStart: nil)
     }
 
-    /// Walks the library newest first until the session is full. Screenshots are pulled out into
-    /// one slot per calendar week, placed where that week's newest screenshot appears.
+    /// Walks the library newest first until the session has enough photos. Screenshots are pulled
+    /// out into one slot per calendar week, placed where that week's newest screenshot appears.
+    /// The oldest week's screenshots are then gathered in full, so its bundle can push the session
+    /// past `photosPerSession`.
     private func pickSlots(_ options: FeedOptions) -> ([Slot], [Date: [PHAsset]]) {
         let result = PHAsset.fetchAssets(with: PhotoKitLibrary.fetchOptions(skipFavorites: options.skipFavorites))
         let calendar = Calendar.current
         var slots: [Slot] = []
         var weeks: [Date: [PHAsset]] = [:]
-        var cardCount = 0
+        var oldestWeek: Date?
+        var photoCount = 0
         var index = 0
 
-        while index < result.count, cardCount < Self.cardsPerSession {
+        while index < result.count {
             let asset = result.object(at: index)
             index += 1
             guard !options.excluding.contains(asset.localIdentifier) else { continue }
+            let full = photoCount >= Self.photosPerSession
+            let isScreenshot = AssetMapper.isScreenshot(asset)
 
-            guard AssetMapper.isScreenshot(asset) else {
+            guard isScreenshot else {
+                if full { continue }
                 slots.append(.single(asset))
-                cardCount += 1
+                photoCount += 1
                 continue
             }
             let date = asset.creationDate ?? .distantPast
             let week = calendar.dateInterval(of: .weekOfYear, for: date)?.start ?? date
+            if full {
+                // Once full, only top up the week still in progress; anything older waits.
+                guard let oldestWeek, week >= oldestWeek else { break }
+                guard week == oldestWeek else { continue }
+            }
             let shots = weeks[week, default: []]
             // Overflow waits for a later session.
             guard shots.count < Self.maxBatch else { continue }
-            if shots.isEmpty { slots.append(.screenshots(week: week)) }
-            weeks[week] = shots + [asset]
-            // Below the batch minimum each screenshot is its own card; reaching it collapses them into one.
-            switch shots.count + 1 {
-            case ..<Self.minBatch: cardCount += 1
-            case Self.minBatch: cardCount -= Self.minBatch - 2
-            default: break
+            if shots.isEmpty {
+                slots.append(.screenshots(week: week))
+                oldestWeek = week
             }
+            weeks[week] = shots + [asset]
+            photoCount += 1
         }
         return (slots, weeks)
     }

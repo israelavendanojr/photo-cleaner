@@ -3,7 +3,8 @@ import Foundation
 /// Builds a 20-card session from the bundled mock images.
 ///
 /// Card positions mirror the reference demo: videos at 3 and 11, similar shots
-/// at 6 and 15, batches at 8 and 18, single photos everywhere else.
+/// at 6 and 15, batches at 8 and 18, single photos everywhere else. That's 51 photos,
+/// more than a real session's target, so the demo shows off every card kind.
 struct MockFeedBuilder: FeedBuilding {
     static let cardsPerSession = 20
 

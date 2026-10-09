@@ -12,6 +12,8 @@ struct Session: Identifiable, Hashable, Sendable, Codable {
 
     /// Every item across all cards, in feed order.
     var items: [LibraryItem] { cards.flatMap(\.items) }
+    /// Photos across all cards; a bundle counts every item in it.
+    var photoCount: Int { cards.reduce(0) { $0 + $1.items.count } }
 }
 
 /// Library-wide numbers that live outside any one session.
