@@ -5,7 +5,7 @@ import Foundation
 /// Card positions mirror the reference demo: videos at 7 and 24, similar shots
 /// at 12 and 31, batches at 14 and 36, single photos everywhere else.
 struct MockFeedBuilder: FeedBuilding {
-    static let cardsPerSession = 50
+    static let cardsPerSession = 20
 
     func makeSession(number: Int, options: FeedOptions) async -> Session {
         makeSessionNow(number: number, options: options)
