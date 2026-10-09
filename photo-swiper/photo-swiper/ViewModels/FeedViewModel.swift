@@ -39,12 +39,12 @@ final class FeedViewModel {
 
     private struct Snapshot {
         let index: Int
-        var decisions: [LibraryItem.ID: Decision]
-        var marks: [SimilarGroup.ID: Set<LibraryItem.ID>]
+        let decisions: [LibraryItem.ID: Decision]
+        let marks: [SimilarGroup.ID: Set<LibraryItem.ID>]
         let cardID: FeedCard.ID
         let direction: SwipeDirection
         /// Saved decisions for the card's items before the swipe; nil where there were none.
-        var stored: [LibraryItem.ID: StoredDecision?]
+        let stored: [LibraryItem.ID: StoredDecision?]
     }
 
     // MARK: State
@@ -228,59 +228,28 @@ final class FeedViewModel {
         refreshTotals(includingFreed: false)
     }
 
-    /// Takes an item out of the pile by keeping it instead, here, in the store, and in undo history.
-    func keepInstead(_ item: LibraryItem) {
-        guard pendingItems.contains(where: { $0.id == item.id }) else { return }
-        if decisions[item.id] == .delete {
-            decisions[item.id] = .keep
-        } else {
-            carriedPending.removeAll { $0.id == item.id }
-        }
-        let sessionNumber = store.decisions(for: [item.id])[item.id]?.sessionNumber ?? session?.number ?? 0
-        store.save([item.id: StoredDecision(decision: .keep, decidedAt: now(), sessionNumber: sessionNumber, item: item)])
-
-        // Undoing a later swipe must not put it back in the pile.
-        for i in history.indices {
-            if history[i].decisions[item.id] == .delete { history[i].decisions[item.id] = .keep }
-            if case .some(.some(var record)) = history[i].stored[item.id], record.decision == .delete {
-                record.decision = .keep
-                history[i].stored[item.id] = record
-            }
-            for group in history[i].marks.keys { history[i].marks[group]?.remove(item.id) }
-        }
-        for group in marks.keys { marks[group]?.remove(item.id) }
-        saveProgress()
-        refreshTotals(includingFreed: false)
-    }
-
     /// Deletes everything pending. Returns false if nothing was deleted, including when
     /// the user cancels the system prompt (everything then stays pending).
     @discardableResult
     func confirmDelete() async -> Bool {
-        let items = pendingItems
-        guard !items.isEmpty else { return false }
-        let outcome: DeletionOutcome
-        do {
-            outcome = try await library.delete(items)
-        } catch DeletionError.cancelled {
-            return false
-        } catch {
-            deleteNotice = "Couldn't delete right now. Nothing was removed."
-            return false
-        }
-
-        // Gone or undeletable items can't be cleared, so they leave the pile without counting as freed.
-        settle(Set(outcome.missing), as: .gone)
-        settle(Set(outcome.undeletable), as: .undeletable)
-        if !outcome.undeletable.isEmpty {
-            let n = outcome.undeletable.count
-            deleteNotice = "\(n) \(n == 1 ? "item" : "items") can't be deleted from this app and stayed in your library."
-        }
-
-        let deleted = Set(outcome.deleted)
-        let deletedItems = items.filter { deleted.contains($0.id) }
-        guard !deletedItems.isEmpty else { return false }
+        guard let deletedItems = await delete(pendingItems) else { return false }
         applyConfirmedDelete(deletedItems)
+        return true
+    }
+
+    /// Deletes some of the pile right away, from the pending screen. The session carries on,
+    /// and the rest stays pending. Returns false if nothing was deleted.
+    @discardableResult
+    func deleteNow(_ items: [LibraryItem]) async -> Bool {
+        let pending = Set(pendingItems.map(\.id))
+        guard let deletedItems = await delete(items.filter { pending.contains($0.id) }) else { return false }
+        let ids = Set(deletedItems.map(\.id))
+        settle(ids, as: .deleted)
+        carriedPending.removeAll { ids.contains($0.id) }
+        // A deleted photo can't be swiped again.
+        history.removeAll()
+        saveProgress()
+        refreshTotals()
         return true
     }
 
@@ -339,6 +308,33 @@ final class FeedViewModel {
         case (.left, _):
             return Dictionary(uniqueKeysWithValues: ids.map { ($0, .delete) })
         }
+    }
+
+    /// Asks the library to delete these and settles the ones that can't be. Returns what was
+    /// actually deleted, or nil if nothing was (cancelled, failed, or none deletable).
+    private func delete(_ items: [LibraryItem]) async -> [LibraryItem]? {
+        guard !items.isEmpty else { return nil }
+        let outcome: DeletionOutcome
+        do {
+            outcome = try await library.delete(items)
+        } catch DeletionError.cancelled {
+            return nil
+        } catch {
+            deleteNotice = "Couldn't delete right now. Nothing was removed."
+            return nil
+        }
+
+        // Gone or undeletable items can't be cleared, so they leave the pile without counting as freed.
+        settle(Set(outcome.missing), as: .gone)
+        settle(Set(outcome.undeletable), as: .undeletable)
+        if !outcome.undeletable.isEmpty {
+            let n = outcome.undeletable.count
+            deleteNotice = "\(n) \(n == 1 ? "item" : "items") can't be deleted from this app and stayed in your library."
+        }
+
+        let deleted = Set(outcome.deleted)
+        let deletedItems = items.filter { deleted.contains($0.id) }
+        return deletedItems.isEmpty ? nil : deletedItems
     }
 
     private func applyConfirmedDelete(_ items: [LibraryItem]) {

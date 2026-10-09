@@ -94,22 +94,39 @@ struct FeedViewModelLibraryTests {
         #expect(vm.deleteNotice != nil)
     }
 
-    @Test func keepingInsteadTakesAnItemOutOfThePileEvenAcrossUndo() async throws {
+    @Test func deletingNowClearsOnlyThoseAndKeepsTheSessionGoing() async throws {
+        let vm = await started()
+        for _ in 0..<3 { vm.decide(.left) }
+        let deleted = try #require(vm.pendingItems.first)
+        var asked: [LibraryItem.ID] = []
+        library.onDelete = { items in
+            asked = items.map(\.id)
+            return DeletionOutcome(deleted: items.map(\.id))
+        }
+
+        #expect(await vm.deleteNow([deleted]))
+        #expect(asked == [deleted.id], "Only the chosen photos are deleted")
+        #expect(vm.pendingItems.count == 2)
+        #expect(!vm.pendingItems.contains { $0.id == deleted.id })
+        #expect(vm.freedBytes == deleted.bytes)
+        #expect(vm.phase == .feed)
+        #expect(vm.celebration == nil)
+        #expect(vm.canUndo == false, "A deleted photo can't be swiped back")
+
+        let rest = vm.pendingItems
+        #expect(await vm.confirmDelete())
+        #expect(asked == rest.map(\.id))
+        #expect(vm.celebration?.count == 2)
+    }
+
+    @Test func cancellingDeleteNowKeepsThemPending() async throws {
+        library.onDelete = { _ in throw DeletionError.cancelled }
         let vm = await started()
         vm.decide(.left)
-        vm.decide(.left)
-        let kept = try #require(vm.pendingItems.first)
-        let other = try #require(vm.pendingItems.last)
 
-        vm.keepInstead(kept)
-
-        #expect(vm.pendingItems.map(\.id) == [other.id])
-        #expect(vm.pendingBytes == other.bytes)
-        #expect(vm.decisions[kept.id] == .keep)
-
-        vm.undo()
-        #expect(vm.pendingItems.isEmpty, "Undoing a later swipe doesn't bring it back")
-        #expect(vm.decisions[kept.id] == .keep)
+        #expect(await vm.deleteNow(vm.pendingItems) == false)
+        #expect(vm.pendingItems.count == 1)
+        #expect(vm.freedBytes == 0)
     }
 
     @Test func itemsDeletedOutsideTheAppLeaveUpcomingCardsAndThePile() async throws {

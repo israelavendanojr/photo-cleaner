@@ -2,14 +2,11 @@ import SwiftUI
 
 /// Full-screen view of a photo card, with pinch and double-tap zoom for checking sharpness.
 ///
-/// Only for looking: decisions still happen on the card once this closes, except from the
-/// pending pile, which passes `onKeep` to offer taking the photo back out. The card's blur
+/// Only for looking: decisions still happen on the card once this closes. The card's blur
 /// for flagged photos is dropped here, since this is where you judge whether it's blurry.
 struct PhotoPreviewView: View {
     @Environment(\.dismiss) private var dismiss
     let item: LibraryItem
-    /// Shows a "Keep instead" button that calls this and closes.
-    var onKeep: (() -> Void)?
 
     @State private var showsChrome = true
     @State private var zoom = ZoomState()
@@ -41,19 +38,6 @@ struct PhotoPreviewView: View {
         }
         .overlay(alignment: .top) {
             if showsChrome { topBar.transition(.opacity) }
-        }
-        .overlay(alignment: .bottom) {
-            if showsChrome, let onKeep {
-                KeepInsteadButton(onKeep: onKeep)
-                    .padding(.horizontal, DS.Spacing.l)
-                    .padding(.top, DS.Spacing.xxl)
-                    .padding(.bottom, DS.Spacing.m)
-                    .background {
-                        LinearGradient(colors: [.clear, .black.opacity(0.55)], startPoint: .top, endPoint: .bottom)
-                            .ignoresSafeArea()
-                    }
-                    .transition(.opacity)
-            }
         }
         .environment(\.colorScheme, .dark)
         .statusBarHidden(!showsChrome)
@@ -155,28 +139,6 @@ struct PhotoPreviewView: View {
 
     private var accessibilityText: String {
         ["Photo", Format.day(item.date), item.location].compactMap { $0 }.joined(separator: ", ")
-    }
-}
-
-/// White pill on previews opened from the pending pile.
-struct KeepInsteadButton: View {
-    @Environment(\.dismiss) private var dismiss
-    let onKeep: () -> Void
-
-    var body: some View {
-        Button {
-            onKeep()
-            dismiss()
-        } label: {
-            Text("Keep instead")
-                .font(.headline)
-                .foregroundStyle(DS.Palette.ink)
-                .frame(maxWidth: .infinity, minHeight: 56)
-                .background(.white, in: Capsule())
-                .contentShape(Capsule())
-        }
-        .buttonStyle(PressScaleStyle())
-        .accessibilityHint("Takes this out of the pending pile")
     }
 }
 

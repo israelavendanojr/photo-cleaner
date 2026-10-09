@@ -167,28 +167,41 @@ final class photo_swiperUITests: XCTestCase {
     }
 
     @MainActor
-    func testPendingPileShowsDeletesAndKeepsInstead() throws {
+    func testPendingPileMarksAndDeletesSomeNow() throws {
         let app = launch()
         XCTAssertTrue(element(app, containing: "1 of 20").waitForExistence(timeout: 5))
         drag(app, to: CGVector(dx: 0.02, dy: 0.5))
         XCTAssertTrue(element(app, containing: "2 of 20").waitForExistence(timeout: 3))
+        drag(app, to: CGVector(dx: 0.02, dy: 0.5))
+        XCTAssertTrue(element(app, containing: "3 of 20").waitForExistence(timeout: 3))
 
         tapCenter(element(app, containing: "to clear"))
-        let tile = app.descendants(matching: .any)["pendingTile"]
-        XCTAssertTrue(tile.waitForExistence(timeout: 3), "The pile shows the deleted photo")
-        attachScreenshot(app, "pile")
+        let tiles = app.descendants(matching: .any).matching(identifier: "pendingTile")
+        XCTAssertTrue(tiles.firstMatch.waitForExistence(timeout: 3), "The pile shows the deleted photos")
+        XCTAssertEqual(tiles.count, 2)
+        let bin = app.buttons["binButton"]
+        XCTAssertFalse(bin.exists, "Nothing marked, no bin")
 
+        let tile = tiles.element(boundBy: 0)
         tile.tap()
-        let keep = app.buttons["Keep instead"]
-        XCTAssertTrue(keep.waitForExistence(timeout: 3))
-        keep.tap()
+        XCTAssertTrue(bin.waitForExistence(timeout: 3), "Marking shows the bin")
+        tile.tap()
+        XCTAssertTrue(bin.waitForNonExistence(timeout: 3), "Tapping again unmarks it")
+        tile.tap()
+        XCTAssertTrue(bin.waitForExistence(timeout: 3))
+        attachScreenshot(app, "marked")
 
-        XCTAssertTrue(tile.waitForNonExistence(timeout: 3), "Keeping takes it out of the pile")
-        XCTAssertTrue(element(app, containing: "Nothing marked to clear").exists)
+        bin.tap()
+        let confirm = app.alerts.buttons["Delete"]
+        XCTAssertTrue(confirm.waitForExistence(timeout: 3))
+        confirm.tap()
+
+        XCTAssertTrue(bin.waitForNonExistence(timeout: 3), "The bin empties once deleted")
+        XCTAssertEqual(tiles.count, 1, "The unmarked photo stays pending")
         app.buttons["Done"].tap()
 
-        XCTAssertTrue(element(app, containing: "0 MB to clear").waitForExistence(timeout: 3))
-        XCTAssertTrue(element(app, containing: "2 of 20").exists, "Keeping from the pile doesn't move the feed")
+        XCTAssertTrue(element(app, containing: "3 of 20").exists, "Deleting from the pile doesn't move the feed")
+        XCTAssertFalse(element(app, containing: "0 MB to clear").exists, "The rest is still to clear")
     }
 
     // MARK: Helpers
