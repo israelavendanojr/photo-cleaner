@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// Everything waiting to be cleared. Tap photos to mark them, then send them to the bin to
-/// delete them now; the rest stay pending until the end of the session.
+/// Everything waiting to be cleared, all marked to delete. Tap the ones worth saving to unmark
+/// them, then Keep sends those back to the library and Delete clears the marked ones now.
 ///
 /// Opens as a sheet from the feed's "to clear" counter, or pushed from the overview's Pending row.
 struct PendingPileView: View {
@@ -13,9 +13,12 @@ struct PendingPileView: View {
     @State private var selected: Set<LibraryItem.ID> = []
     @State private var isConfirming = false
     @State private var isDeleting = false
+    /// Everything starts marked, once; after that the marks are the user's.
+    @State private var didPreselect = false
 
     private var count: Int { vm.pendingItems.count }
     private var selectedItems: [LibraryItem] { vm.pendingItems.filter { selected.contains($0.id) } }
+    private var keptItems: [LibraryItem] { vm.pendingItems.filter { !selected.contains($0.id) } }
     private var selectedBytes: Int64 { selectedItems.reduce(0) { $0 + $1.bytes } }
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 6), count: 3)
 
@@ -39,7 +42,7 @@ struct PendingPileView: View {
                         }
                     }
                     .padding(.top, DS.Spacing.l)
-                    Text("Tap photos to mark them, then delete them now. The rest stay pending until the end of your session.")
+                    Text("Everything's marked to delete. Tap the ones you want to keep, then Keep them.")
                         .font(.footnote)
                         .foregroundStyle(DS.Palette.secondary)
                         .padding(.top, DS.Spacing.l)
@@ -50,12 +53,17 @@ struct PendingPileView: View {
         }
         .scrollBounceBehavior(.basedOnSize)
         .safeAreaInset(edge: .bottom) {
-            if !selected.isEmpty {
-                binBar.transition(.move(edge: .bottom).combined(with: .opacity))
+            if !vm.pendingItems.isEmpty {
+                actions.transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
         .background(DS.Palette.paper)
         .sensoryFeedback(.selection, trigger: selected)
+        .onAppear {
+            guard !didPreselect else { return }
+            didPreselect = true
+            selected = Set(vm.pendingItems.map(\.id))
+        }
         .onChange(of: vm.pendingItems.map(\.id)) { _, ids in
             selected.formIntersection(ids)
         }
@@ -104,8 +112,29 @@ struct PendingPileView: View {
         .padding(.top, showsDone ? DS.Spacing.xl : DS.Spacing.xs)
     }
 
+    /// Keep for the unmarked photos, above the bin the marked ones go to.
+    private var actions: some View {
+        VStack(spacing: DS.Spacing.s) {
+            if !keptItems.isEmpty {
+                Button("Keep \(keptItems.count)", action: keepUnmarked)
+                    .buttonStyle(.pill(.outline))
+                    .disabled(isDeleting)
+                    .accessibilityHint("Takes the unmarked photos out of the pile")
+                    .accessibilityIdentifier("keepButton")
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+            if !selected.isEmpty {
+                binRow.transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .padding(.horizontal, DS.Spacing.l)
+        .padding(.top, DS.Spacing.s)
+        .padding(.bottom, DS.Spacing.xs)
+        .background(DS.Palette.paper)
+    }
+
     /// The bin the marked photos go to: how many, and the button that deletes them now.
-    private var binBar: some View {
+    private var binRow: some View {
         HStack(spacing: DS.Spacing.s) {
             Image(systemName: "trash.fill")
                 .font(.system(size: 20, weight: .medium))
@@ -130,10 +159,6 @@ struct PendingPileView: View {
                 .disabled(isDeleting)
                 .accessibilityIdentifier("binButton")
         }
-        .padding(.horizontal, DS.Spacing.l)
-        .padding(.top, DS.Spacing.s)
-        .padding(.bottom, DS.Spacing.xs)
-        .background(DS.Palette.paper)
     }
 
     private var hasDeleteNotice: Binding<Bool> {
@@ -150,6 +175,10 @@ struct PendingPileView: View {
         withAnimation(DS.Motion.snapBack) {
             selected = selected.count == count ? [] : Set(vm.pendingItems.map(\.id))
         }
+    }
+
+    private func keepUnmarked() {
+        withAnimation(DS.Motion.calm) { vm.keep(keptItems) }
     }
 
     private func deleteSelected() {
@@ -202,7 +231,7 @@ private struct PendingTile: View {
             .animation(DS.Motion.snapBack, value: isSelected)
             .accessibilityElement()
             .accessibilityLabel(accessibilityText)
-            .accessibilityValue(isSelected ? "Marked to delete now" : "Pending")
+            .accessibilityValue(isSelected ? "Marked to delete" : "Keeping")
             .accessibilityAddTraits(isSelected ? .isSelected : [])
             .accessibilityHint("Double tap to toggle")
             .accessibilityIdentifier("pendingTile")

@@ -39,12 +39,12 @@ final class FeedViewModel {
 
     private struct Snapshot {
         let index: Int
-        let decisions: [LibraryItem.ID: Decision]
-        let marks: [SimilarGroup.ID: Set<LibraryItem.ID>]
+        var decisions: [LibraryItem.ID: Decision]
+        var marks: [SimilarGroup.ID: Set<LibraryItem.ID>]
         let cardID: FeedCard.ID
         let direction: SwipeDirection
         /// Saved decisions for the card's items before the swipe; nil where there were none.
-        let stored: [LibraryItem.ID: StoredDecision?]
+        var stored: [LibraryItem.ID: StoredDecision?]
     }
 
     // MARK: State
@@ -224,6 +224,38 @@ final class FeedViewModel {
         returningCard = ReturningCard(cardID: last.cardID, direction: last.direction)
         dismissChip()
         phase = .feed
+        saveProgress()
+        refreshTotals(includingFreed: false)
+    }
+
+    /// Takes items out of the pile by keeping them instead, here, in the store, and in undo history.
+    func keep(_ items: [LibraryItem]) {
+        let pending = Set(pendingItems.map(\.id))
+        let items = items.filter { pending.contains($0.id) }
+        guard !items.isEmpty else { return }
+        let ids = Set(items.map(\.id))
+        for id in ids where decisions[id] == .delete { decisions[id] = .keep }
+        carriedPending.removeAll { ids.contains($0.id) }
+
+        let saved = store.decisions(for: ids)
+        let decidedAt = now()
+        store.save(Dictionary(uniqueKeysWithValues: items.map { item in
+            let sessionNumber = saved[item.id]?.sessionNumber ?? session?.number ?? 0
+            return (item.id, StoredDecision(decision: .keep, decidedAt: decidedAt, sessionNumber: sessionNumber, item: item))
+        }))
+
+        // Undoing a later swipe must not put them back in the pile.
+        for i in history.indices {
+            for id in ids {
+                if history[i].decisions[id] == .delete { history[i].decisions[id] = .keep }
+                if case .some(.some(var record)) = history[i].stored[id], record.decision == .delete {
+                    record.decision = .keep
+                    history[i].stored[id] = record
+                }
+            }
+            for group in history[i].marks.keys { history[i].marks[group]?.subtract(ids) }
+        }
+        for group in marks.keys { marks[group]?.subtract(ids) }
         saveProgress()
         refreshTotals(includingFreed: false)
     }
