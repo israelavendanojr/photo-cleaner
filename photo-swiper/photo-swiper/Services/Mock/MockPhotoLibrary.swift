@@ -7,11 +7,24 @@ struct MockPhotoLibrary: PhotoLibraryProviding {
     /// Simulated latency of the system delete prompt.
     var deleteDelay: Duration = .milliseconds(350)
 
+    func requestAccess() async -> LibraryAccess {
+        .full
+    }
+
     func stats() async -> LibraryStats {
         LibraryStats(totalItems: totalItems, reviewedItems: reviewedItems, freedBytes: 0)
     }
 
-    func delete(_ items: [LibraryItem]) async throws {
+    func delete(_ items: [LibraryItem]) async throws -> DeletionOutcome {
         try await Task.sleep(for: deleteDelay)
+        return DeletionOutcome(deleted: items.map(\.id))
+    }
+
+    func vanishedItems() -> AsyncStream<Set<LibraryItem.ID>> {
+        AsyncStream { $0.finish() }
+    }
+
+    func missing(from ids: Set<LibraryItem.ID>) async -> Set<LibraryItem.ID> {
+        []
     }
 }

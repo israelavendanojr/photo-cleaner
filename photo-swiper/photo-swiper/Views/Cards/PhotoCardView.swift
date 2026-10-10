@@ -3,6 +3,7 @@ import SwiftUI
 /// Full-bleed single photo with date, place, size, and an optional review flag.
 struct PhotoCardView: View {
     let item: LibraryItem
+    var onOpen: () -> Void = {}
 
     private var isBlurry: Bool { item.reviewFlag == .blurry }
 
@@ -10,6 +11,13 @@ struct PhotoCardView: View {
         ItemImage(item.image)
             .blur(radius: isBlurry ? 10 : 0, opaque: true)
             .overlay { BottomScrim() }
+            .overlay {
+                CardCenterButton(
+                    systemImage: "arrow.up.left.and.arrow.down.right",
+                    accessibilityLabel: "View full screen",
+                    action: onOpen
+                )
+            }
             .overlay(alignment: .bottomLeading) { caption }
             .overlay(alignment: .topLeading) {
                 if let flag = item.reviewFlag {
@@ -22,6 +30,7 @@ struct PhotoCardView: View {
             .cardShadow()
             .accessibilityElement(children: .combine)
             .accessibilityLabel(accessibilityText)
+            .accessibilityAction(named: "View full screen", onOpen)
     }
 
     private var caption: some View {
@@ -29,7 +38,7 @@ struct PhotoCardView: View {
             Text(Format.day(item.date))
                 .dsSerif(26, relativeTo: .title)
             HStack(spacing: 6) {
-                Text("\(item.location) · \(Format.size(item.bytes))")
+                Text([item.location, Format.size(item.bytes)].compactMap { $0 }.joined(separator: " · "))
                 if item.isFavorite {
                     Image(systemName: "heart.fill").imageScale(.small)
                 }
@@ -43,7 +52,7 @@ struct PhotoCardView: View {
     }
 
     private var accessibilityText: String {
-        var parts = ["Photo", Format.day(item.date), item.location, Format.size(item.bytes)]
+        var parts = ["Photo", Format.day(item.date), item.location, Format.size(item.bytes)].compactMap { $0 }
         if let flag = item.reviewFlag { parts.insert(flag.label, at: 1) }
         if item.isFavorite { parts.append("Favorite") }
         return parts.joined(separator: ", ")

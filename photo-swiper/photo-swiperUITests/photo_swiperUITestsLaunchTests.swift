@@ -20,6 +20,7 @@ final class photo_swiperUITestsLaunchTests: XCTestCase {
     @MainActor
     func testLaunch() throws {
         let app = XCUIApplication()
+        app.launchArguments = ["-mockLibrary", "YES"]
         app.launch()
 
         // Insert steps here to perform after app launch but before taking a screenshot,

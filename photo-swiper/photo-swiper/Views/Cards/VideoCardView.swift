@@ -3,11 +3,14 @@ import SwiftUI
 /// A video still with duration and a prominent file size. Large videos are the biggest wins.
 struct VideoCardView: View {
     let item: LibraryItem
+    var onPlay: () -> Void = {}
 
     var body: some View {
         ItemImage(item.image)
             .overlay { BottomScrim() }
-            .overlay { playButton }
+            .overlay {
+                CardCenterButton(systemImage: "play.fill", accessibilityLabel: "Play video", iconOffset: 3, action: onPlay)
+            }
             .overlay(alignment: .topLeading) {
                 if let duration = item.duration {
                     Chip(text: "Video · \(Format.duration(duration))", style: .frosted)
@@ -19,17 +22,7 @@ struct VideoCardView: View {
             .cardShadow()
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(accessibilityText)
-    }
-
-    private var playButton: some View {
-        Image(systemName: "play.fill")
-            .font(.system(size: 30))
-            .foregroundStyle(.white)
-            .offset(x: 3)
-            .frame(width: 80, height: 80)
-            .background {
-                Circle().fill(.ultraThinMaterial).environment(\.colorScheme, .dark)
-            }
+            .accessibilityAction(named: "Play video", onPlay)
     }
 
     private var caption: some View {
@@ -41,9 +34,11 @@ struct VideoCardView: View {
             Text(Format.day(item.date))
                 .dsSerif(20, relativeTo: .title3)
                 .padding(.top, 4)
-            Text(item.location)
-                .font(.subheadline)
-                .opacity(0.9)
+            if let location = item.location {
+                Text(location)
+                    .font(.subheadline)
+                    .opacity(0.9)
+            }
         }
         .foregroundStyle(.white)
         .padding(.horizontal, 22)
@@ -52,7 +47,9 @@ struct VideoCardView: View {
 
     private var accessibilityText: String {
         let length = item.duration.map { Format.duration($0) } ?? ""
-        return "Video, \(length), \(Format.size(item.bytes)), \(Format.day(item.date)), \(item.location)"
+        return [
+            "Video", length, Format.size(item.bytes), Format.day(item.date), item.location,
+        ].compactMap { $0 }.joined(separator: ", ")
     }
 }
 

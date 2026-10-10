@@ -1,40 +1,50 @@
 import SwiftUI
+import UIKit
 
 /// Library-wide progress, what's pending, and feed preferences.
 struct OverviewSheet: View {
     @Environment(FeedViewModel.self) private var vm
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.openURL) private var openURL
 
     var body: some View {
         @Bindable var vm = vm
 
-        ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-                header
-                stats
-                    .padding(.top, DS.Spacing.l)
-                pile
-                    .padding(.top, DS.Spacing.xl)
-                Toggle(isOn: $vm.skipFavorites) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Skip favorites")
-                            .foregroundStyle(DS.Palette.ink)
-                        Text("Favorites stay out of your feed, starting next session.")
-                            .font(.footnote)
-                            .foregroundStyle(DS.Palette.secondary)
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    header
+                    stats
+                        .padding(.top, DS.Spacing.l)
+                    pile
+                        .padding(.top, DS.Spacing.xl)
+                    Toggle(isOn: $vm.skipFavorites) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Skip favorites")
+                                .foregroundStyle(DS.Palette.ink)
+                            Text("Favorites stay out of your feed, starting next session.")
+                                .font(.footnote)
+                                .foregroundStyle(DS.Palette.secondary)
+                        }
                     }
+                    .tint(DS.Palette.ink)
+                    .padding(DS.Spacing.m)
+                    .background(DS.Palette.card, in: RoundedRectangle(cornerRadius: DS.Radius.inner, style: .continuous))
+                    .softShadow()
+                    .padding(.top, DS.Spacing.m)
                 }
-                .tint(DS.Palette.ink)
-                .padding(DS.Spacing.m)
-                .background(DS.Palette.card, in: RoundedRectangle(cornerRadius: DS.Radius.inner, style: .continuous))
-                .softShadow()
-                .padding(.top, DS.Spacing.m)
+                .padding(.horizontal, DS.Spacing.l)
+                .padding(.bottom, DS.Spacing.xxl)
             }
-            .padding(.horizontal, DS.Spacing.l)
-            .padding(.bottom, DS.Spacing.xxl)
+            .scrollBounceBehavior(.basedOnSize)
+            .background(DS.Palette.paper)
+            .toolbar(.hidden, for: .navigationBar)
+            .navigationDestination(for: Destination.self) { _ in
+                PendingPileView()
+                    .toolbarBackground(DS.Palette.paper, for: .navigationBar)
+            }
         }
-        .scrollBounceBehavior(.basedOnSize)
-        .background(DS.Palette.paper)
+        .tint(DS.Palette.ink)
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
         .presentationBackground(DS.Palette.paper)
@@ -89,19 +99,40 @@ struct OverviewSheet: View {
 
     private var pile: some View {
         VStack(spacing: 0) {
-            OverviewRow(
-                icon: "trash",
-                title: "Pending",
-                value: "\(vm.pendingItems.count) to clear · \(Format.size(vm.pendingBytes))",
-                isAccent: true
-            )
+            NavigationLink(value: Destination.pending) {
+                OverviewRow(
+                    icon: "trash",
+                    title: "Pending",
+                    value: "\(vm.pendingItems.count) to clear · \(Format.size(vm.pendingBytes))",
+                    isAccent: true,
+                    showsChevron: true
+                )
+            }
+            .buttonStyle(.plain)
+            .accessibilityHint("Shows what's waiting to be cleared")
             Divider()
                 .overlay(DS.Palette.line)
                 .padding(.leading, 52)
             OverviewRow(icon: "clock", title: "Saved for later", value: "\(vm.laterCount)")
+            if vm.access == .limited {
+                Divider()
+                    .overlay(DS.Palette.line)
+                    .padding(.leading, 52)
+                Button {
+                    if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
+                } label: {
+                    OverviewRow(icon: "lock", title: "Photo access", value: "Selected photos only")
+                }
+                .buttonStyle(.plain)
+                .accessibilityHint("Opens Settings")
+            }
         }
         .background(DS.Palette.card, in: RoundedRectangle(cornerRadius: DS.Radius.inner, style: .continuous))
         .softShadow()
+    }
+
+    private enum Destination: Hashable {
+        case pending
     }
 }
 
@@ -110,6 +141,7 @@ private struct OverviewRow: View {
     let title: String
     let value: String
     var isAccent = false
+    var showsChevron = false
 
     var body: some View {
         HStack(spacing: DS.Spacing.m) {
@@ -124,6 +156,11 @@ private struct OverviewRow: View {
                 .font(.subheadline.weight(isAccent ? .semibold : .regular))
                 .foregroundStyle(isAccent ? DS.Palette.brick : DS.Palette.secondary)
                 .multilineTextAlignment(.trailing)
+            if showsChevron {
+                Image(systemName: "chevron.right")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(DS.Palette.secondary)
+            }
         }
         .padding(.horizontal, DS.Spacing.m)
         .padding(.vertical, 18)

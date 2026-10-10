@@ -13,6 +13,10 @@ struct SwipeableCard<Content: View>: View {
     @Binding var request: SwipeDirection?
     /// 0 at rest, 1 when fully committed. Drives the card behind.
     @Binding var progress: Double
+    /// Undo's entrance side. A new one while the card is still flying brings it back from mid-flight.
+    let entrance: SwipeDirection?
+    /// Called the moment the card commits, as the fly-out starts.
+    let onRelease: (SwipeDirection) -> Void
     /// Called after the fly-out animation finishes.
     let onSwipe: (SwipeDirection) -> Void
     @ViewBuilder let content: Content
@@ -20,6 +24,8 @@ struct SwipeableCard<Content: View>: View {
     @State private var offset: CGSize
     @State private var armed: SwipeDirection?
     @State private var isFlying = false
+    /// Bumped per fly-out so a cancelled flight's completion is ignored.
+    @State private var flight = 0
 
     /// - Parameter entrance: When set, the card starts off-screen on that side and springs in (undo).
     init(
@@ -28,10 +34,13 @@ struct SwipeableCard<Content: View>: View {
         label: @escaping (SwipeDirection) -> String,
         request: Binding<SwipeDirection?>,
         progress: Binding<Double>,
+        onRelease: @escaping (SwipeDirection) -> Void = { _ in },
         onSwipe: @escaping (SwipeDirection) -> Void,
         @ViewBuilder content: () -> Content
     ) {
         self.isEnabled = isEnabled
+        self.entrance = entrance
+        self.onRelease = onRelease
         self.label = label
         _request = request
         _progress = progress
@@ -43,13 +52,20 @@ struct SwipeableCard<Content: View>: View {
     var body: some View {
         content
             .overlay {
-                if isEnabled { SwipeOverlay(offset: offset, label: label) }
+                if isEnabled || isFlying { SwipeOverlay(offset: offset, label: label) }
             }
             .rotationEffect(.degrees(rotation), anchor: .center)
             .offset(offset)
             .gesture(drag, including: isEnabled ? .all : .subviews)
             .onAppear {
                 guard offset != .zero else { return }
+                withAnimation(DS.Motion.calm) { offset = .zero }
+            }
+            .onChange(of: entrance) { _, direction in
+                guard direction != nil, isFlying else { return }
+                flight += 1
+                isFlying = false
+                armed = nil
                 withAnimation(DS.Motion.calm) { offset = .zero }
             }
             .onChange(of: request) { _, direction in
@@ -102,12 +118,16 @@ struct SwipeableCard<Content: View>: View {
     private func fly(_ direction: SwipeDirection) {
         guard isEnabled, !isFlying else { return }
         isFlying = true
+        flight += 1
+        let current = flight
         withAnimation(DS.Motion.flyOut) {
             offset = Self.offscreen(direction, from: offset)
             progress = 1
         } completion: {
+            guard flight == current else { return }
             onSwipe(direction)
         }
+        onRelease(direction)
     }
 
     // MARK: Geometry

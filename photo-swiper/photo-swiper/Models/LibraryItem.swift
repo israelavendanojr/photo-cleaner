@@ -1,16 +1,16 @@
 import Foundation
 
 /// One photo or video in the user's library.
-struct LibraryItem: Identifiable, Hashable, Sendable {
+struct LibraryItem: Identifiable, Hashable, Sendable, Codable {
     typealias ID = String
 
-    enum Kind: Hashable, Sendable {
+    enum Kind: Hashable, Sendable, Codable {
         case photo
         case video(duration: TimeInterval)
     }
 
     /// Why the app thinks an item might be worth clearing.
-    enum Flag: String, Hashable, Sendable {
+    enum Flag: String, Hashable, Sendable, Codable {
         case blurry, accidental, screenshot, forwarded, receipt
 
         var label: String {
@@ -27,7 +27,8 @@ struct LibraryItem: Identifiable, Hashable, Sendable {
     let id: ID
     let kind: Kind
     let date: Date
-    let location: String
+    /// Place name, e.g. "Santa Monica". Nil when the item has no location or it couldn't be resolved.
+    let location: String?
     let bytes: Int64
     var flags: [Flag] = []
     var isFavorite = false
@@ -48,8 +49,9 @@ struct LibraryItem: Identifiable, Hashable, Sendable {
 }
 
 /// Where an item's pixels come from. Only `ItemImage` resolves this.
-enum ImageReference: Hashable, Sendable {
+enum ImageReference: Hashable, Sendable, Codable {
     /// An image in the asset catalog (mock data).
     case bundled(String)
-    // Later: case photoKit(localIdentifier: String)
+    /// A `PHAsset` in the user's library.
+    case photoKit(localIdentifier: String)
 }
