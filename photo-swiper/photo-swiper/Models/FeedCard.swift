@@ -7,6 +7,11 @@ enum FeedCard: Identifiable, Hashable, Sendable, Codable {
     case similar(SimilarGroup)
     case batch(ItemBatch)
 
+    /// The single-item card for a photo or video.
+    init(item: LibraryItem) {
+        self = item.isVideo ? .video(item) : .photo(item)
+    }
+
     var id: String {
         switch self {
         case .photo(let item), .video(let item): "item-\(item.id)"

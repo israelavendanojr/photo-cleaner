@@ -18,17 +18,17 @@ final class photo_swiperUITests: XCTestCase {
     func testSwipeLeftAddsToPileAndUndoRestores() throws {
         let app = launch()
         XCTAssertTrue(element(app, containing: "1 of 50").waitForExistence(timeout: 5))
-        XCTAssertTrue(element(app, containing: "0 MB to clear").exists)
+        XCTAssertTrue(emptyPile(app).exists)
 
         drag(app, to: CGVector(dx: 0.02, dy: 0.5))
 
         XCTAssertTrue(element(app, containing: "2 of 50").waitForExistence(timeout: 3))
-        XCTAssertFalse(element(app, containing: "0 MB to clear").exists, "Delete should add to the pile")
+        XCTAssertFalse(emptyPile(app).exists, "Delete should add to the pile")
 
         app.buttons["Undo"].tap()
 
         XCTAssertTrue(element(app, containing: "1 of 50").waitForExistence(timeout: 3))
-        XCTAssertTrue(element(app, containing: "0 MB to clear").waitForExistence(timeout: 3))
+        XCTAssertTrue(emptyPile(app).waitForExistence(timeout: 3))
     }
 
     @MainActor
@@ -53,7 +53,7 @@ final class photo_swiperUITests: XCTestCase {
         drag(app, to: CGVector(dx: 0.98, dy: 0.5))
         XCTAssertTrue(element(app, containing: "3 of 50").waitForExistence(timeout: 3))
 
-        XCTAssertTrue(element(app, containing: "0 MB to clear").exists, "Later and Keep never add to the pile")
+        XCTAssertTrue(emptyPile(app).exists, "Later and Keep never add to the pile")
     }
 
     @MainActor
@@ -69,13 +69,14 @@ final class photo_swiperUITests: XCTestCase {
         app.buttons["Delete"].tap()
 
         XCTAssertTrue(element(app, containing: "14 of 50").waitForExistence(timeout: 3))
-        XCTAssertFalse(element(app, containing: "0 MB to clear").exists)
+        XCTAssertFalse(emptyPile(app).exists)
     }
 
     @MainActor
     func testBatchOneByOneClearsOnlyDeletedItems() throws {
         let app = launch("-startAt", "batch")
-        XCTAssertTrue(element(app, containing: "15 of 50").waitForExistence(timeout: 5))
+        XCTAssertTrue(element(app, containing: " of ").waitForExistence(timeout: 5))
+        let position = element(app, containing: " of ").label
         attachScreenshot(app, "batch card")
 
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
@@ -91,19 +92,21 @@ final class photo_swiperUITests: XCTestCase {
         attachScreenshot(app, "after three deletes")
         for _ in 0..<11 { tapAndWait(onScreen(app, "Keep")) }
 
-        XCTAssertTrue(element(app, containing: "16 of 50").waitForExistence(timeout: 5))
-        XCTAssertFalse(element(app, containing: "0 MB to clear").exists, "Deleted items join the pile")
+        XCTAssertTrue(element(app, containing: "of 14").waitForNonExistence(timeout: 5), "The review closes")
+        XCTAssertFalse(element(app, containing: position).exists, "The batch card is decided")
+        XCTAssertFalse(emptyPile(app).exists, "Deleted items join the pile")
         attachScreenshot(app, "back in feed")
 
         tapCenter(onScreen(app, "Undo"))
-        XCTAssertTrue(element(app, containing: "15 of 50").waitForExistence(timeout: 3))
-        XCTAssertTrue(element(app, containing: "0 MB to clear").waitForExistence(timeout: 3), "Undo restores the whole batch")
+        XCTAssertTrue(element(app, containing: position).waitForExistence(timeout: 3))
+        XCTAssertTrue(emptyPile(app).waitForExistence(timeout: 3), "Undo restores the whole batch")
     }
 
     @MainActor
     func testClosingBatchReviewEarlyChangesNothing() throws {
         let app = launch("-startAt", "batch")
-        XCTAssertTrue(element(app, containing: "15 of 50").waitForExistence(timeout: 5))
+        XCTAssertTrue(element(app, containing: " of ").waitForExistence(timeout: 5))
+        let position = element(app, containing: " of ").label
 
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         XCTAssertTrue(element(app, containing: "1 of 14").waitForExistence(timeout: 3))
@@ -112,8 +115,28 @@ final class photo_swiperUITests: XCTestCase {
         tapCenter(onScreen(app, "Close"))
 
         XCTAssertTrue(element(app, containing: "of 14").waitForNonExistence(timeout: 3), "The review closes")
-        XCTAssertTrue(element(app, containing: "15 of 50").exists)
-        XCTAssertTrue(element(app, containing: "0 MB to clear").exists)
+        XCTAssertTrue(element(app, containing: position).exists)
+        XCTAssertTrue(emptyPile(app).exists)
+    }
+
+    @MainActor
+    func testBatchReviewPhotoOpensFullScreen() throws {
+        let app = launch("-startAt", "batch")
+        XCTAssertTrue(element(app, containing: " of ").waitForExistence(timeout: 5))
+
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        XCTAssertTrue(element(app, containing: "1 of 14").waitForExistence(timeout: 3))
+        sleep(1)
+
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        let preview = app.descendants(matching: .any)["photoPreview"]
+        XCTAssertTrue(preview.waitForExistence(timeout: 3), "Batch items open full screen like the feed")
+        attachScreenshot(app, "batch item full screen")
+
+        swipeDown(app)
+        XCTAssertTrue(preview.waitForNonExistence(timeout: 3), "Swiping down closes the preview")
+        XCTAssertTrue(element(app, containing: "1 of 14").exists, "Looking doesn't move the review")
+        XCTAssertTrue(emptyPile(app).exists, "Looking decides nothing")
     }
 
     @MainActor
@@ -143,14 +166,14 @@ final class photo_swiperUITests: XCTestCase {
         tapCenter(onScreen(app, "Close"))
         XCTAssertTrue(scrubber.waitForNonExistence(timeout: 3), "The preview closes")
         XCTAssertTrue(element(app, containing: position).exists, "Watching doesn't move the feed")
-        XCTAssertTrue(element(app, containing: "0 MB to clear").exists, "Watching decides nothing")
+        XCTAssertTrue(emptyPile(app).exists, "Watching decides nothing")
 
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         XCTAssertTrue(scrubber.waitForExistence(timeout: 3))
         swipeDown(app)
         XCTAssertTrue(scrubber.waitForNonExistence(timeout: 3), "Swiping down closes the preview")
         XCTAssertTrue(element(app, containing: position).exists, "Swiping out doesn't move the feed")
-        XCTAssertTrue(element(app, containing: "0 MB to clear").exists, "Swiping out decides nothing")
+        XCTAssertTrue(emptyPile(app).exists, "Swiping out decides nothing")
     }
 
     @MainActor
@@ -171,14 +194,14 @@ final class photo_swiperUITests: XCTestCase {
         tapCenter(onScreen(app, "Close"))
         XCTAssertTrue(preview.waitForNonExistence(timeout: 3), "The preview closes")
         XCTAssertTrue(element(app, containing: position).exists, "Looking doesn't move the feed")
-        XCTAssertTrue(element(app, containing: "0 MB to clear").exists, "Looking decides nothing")
+        XCTAssertTrue(emptyPile(app).exists, "Looking decides nothing")
 
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         XCTAssertTrue(preview.waitForExistence(timeout: 3))
         swipeDown(app)
         XCTAssertTrue(preview.waitForNonExistence(timeout: 3), "Swiping down closes the preview")
         XCTAssertTrue(element(app, containing: position).exists, "Swiping out doesn't move the feed")
-        XCTAssertTrue(element(app, containing: "0 MB to clear").exists, "Swiping out decides nothing")
+        XCTAssertTrue(emptyPile(app).exists, "Swiping out decides nothing")
     }
 
     @MainActor
@@ -218,7 +241,7 @@ final class photo_swiperUITests: XCTestCase {
         XCTAssertTrue(element(app, containing: "Nothing marked to clear").waitForExistence(timeout: 3))
         app.buttons["Done"].tap()
 
-        XCTAssertTrue(element(app, containing: "0 MB to clear").waitForExistence(timeout: 3))
+        XCTAssertTrue(emptyPile(app).waitForExistence(timeout: 3))
         XCTAssertTrue(element(app, containing: "4 of 20").exists, "The pile doesn't move the feed")
     }
 
@@ -265,6 +288,11 @@ final class photo_swiperUITests: XCTestCase {
 
     private func element(_ app: XCUIApplication, containing text: String) -> XCUIElement {
         app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", text)).firstMatch
+    }
+
+    /// The "to clear" counter at zero. A plain substring match would also hit "7.0 MB to clear".
+    private func emptyPile(_ app: XCUIApplication) -> XCUIElement {
+        app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", "0 MB ")).firstMatch
     }
 
     private func drag(_ app: XCUIApplication, to target: CGVector, hold: TimeInterval = 0.05) {

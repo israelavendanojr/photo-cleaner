@@ -24,28 +24,12 @@ struct FeedTopBar: View {
     }
 
     private var undoButton: some View {
-        Button(action: onUndo) {
-            Image(systemName: "arrow.uturn.backward")
-                .font(.system(size: 18, weight: .medium))
-                .foregroundStyle(DS.Palette.secondary)
-                .frame(width: 44, height: 44)
-                .overlay { Circle().strokeBorder(DS.Palette.line, lineWidth: 1.5) }
-                .contentShape(Circle())
-        }
-        .buttonStyle(PressScaleStyle())
-        .disabled(!vm.canUndo)
-        .accessibilityLabel("Undo")
+        CircleIconButton(systemImage: "arrow.uturn.backward", accessibilityLabel: "Undo", action: onUndo)
+            .disabled(!vm.canUndo)
     }
 
     private var progress: some View {
-        VStack(spacing: 6) {
-            Text("\(vm.photosReviewed) of \(vm.photoTotal)")
-                .font(.footnote)
-                .monospacedDigit()
-                .foregroundStyle(DS.Palette.secondary)
-                .contentTransition(.numericText(value: Double(vm.photosReviewed)))
-            ProgressLine(value: vm.sessionProgress)
-                .frame(width: 96)
+        DeckProgress(position: vm.photosReviewed, total: vm.photoTotal, value: vm.sessionProgress) {
             if let percent = vm.scanningPercent {
                 HStack(spacing: 6) {
                     Circle()
@@ -58,8 +42,6 @@ struct FeedTopBar: View {
                 .transition(.opacity)
             }
         }
-        .fixedSize()
-        .accessibilityElement(children: .combine)
     }
 }
 

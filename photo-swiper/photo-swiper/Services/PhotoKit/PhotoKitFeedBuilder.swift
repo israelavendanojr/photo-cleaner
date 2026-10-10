@@ -40,11 +40,11 @@ actor PhotoKitFeedBuilder: FeedBuilding {
         for slot in slots {
             switch slot {
             case .single(let asset):
-                cards.append(Self.card(for: item(asset)))
+                cards.append(FeedCard(item: item(asset)))
             case .screenshots(let week):
                 let shots = weeks[week] ?? []
                 if shots.count < Self.minBatch {
-                    cards += shots.map { Self.card(for: item($0)) }
+                    cards += shots.map { FeedCard(item: item($0)) }
                 } else {
                     cards.append(.batch(ItemBatch(
                         id: "s\(number)-shots-\(Int(week.timeIntervalSince1970))",
@@ -89,10 +89,6 @@ actor PhotoKitFeedBuilder: FeedBuilding {
             photoCount += 1
         }
         return (slots, weeks)
-    }
-
-    private static func card(for item: LibraryItem) -> FeedCard {
-        item.isVideo ? .video(item) : .photo(item)
     }
 
     /// "this week", "last week", or "the week of Sep 22".

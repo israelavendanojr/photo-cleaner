@@ -26,7 +26,7 @@ final class ThumbnailPipeline {
     private let manager = PHCachingImageManager()
     private var assets: [String: PHAsset] = [:]
     /// What's currently pre-cached, by local identifier.
-    private var preheated: [String: CGSize] = [:]
+    private(set) var preheated: [String: CGSize] = [:]
 
     private init() {
         NotificationCenter.default.addObserver(

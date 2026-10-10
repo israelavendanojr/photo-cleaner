@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Goes through a batch one item at a time with the feed's own swipe vocabulary.
+/// Goes through a batch one item at a time on the same deck as the main feed.
 ///
 /// Decisions go out together through `onFinish` once the last item is swiped.
 /// Closing early keeps them as a draft on the view model, and reopening picks up where it left off.
@@ -13,10 +13,8 @@ struct BatchReviewView: View {
     @State private var index: Int
     @State private var decisions: [LibraryItem.ID: Decision]
     @State private var request: SwipeDirection?
-    /// How far the top card is toward committing, 0...1.
-    @State private var progress = 0.0
     @State private var addedBytes: Int64?
-    @State private var returning: (id: LibraryItem.ID, direction: SwipeDirection)?
+    @State private var returning: FeedViewModel.ReturningCard?
 
     init(batch: ItemBatch, draft: [LibraryItem.ID: Decision] = [:], onFinish: @escaping ([LibraryItem.ID: Decision]) -> Void) {
         self.batch = batch
@@ -26,7 +24,7 @@ struct BatchReviewView: View {
     }
 
     private var items: [LibraryItem] { batch.items }
-    private var visibleItems: [LibraryItem] { Array(items.dropFirst(index).prefix(2)) }
+    private var cards: [FeedCard] { items.map(FeedCard.init(item:)) }
     private var clearBytes: Int64 {
         items.filter { decisions[$0.id] == .delete }.reduce(0) { $0 + $1.bytes }
     }
@@ -37,31 +35,14 @@ struct BatchReviewView: View {
                 .padding(.horizontal, DS.Spacing.l)
                 .padding(.top, DS.Spacing.s)
                 .padding(.bottom, DS.Spacing.m)
-            ZStack {
-                ForEach(visibleItems) { item in
-                    let isTop = item.id == items[safe: index]?.id
-                    SwipeableCard(
-                        isEnabled: isTop,
-                        entrance: item.id == returning?.id ? returning?.direction : nil,
-                        label: { vm.swipeLabel($0, for: .photo(item)) },
-                        request: isTop ? $request : .constant(nil),
-                        progress: isTop ? $progress : .constant(0),
-                        onSwipe: { decide($0, item: item) }
-                    ) {
-                        PhotoCardView(item: item)
-                    }
-                    .scaleEffect(isTop ? 1 : 0.95 + 0.05 * progress)
-                    .offset(y: isTop ? 0 : 12 * (1 - progress))
-                    .allowsHitTesting(isTop)
-                    .zIndex(isTop ? 1 : 0)
-                    .transition(isTop ? .identity : .opacity.combined(with: .scale(scale: 0.92)))
-                }
-            }
-            .padding(.horizontal, DS.Spacing.cardInset)
-            .frame(maxHeight: .infinity)
-
-            ActionBar { request = $0 }
-                .disabled(index >= items.count)
+            SwipeDeck(
+                cards: cards,
+                index: index,
+                returning: returning,
+                label: vm.swipeLabel,
+                onDecide: decide,
+                request: $request
+            )
         }
         .background(DS.Palette.paper)
     }
@@ -69,57 +50,34 @@ struct BatchReviewView: View {
     private var topBar: some View {
         HStack(alignment: .center, spacing: DS.Spacing.xs) {
             HStack(spacing: DS.Spacing.xs) {
-                circleButton("xmark", label: "Close") { dismiss() }
-                circleButton("arrow.uturn.backward", label: "Undo", action: undo)
+                CircleIconButton(systemImage: "xmark", accessibilityLabel: "Close") { dismiss() }
+                CircleIconButton(systemImage: "arrow.uturn.backward", accessibilityLabel: "Undo", action: undo)
                     .disabled(index == 0)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            VStack(spacing: 6) {
-                Text(batch.label)
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(DS.Palette.ink)
-                Text("\(min(index + 1, items.count)) of \(items.count)")
-                    .font(.footnote)
-                    .monospacedDigit()
-                    .foregroundStyle(DS.Palette.secondary)
-                    .contentTransition(.numericText(value: Double(index)))
-                ProgressLine(value: Double(index) / Double(max(items.count, 1)))
-                    .frame(width: 96)
-            }
-            .fixedSize()
-            .accessibilityElement(children: .combine)
+            DeckProgress(
+                title: batch.label,
+                position: min(index + 1, items.count),
+                total: items.count,
+                value: Double(index) / Double(max(items.count, 1))
+            )
             ToClearCounter(bytes: clearBytes, addedBytes: addedBytes, addedID: index)
                 .frame(maxWidth: .infinity, alignment: .trailing)
         }
     }
 
-    private func circleButton(_ systemImage: String, label: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: systemImage)
-                .font(.system(size: 18, weight: .medium))
-                .foregroundStyle(DS.Palette.secondary)
-                .frame(width: 44, height: 44)
-                .overlay { Circle().strokeBorder(DS.Palette.line, lineWidth: 1.5) }
-                .contentShape(Circle())
-        }
-        .buttonStyle(PressScaleStyle())
-        .accessibilityLabel(label)
-    }
-
-    private func decide(_ direction: SwipeDirection, item: LibraryItem) {
+    private func decide(_ direction: SwipeDirection, card: FeedCard) {
+        guard let item = card.items.first else { return }
         let decision: Decision = switch direction {
         case .left: .delete
         case .right: .keep
         case .up: .later
         }
         if decision == .delete { Haptics.delete() }
-        withAnimation(DS.Motion.calm) {
-            progress = 0
-            decisions[item.id] = decision
-            returning = nil
-            addedBytes = decision == .delete ? item.bytes : nil
-            index += 1
-        }
+        decisions[item.id] = decision
+        returning = nil
+        addedBytes = decision == .delete ? item.bytes : nil
+        index += 1
         if index >= items.count { onFinish(decisions) } else { vm.saveDraft(decisions, for: batch) }
     }
 
@@ -134,16 +92,12 @@ struct BatchReviewView: View {
             case .later: .up
             case .keep, nil: .right
             }
-            returning = (item.id, direction)
+            returning = FeedViewModel.ReturningCard(cardID: FeedCard(item: item).id, direction: direction)
             decisions[item.id] = nil
             addedBytes = nil
         }
         vm.saveDraft(decisions, for: batch)
     }
-}
-
-private extension Array {
-    subscript(safe index: Int) -> Element? { indices.contains(index) ? self[index] : nil }
 }
 
 #Preview {
