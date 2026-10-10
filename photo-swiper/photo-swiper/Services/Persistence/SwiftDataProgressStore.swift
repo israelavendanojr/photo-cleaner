@@ -132,7 +132,8 @@ final class SwiftDataProgressStore: ProgressStoring {
                 session: try decoder.decode(Session.self, from: row.snapshot),
                 index: row.index,
                 marks: try decoder.decode([SimilarGroup.ID: Set<LibraryItem.ID>].self, from: row.marks),
-                finished: row.finished
+                finished: row.finished,
+                drafts: row.drafts.flatMap { try? decoder.decode([ItemBatch.ID: [LibraryItem.ID: Decision]].self, from: $0) } ?? [:]
             )
         } catch {
             // Likely an older snapshot format. Decisions are stored separately, so only the card order is lost.
@@ -157,11 +158,14 @@ final class SwiftDataProgressStore: ProgressStoring {
             row.index = saved.index
             row.finished = saved.finished
             row.marks = marks
+            row.drafts = try? encoder.encode(saved.drafts)
             if row.snapshot != snapshot { row.snapshot = snapshot }
             row.updatedAt = .now
         } else {
-            context.insert(SessionProgress(number: saved.session.number, index: saved.index, finished: saved.finished,
-                                           startedAt: .now, snapshot: snapshot, marks: marks))
+            let row = SessionProgress(number: saved.session.number, index: saved.index, finished: saved.finished,
+                                      startedAt: .now, snapshot: snapshot, marks: marks)
+            row.drafts = try? encoder.encode(saved.drafts)
+            context.insert(row)
         }
         persist()
     }

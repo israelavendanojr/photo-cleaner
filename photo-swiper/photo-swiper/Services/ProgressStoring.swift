@@ -72,4 +72,6 @@ struct SavedSession: Codable, Equatable, Sendable {
     var marks: [SimilarGroup.ID: Set<LibraryItem.ID>]
     /// The user chose "Done for now" or confirmed; relaunching shows the caught-up screen.
     var finished: Bool
+    /// Partial one-by-one reviews of batch cards, by batch.
+    var drafts: [ItemBatch.ID: [LibraryItem.ID: Decision]] = [:]
 }

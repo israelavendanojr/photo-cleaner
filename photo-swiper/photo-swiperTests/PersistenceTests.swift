@@ -58,6 +58,24 @@ struct FeedViewModelPersistenceTests {
     }
 
     @Test(arguments: ProgressStoreTests.Kind.allCases)
+    func aPartialBatchReviewSurvivesARelaunch(_ kind: ProgressStoreTests.Kind) async throws {
+        let store = try makeStore(kind)
+        let vm = await launch(store)
+        while vm.phase == .feed, !{ if case .batch = vm.currentCard { true } else { false } }() { vm.decide(.right) }
+        guard case .batch(let batch) = try #require(vm.currentCard) else {
+            Issue.record("Expected a batch card on top")
+            return
+        }
+        let draft = [batch.items[0].id: Decision.delete, batch.items[1].id: .keep]
+        vm.saveDraft(draft, for: batch)
+
+        let relaunched = await launch(store)
+
+        #expect(relaunched.currentCard?.id == batch.id)
+        #expect(relaunched.draft(for: batch) == draft)
+    }
+
+    @Test(arguments: ProgressStoreTests.Kind.allCases)
     func aCancelledDeleteStaysPendingAfterARelaunch(_ kind: ProgressStoreTests.Kind) async throws {
         let store = try makeStore(kind)
         library.onDelete = { _ in throw DeletionError.cancelled }

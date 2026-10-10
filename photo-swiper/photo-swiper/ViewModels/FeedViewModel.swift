@@ -41,6 +41,7 @@ final class FeedViewModel {
         let index: Int
         var decisions: [LibraryItem.ID: Decision]
         var marks: [SimilarGroup.ID: Set<LibraryItem.ID>]
+        let drafts: [ItemBatch.ID: [LibraryItem.ID: Decision]]
         let cardID: FeedCard.ID
         let direction: SwipeDirection
         /// Saved decisions for the card's items before the swipe; nil where there were none.
@@ -67,6 +68,8 @@ final class FeedViewModel {
 
     /// Similar-group overrides. Missing means "everything but the best pick".
     private var marks: [SimilarGroup.ID: Set<LibraryItem.ID>] = [:]
+    /// One-by-one decisions for batches reviewed partway. Applied when the batch card is swiped.
+    private var drafts: [ItemBatch.ID: [LibraryItem.ID: Decision]] = [:]
     private var history: [Snapshot] = []
     /// Unconfirmed deletes from earlier sessions the user skipped confirming.
     private var carriedPending: [LibraryItem] = []
@@ -170,7 +173,12 @@ final class FeedViewModel {
         case (.left, .photo(let item)), (.left, .video(let item)): "Delete · \(Format.size(item.bytes))"
         case (.left, .similar(let group)):
             markedForClearing(in: group).isEmpty ? "Keep all \(group.items.count)" : "Clear \(markedForClearing(in: group).count)"
-        case (.left, .batch(let batch)): "Clear all \(batch.items.count)"
+        case (.left, .batch(let batch)) where drafts[batch.id] == nil: "Clear all \(batch.items.count)"
+        case (.left, .batch(let batch)):
+            switch itemDecisions(for: card, direction: .left).values.filter({ $0 == .delete }).count {
+            case 0: "Keep all \(batch.items.count)"
+            case let n: "Clear \(n)"
+            }
         case (.right, .photo), (.right, .video): "Keep"
         case (.right, _): "Keep all \(card.items.count)"
         }
@@ -209,6 +217,16 @@ final class FeedViewModel {
         commit(complete, card: card, direction: complete.values.contains(.delete) ? .left : .right)
     }
 
+    /// Decisions from an unfinished one-by-one review of this batch.
+    func draft(for batch: ItemBatch) -> [LibraryItem.ID: Decision] {
+        drafts[batch.id] ?? [:]
+    }
+
+    func saveDraft(_ outcome: [LibraryItem.ID: Decision], for batch: ItemBatch) {
+        drafts[batch.id] = outcome.isEmpty ? nil : outcome
+        saveProgress()
+    }
+
     func toggleMark(_ itemID: LibraryItem.ID, in group: SimilarGroup) {
         var marked = markedForClearing(in: group)
         if marked.contains(itemID) { marked.remove(itemID) } else { marked.insert(itemID) }
@@ -221,6 +239,7 @@ final class FeedViewModel {
         index = last.index
         decisions = last.decisions
         marks = last.marks
+        drafts = last.drafts
         store.save(last.stored)
         returningCard = ReturningCard(cardID: last.cardID, direction: last.direction)
         dismissChip()
@@ -308,8 +327,9 @@ final class FeedViewModel {
         let ids = card.items.map(\.id)
         let before = store.decisions(for: Set(ids))
         let stored = Dictionary(uniqueKeysWithValues: ids.map { ($0, before[$0]) })
-        history.append(Snapshot(index: index, decisions: decisions, marks: marks, cardID: card.id, direction: direction, stored: stored))
+        history.append(Snapshot(index: index, decisions: decisions, marks: marks, drafts: drafts, cardID: card.id, direction: direction, stored: stored))
         decisions.merge(outcome) { _, new in new }
+        drafts[card.id] = nil
         returningCard = nil
 
         let decidedAt = now()
@@ -331,6 +351,15 @@ final class FeedViewModel {
     private func itemDecisions(for card: FeedCard, direction: SwipeDirection) -> [LibraryItem.ID: Decision] {
         let ids = card.items.map(\.id)
         switch (direction, card) {
+        case (_, .batch(let batch)) where drafts[batch.id] != nil:
+            // Items from a partial review keep their decision; the rest follow the swipe.
+            let draft = drafts[batch.id] ?? [:]
+            let rest: Decision = switch direction {
+            case .left: .delete
+            case .right: .keep
+            case .up: .later
+            }
+            return Dictionary(uniqueKeysWithValues: ids.map { ($0, draft[$0] ?? rest) })
         case (.up, _):
             return Dictionary(uniqueKeysWithValues: ids.map { ($0, .later) })
         case (.right, _):
@@ -422,6 +451,7 @@ final class FeedViewModel {
         index = 0
         decisions = [:]
         marks = [:]
+        drafts = [:]
         history = []
         finished = false
         let ids = Set(next.items.map(\.id))
@@ -456,6 +486,7 @@ final class FeedViewModel {
         session = restored
         index = position
         marks = saved.marks
+        drafts = saved.drafts
         decisions = records.mapValues(\.decision)
         settledIDs = Set(records.filter { $0.value.settlement != nil }.keys).union(gone)
         carriedPending = store.pile().filter { !ids.contains($0.id) }
@@ -469,7 +500,7 @@ final class FeedViewModel {
 
     private func saveProgress() {
         guard let session else { return }
-        store.saveSession(SavedSession(session: session, index: index, marks: marks, finished: finished))
+        store.saveSession(SavedSession(session: session, index: index, marks: marks, finished: finished, drafts: drafts))
     }
 
     /// Recomputes library totals from saved progress. The freed sum only changes on confirm.

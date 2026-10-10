@@ -39,6 +39,8 @@ final class SessionProgress {
     var snapshot: Data
     /// JSON `[SimilarGroup.ID: Set<LibraryItem.ID>]`.
     var marks: Data
+    /// JSON `[ItemBatch.ID: [LibraryItem.ID: Decision]]`. Nil in rows saved before drafts existed.
+    var drafts: Data?
 
     init(number: Int, index: Int, finished: Bool, startedAt: Date, snapshot: Data, marks: Data) {
         self.number = number

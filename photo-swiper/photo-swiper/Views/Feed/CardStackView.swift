@@ -59,7 +59,7 @@ struct CardStackView: View {
                 .disabled(vm.currentCard == nil)
         }
         .fullScreenCover(item: $reviewingBatch, onDismiss: flyOutReviewedBatch) { batch in
-            BatchReviewView(batch: batch) { outcome in
+            BatchReviewView(batch: batch, draft: vm.draft(for: batch)) { outcome in
                 batchOutcome = outcome
                 reviewingBatch = nil
             }

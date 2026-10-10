@@ -220,6 +220,56 @@ struct BatchReviewTests {
         #expect(vm.returningCard?.direction == .left)
     }
 
+    @Test func swipingLeftAfterAPartialReviewClearsTheRestButKeepsDraftedKeeps() throws {
+        let vm = FeedViewModel.mock(startingAt: .batch)
+        let batch = try batchCard(vm)
+        let kept = batch.items[0], deleted = batch.items[1]
+
+        vm.saveDraft([kept.id: .keep, deleted.id: .delete], for: batch)
+        vm.decide(.left)
+
+        #expect(Set(vm.pendingItems.map(\.id)) == Set(batch.items.dropFirst().map(\.id)))
+        #expect(vm.decisions[kept.id] == .keep)
+        #expect(vm.draft(for: batch).isEmpty)
+    }
+
+    @Test func swipingRightAfterAPartialReviewStillClearsDraftedDeletes() throws {
+        let vm = FeedViewModel.mock(startingAt: .batch)
+        let batch = try batchCard(vm)
+        let deleted = batch.items[0]
+
+        vm.saveDraft([deleted.id: .delete], for: batch)
+        #expect(vm.bytesToClear(for: .batch(batch)) == batch.items.reduce(0) { $0 + $1.bytes })
+        vm.decide(.right)
+
+        #expect(vm.pendingItems.map(\.id) == [deleted.id])
+        #expect(vm.keptCount == batch.items.count - 1)
+    }
+
+    @Test func undoBringsBackTheDraft() throws {
+        let vm = FeedViewModel.mock(startingAt: .batch)
+        let batch = try batchCard(vm)
+        let draft = [batch.items[0].id: Decision.delete]
+
+        vm.saveDraft(draft, for: batch)
+        vm.decide(.up)
+        vm.undo()
+
+        #expect(vm.draft(for: batch) == draft)
+        #expect(vm.decisions.isEmpty)
+    }
+
+    @Test func finishingTheReviewClearsTheDraft() throws {
+        let vm = FeedViewModel.mock(startingAt: .batch)
+        let batch = try batchCard(vm)
+
+        vm.saveDraft([batch.items[0].id: .delete], for: batch)
+        vm.decideIndividually(Dictionary(uniqueKeysWithValues: batch.items.map { ($0.id, Decision.keep) }))
+
+        #expect(vm.draft(for: batch).isEmpty)
+        #expect(vm.pendingItems.isEmpty)
+    }
+
     @Test func ignoredWhenTheTopCardIsNotABatch() throws {
         let vm = FeedViewModel.mock(startingAt: .first)
         let item = try #require(vm.currentCard?.items.first)
