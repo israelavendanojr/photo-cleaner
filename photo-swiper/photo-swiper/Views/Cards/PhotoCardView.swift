@@ -11,6 +11,13 @@ struct PhotoCardView: View {
         ItemImage(item.image)
             .blur(radius: isBlurry ? 10 : 0, opaque: true)
             .overlay { BottomScrim() }
+            .overlay {
+                CardCenterButton(
+                    systemImage: "arrow.up.left.and.arrow.down.right",
+                    accessibilityLabel: "View full screen",
+                    action: onOpen
+                )
+            }
             .overlay(alignment: .bottomLeading) { caption }
             .overlay(alignment: .topLeading) {
                 if let flag = item.reviewFlag {
@@ -21,7 +28,6 @@ struct PhotoCardView: View {
             }
             .clipShape(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
             .cardShadow()
-            .onTapGesture(perform: onOpen)
             .accessibilityElement(children: .combine)
             .accessibilityLabel(accessibilityText)
             .accessibilityAction(named: "View full screen", onOpen)

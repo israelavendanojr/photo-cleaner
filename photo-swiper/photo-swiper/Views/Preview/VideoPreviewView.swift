@@ -10,31 +10,51 @@ struct VideoPreviewView: View {
 
     @State private var playback = VideoPlayback()
     @State private var showsControls = true
+    @State private var dismissDrag = DismissDrag()
 
     var body: some View {
         ZStack {
-            Color.black.ignoresSafeArea()
-            if !playback.isReady {
-                ItemImage(item.image)
-                    .ignoresSafeArea()
-                    .overlay { ProgressView().tint(.white) }
-            }
-            PlayerLayerView(player: playback.player)
-                .ignoresSafeArea()
-                .opacity(playback.isReady ? 1 : 0)
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    withAnimation(DS.Motion.calm) { showsControls.toggle() }
+            Color.black.opacity(dismissDrag.backdropOpacity).ignoresSafeArea()
+            ZStack {
+                if !playback.isReady {
+                    ItemImage(item.image)
+                        .ignoresSafeArea()
+                        .overlay { ProgressView().tint(.white) }
                 }
-                .accessibilityHidden(true)
+                PlayerLayerView(player: playback.player)
+                    .ignoresSafeArea()
+                    .opacity(playback.isReady ? 1 : 0)
+                    .accessibilityHidden(true)
+            }
+            .scaleEffect(dismissDrag.contentScale)
+            .offset(y: dismissDrag.offset)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                withAnimation(DS.Motion.calm) { showsControls.toggle() }
+            }
+            // Only on the video itself, so the timeline keeps its own drag.
+            .gesture(
+                DragGesture(coordinateSpace: .global)
+                    .onChanged { dismissDrag.track($0) }
+                    .onEnded { if dismissDrag.end($0) { dismiss() } }
+            )
         }
         .overlay(alignment: .top) {
-            if showsControls { topBar.transition(.opacity) }
+            if showsControls {
+                topBar
+                    .opacity(dismissDrag.chromeOpacity)
+                    .transition(.opacity)
+            }
         }
         .overlay(alignment: .bottom) {
-            if showsControls { controls.transition(.opacity) }
+            if showsControls {
+                controls
+                    .opacity(dismissDrag.chromeOpacity)
+                    .transition(.opacity)
+            }
         }
         .environment(\.colorScheme, .dark)
+        .presentationBackground(.clear)
         .task { await playback.load(item) }
         .onDisappear { playback.stop() }
     }

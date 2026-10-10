@@ -8,7 +8,9 @@ struct VideoCardView: View {
     var body: some View {
         ItemImage(item.image)
             .overlay { BottomScrim() }
-            .overlay { playButton }
+            .overlay {
+                CardCenterButton(systemImage: "play.fill", accessibilityLabel: "Play video", iconOffset: 3, action: onPlay)
+            }
             .overlay(alignment: .topLeading) {
                 if let duration = item.duration {
                     Chip(text: "Video · \(Format.duration(duration))", style: .frosted)
@@ -21,22 +23,6 @@ struct VideoCardView: View {
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(accessibilityText)
             .accessibilityAction(named: "Play video", onPlay)
-    }
-
-    private var playButton: some View {
-        Button(action: onPlay) {
-            Image(systemName: "play.fill")
-                .font(.system(size: 30))
-                .foregroundStyle(.white)
-                .offset(x: 3)
-                .frame(width: 80, height: 80)
-                .background {
-                    Circle().fill(.ultraThinMaterial).environment(\.colorScheme, .dark)
-                }
-                .contentShape(Circle())
-        }
-        .buttonStyle(PressScaleStyle())
-        .accessibilityLabel("Play video")
     }
 
     private var caption: some View {

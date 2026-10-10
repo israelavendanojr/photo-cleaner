@@ -120,7 +120,7 @@ final class photo_swiperUITests: XCTestCase {
     func testVideoPreviewPlaysScrubsAndClosesWithoutDeciding() throws {
         let app = launch("-startAt", "video")
         XCTAssertTrue(element(app, containing: "Video ·").waitForExistence(timeout: 5))
-        let position = element(app, containing: " of 50").label
+        let position = element(app, containing: " of ").label
 
         // The play button sits in the middle of the card.
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
@@ -144,12 +144,20 @@ final class photo_swiperUITests: XCTestCase {
         XCTAssertTrue(scrubber.waitForNonExistence(timeout: 3), "The preview closes")
         XCTAssertTrue(element(app, containing: position).exists, "Watching doesn't move the feed")
         XCTAssertTrue(element(app, containing: "0 MB to clear").exists, "Watching decides nothing")
+
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        XCTAssertTrue(scrubber.waitForExistence(timeout: 3))
+        swipeDown(app)
+        XCTAssertTrue(scrubber.waitForNonExistence(timeout: 3), "Swiping down closes the preview")
+        XCTAssertTrue(element(app, containing: position).exists, "Swiping out doesn't move the feed")
+        XCTAssertTrue(element(app, containing: "0 MB to clear").exists, "Swiping out decides nothing")
     }
 
     @MainActor
     func testPhotoPreviewOpensZoomsAndClosesWithoutDeciding() throws {
         let app = launch()
-        XCTAssertTrue(element(app, containing: "1 of 50").waitForExistence(timeout: 5))
+        XCTAssertTrue(element(app, containing: " of ").waitForExistence(timeout: 5))
+        let position = element(app, containing: " of ").label
 
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         let preview = app.descendants(matching: .any)["photoPreview"]
@@ -162,8 +170,15 @@ final class photo_swiperUITests: XCTestCase {
 
         tapCenter(onScreen(app, "Close"))
         XCTAssertTrue(preview.waitForNonExistence(timeout: 3), "The preview closes")
-        XCTAssertTrue(element(app, containing: "1 of 50").exists, "Looking doesn't move the feed")
+        XCTAssertTrue(element(app, containing: position).exists, "Looking doesn't move the feed")
         XCTAssertTrue(element(app, containing: "0 MB to clear").exists, "Looking decides nothing")
+
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        XCTAssertTrue(preview.waitForExistence(timeout: 3))
+        swipeDown(app)
+        XCTAssertTrue(preview.waitForNonExistence(timeout: 3), "Swiping down closes the preview")
+        XCTAssertTrue(element(app, containing: position).exists, "Swiping out doesn't move the feed")
+        XCTAssertTrue(element(app, containing: "0 MB to clear").exists, "Swiping out decides nothing")
     }
 
     @MainActor
@@ -221,6 +236,12 @@ final class photo_swiperUITests: XCTestCase {
         tapCenter(button)
         // Let the fly-out finish before the next card accepts input.
         usleep(550_000)
+    }
+
+    /// Through the upper part of the screen, clear of the video timeline.
+    private func swipeDown(_ app: XCUIApplication) {
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3))
+            .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7)))
     }
 
     private func tapCenter(_ element: XCUIElement) {

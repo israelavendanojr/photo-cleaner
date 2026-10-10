@@ -13,20 +13,23 @@ struct PhotoPreviewView: View {
     @GestureState private var pinch: CGFloat = 1
     @GestureState private var pan: CGSize = .zero
     @State private var size = CGSize.zero
+    @State private var dismissDrag = DismissDrag()
 
     private static let maxScale: CGFloat = 4
     private static let doubleTapScale: CGFloat = 2.5
 
     var body: some View {
         ZStack {
-            Color.black.ignoresSafeArea()
+            Color.black.opacity(dismissDrag.backdropOpacity).ignoresSafeArea()
             ItemImage(item.image, contentMode: .fit)
                 .ignoresSafeArea()
                 .scaleEffect(liveScale)
                 .offset(liveOffset)
+                .scaleEffect(dismissDrag.contentScale)
+                .offset(y: dismissDrag.offset)
                 .onGeometryChange(for: CGSize.self, of: \.size) { size = $0 }
                 .gesture(magnify)
-                .gesture(drag, including: zoom.isZoomed ? .all : .subviews)
+                .gesture(drag)
                 .onTapGesture(count: 2, coordinateSpace: .local) { toggleZoom(at: $0) }
                 .onTapGesture {
                     withAnimation(DS.Motion.calm) { showsChrome.toggle() }
@@ -37,10 +40,15 @@ struct PhotoPreviewView: View {
                 .accessibilityIdentifier("photoPreview")
         }
         .overlay(alignment: .top) {
-            if showsChrome { topBar.transition(.opacity) }
+            if showsChrome {
+                topBar
+                    .opacity(dismissDrag.chromeOpacity)
+                    .transition(.opacity)
+            }
         }
         .environment(\.colorScheme, .dark)
         .statusBarHidden(!showsChrome)
+        .presentationBackground(.clear)
     }
 
     // MARK: Zoom
@@ -64,11 +72,22 @@ struct PhotoPreviewView: View {
             }
     }
 
-    /// Only active while zoomed, so it never fights the image at rest.
+    /// Pans while zoomed; at rest, a vertical swipe closes the preview. Global coordinates so
+    /// the image's own offset and scale don't skew the finger's movement.
     private var drag: some Gesture {
-        DragGesture()
-            .updating($pan) { value, state, _ in state = value.translation }
+        DragGesture(coordinateSpace: .global)
+            .updating($pan) { value, state, _ in
+                if zoom.isZoomed { state = value.translation }
+            }
+            .onChanged { value in
+                guard !zoom.isZoomed else { return }
+                if pinch == 1 { dismissDrag.track(value) } else { dismissDrag.cancel() }
+            }
             .onEnded { value in
+                guard zoom.isZoomed else {
+                    if dismissDrag.end(value) { dismiss() }
+                    return
+                }
                 let moved = CGSize(
                     width: zoom.offset.width + value.translation.width,
                     height: zoom.offset.height + value.translation.height
