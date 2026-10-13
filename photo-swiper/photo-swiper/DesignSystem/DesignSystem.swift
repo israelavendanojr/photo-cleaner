@@ -47,6 +47,8 @@ enum DS {
         static let calm = Animation.spring(duration: 0.5, bounce: 0.08)
         /// Screen-level transitions and big reveals.
         static let gentle = Animation.smooth(duration: 0.7)
+        /// The tab bar's selection capsule sliding between tabs. A little bounce so it lands.
+        static let tab = Animation.spring(duration: 0.4, bounce: 0.22)
     }
 }
 

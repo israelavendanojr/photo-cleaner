@@ -1,19 +1,17 @@
 import SwiftUI
 
-/// The main screen: handle, top bar, and the card stack.
+/// The main screen: top bar and the card stack.
 struct FeedView: View {
     @Environment(FeedViewModel.self) private var vm
-    let onOpenOverview: () -> Void
     var onOpenPile: () -> Void = {}
 
     var body: some View {
         VStack(spacing: 0) {
-            OverviewHandle(onOpen: onOpenOverview)
             FeedTopBar(onUndo: {
                 withAnimation(DS.Motion.calm) { vm.undo() }
             }, onOpenPile: onOpenPile)
             .padding(.horizontal, DS.Spacing.l)
-            .padding(.top, DS.Spacing.xxs)
+            .padding(.top, DS.Spacing.s)
             .padding(.bottom, DS.Spacing.m)
             CardStackView()
         }
@@ -22,11 +20,11 @@ struct FeedView: View {
 }
 
 #Preview("Feed") {
-    FeedView(onOpenOverview: {})
+    FeedView()
         .environment(FeedViewModel.mock())
 }
 
 #Preview("Similar") {
-    FeedView(onOpenOverview: {})
+    FeedView()
         .environment(FeedViewModel.mock(startingAt: .similar))
 }

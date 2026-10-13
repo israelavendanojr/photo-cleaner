@@ -3,7 +3,6 @@ import SwiftUI
 /// Shown when the feed has nothing left: a calm stop, not a dead end.
 struct CaughtUpView: View {
     @Environment(FeedViewModel.self) private var vm
-    let onOpenOverview: () -> Void
 
     var body: some View {
         VStack(spacing: 0) {
@@ -27,14 +26,10 @@ struct CaughtUpView: View {
                     .padding(.top, DS.Spacing.l)
             }
             Spacer()
-            VStack(spacing: DS.Spacing.s) {
-                Button("Start another session") {
-                    Task { await vm.startNewSession() }
-                }
-                .buttonStyle(.pill(.ink))
-                Button("See your library", action: onOpenOverview)
-                    .buttonStyle(.pill(.ghost))
+            Button("Start another session") {
+                Task { await vm.startNewSession() }
             }
+            .buttonStyle(.pill(.ink))
         }
         .multilineTextAlignment(.center)
         .padding(.horizontal, DS.Spacing.xxl)
@@ -44,6 +39,6 @@ struct CaughtUpView: View {
 }
 
 #Preview {
-    CaughtUpView(onOpenOverview: {})
+    CaughtUpView()
         .environment(FeedViewModel.mock(startingAt: .caughtUp))
 }

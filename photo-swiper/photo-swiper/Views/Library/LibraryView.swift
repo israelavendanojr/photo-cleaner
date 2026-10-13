@@ -1,10 +1,9 @@
 import SwiftUI
 import UIKit
 
-/// Library-wide progress, what's pending, and feed preferences.
-struct OverviewSheet: View {
+/// The Library tab: library-wide progress, what's pending, and feed preferences.
+struct LibraryView: View {
     @Environment(FeedViewModel.self) private var vm
-    @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
 
     var body: some View {
@@ -45,23 +44,13 @@ struct OverviewSheet: View {
             }
         }
         .tint(DS.Palette.ink)
-        .presentationDetents([.large])
-        .presentationDragIndicator(.visible)
-        .presentationBackground(DS.Palette.paper)
-        .presentationCornerRadius(DS.Radius.card)
     }
 
     private var header: some View {
-        HStack(alignment: .firstTextBaseline) {
-            Text("Your library")
-                .dsSerif(34, relativeTo: .largeTitle, weight: .medium)
-                .foregroundStyle(DS.Palette.ink)
-            Spacer()
-            Button("Done") { dismiss() }
-                .font(.headline)
-                .foregroundStyle(DS.Palette.ink)
-        }
-        .padding(.top, DS.Spacing.xl)
+        Text("Your library")
+            .dsSerif(34, relativeTo: .largeTitle, weight: .medium)
+            .foregroundStyle(DS.Palette.ink)
+            .padding(.top, DS.Spacing.l)
     }
 
     private var stats: some View {
@@ -169,9 +158,6 @@ private struct OverviewRow: View {
 }
 
 #Preview {
-    Color.clear
-        .sheet(isPresented: .constant(true)) {
-            OverviewSheet()
-                .environment(FeedViewModel.mock(startingAt: .batch))
-        }
+    LibraryView()
+        .environment(FeedViewModel.mock(startingAt: .batch))
 }

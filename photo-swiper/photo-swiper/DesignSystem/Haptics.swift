@@ -1,6 +1,6 @@
 import UIKit
 
-/// The app's three haptic moments.
+/// The app's haptic moments.
 @MainActor
 enum Haptics {
     /// A drag crosses a commit threshold.
@@ -16,5 +16,10 @@ enum Haptics {
     /// The final, confirmed delete.
     static func confirm() {
         UINotificationFeedbackGenerator().notificationOccurred(.success)
+    }
+
+    /// A different tab was picked.
+    static func tabChange() {
+        UISelectionFeedbackGenerator().selectionChanged()
     }
 }
