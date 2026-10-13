@@ -46,7 +46,7 @@ struct SwipeableCard<Content: View>: View {
         _progress = progress
         self.onSwipe = onSwipe
         self.content = content()
-        _offset = State(initialValue: entrance.map { Self.offscreen($0, from: .zero) } ?? .zero)
+        _offset = State(initialValue: entrance.map { SwipeThresholds.offscreen($0, from: .zero) } ?? .zero)
     }
 
     var body: some View {
@@ -121,7 +121,7 @@ struct SwipeableCard<Content: View>: View {
         flight += 1
         let current = flight
         withAnimation(DS.Motion.flyOut) {
-            offset = Self.offscreen(direction, from: offset)
+            offset = SwipeThresholds.offscreen(direction, from: offset)
             progress = 1
         } completion: {
             guard flight == current else { return }
@@ -131,14 +131,6 @@ struct SwipeableCard<Content: View>: View {
     }
 
     // MARK: Geometry
-
-    private static func offscreen(_ direction: SwipeDirection, from offset: CGSize) -> CGSize {
-        switch direction {
-        case .left: CGSize(width: -640, height: offset.height + 60)
-        case .right: CGSize(width: 640, height: offset.height + 60)
-        case .up: CGSize(width: offset.width, height: -1100)
-        }
-    }
 
     private static func progress(for translation: CGSize) -> Double {
         let distance = max(abs(translation.width) / SwipeThresholds.horizontal, -translation.height / SwipeThresholds.up)
@@ -175,6 +167,15 @@ enum SwipeThresholds {
             return .up
         }
         return nil
+    }
+
+    /// Where a swiped card flies to, starting from its current drag `offset`.
+    static func offscreen(_ direction: SwipeDirection, from offset: CGSize) -> CGSize {
+        switch direction {
+        case .left: CGSize(width: -640, height: offset.height + 60)
+        case .right: CGSize(width: 640, height: offset.height + 60)
+        case .up: CGSize(width: offset.width, height: -1100)
+        }
     }
 }
 

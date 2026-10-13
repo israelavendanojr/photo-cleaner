@@ -3,53 +3,63 @@ import SwiftUI
 
 /// Full-screen playback for a video card, with play/pause and a scrubbable timeline.
 ///
-/// Only for watching: decisions still happen on the card once this closes.
+/// Swiping the video left, right, or up decides like on the card; swiping down just closes.
 struct VideoPreviewView: View {
     @Environment(\.dismiss) private var dismiss
     let item: LibraryItem
+    /// Overlay text for each direction.
+    var label: (SwipeDirection) -> String = { _ in "" }
+    /// Called once a decision swipe has flown the video off. The caller closes the preview.
+    var onDecide: (SwipeDirection) -> Void = { _ in }
 
     @State private var playback = VideoPlayback()
     @State private var showsControls = true
-    @State private var dismissDrag = DismissDrag()
+    @State private var swipe = PreviewDrag()
+    /// The screen the video is fitted into.
+    @State private var size = CGSize.zero
+    @State private var posterSize = CGSize.zero
 
     var body: some View {
         ZStack {
-            Color.black.opacity(dismissDrag.backdropOpacity).ignoresSafeArea()
-            ZStack {
-                if !playback.isReady {
-                    ItemImage(item.image)
-                        .ignoresSafeArea()
-                        .overlay { ProgressView().tint(.white) }
+            Color.black.opacity(swipe.backdropOpacity).ignoresSafeArea()
+            // Gestures cover the whole screen; only the video itself moves.
+            Color.clear
+                .contentShape(Rectangle())
+                .ignoresSafeArea()
+                .overlay { video }
+                .onGeometryChange(for: CGSize.self, of: \.size) { size = $0 }
+                .onTapGesture {
+                    withAnimation(DS.Motion.calm) { showsControls.toggle() }
                 }
-                PlayerLayerView(player: playback.player)
-                    .ignoresSafeArea()
-                    .opacity(playback.isReady ? 1 : 0)
-                    .accessibilityHidden(true)
-            }
-            .scaleEffect(dismissDrag.contentScale)
-            .offset(y: dismissDrag.offset)
-            .contentShape(Rectangle())
-            .onTapGesture {
-                withAnimation(DS.Motion.calm) { showsControls.toggle() }
-            }
-            // Only on the video itself, so the timeline keeps its own drag.
-            .gesture(
-                DragGesture(coordinateSpace: .global)
-                    .onChanged { dismissDrag.track($0) }
-                    .onEnded { if dismissDrag.end($0) { dismiss() } }
-            )
+                // The controls sit above, so the timeline keeps its own drag.
+                .gesture(
+                    DragGesture(coordinateSpace: .global)
+                        .onChanged { swipe.track($0) }
+                        .onEnded { value in
+                            switch swipe.end(value) {
+                            case .dismiss: dismiss()
+                            case .decide(let direction): decide(direction)
+                            case nil: break
+                            }
+                        }
+                )
+                .accessibilityActions {
+                    ForEach(SwipeDirection.allCases, id: \.self) { direction in
+                        Button(label(direction)) { decide(direction) }
+                    }
+                }
         }
         .overlay(alignment: .top) {
             if showsControls {
                 topBar
-                    .opacity(dismissDrag.chromeOpacity)
+                    .opacity(swipe.chromeOpacity)
                     .transition(.opacity)
             }
         }
         .overlay(alignment: .bottom) {
             if showsControls {
                 controls
-                    .opacity(dismissDrag.chromeOpacity)
+                    .opacity(swipe.chromeOpacity)
                     .transition(.opacity)
             }
         }
@@ -57,6 +67,34 @@ struct VideoPreviewView: View {
         .presentationBackground(.clear)
         .task { await playback.load(item) }
         .onDisappear { playback.stop() }
+    }
+
+    private var video: some View {
+        ZStack {
+            if !playback.isReady {
+                ItemImage(item.image, contentMode: .fit) { posterSize = $0 }
+                    .overlay { ProgressView().tint(.white) }
+            }
+            PlayerLayerView(player: playback.player)
+                .opacity(playback.isReady ? 1 : 0)
+                .accessibilityHidden(true)
+        }
+        .frame(width: videoSize.width, height: videoSize.height)
+        .overlay { SwipeOverlay(offset: swipe.decideOffset, label: label) }
+        .scaleEffect(swipe.contentScale)
+        .rotationEffect(.degrees(swipe.rotation))
+        .offset(swipe.offset)
+    }
+
+    /// The video fitted to the screen, from the poster until the clip's own size is known.
+    private var videoSize: CGSize {
+        let natural = playback.videoSize == .zero ? posterSize : playback.videoSize
+        guard natural.width > 0, natural.height > 0 else { return size }
+        return AVMakeRect(aspectRatio: natural, insideRect: CGRect(origin: .zero, size: size)).size
+    }
+
+    private func decide(_ direction: SwipeDirection) {
+        swipe.flyOut(direction) { onDecide(direction) }
     }
 
     // MARK: Top bar
@@ -198,6 +236,8 @@ final class VideoPlayback {
     private(set) var duration: TimeInterval = 0
     private(set) var isPlaying = false
     private(set) var isReady = false
+    /// The clip's display size, rotation applied. Zero until loaded.
+    private(set) var videoSize = CGSize.zero
 
     @ObservationIgnored private var timeObserver: Any?
     @ObservationIgnored private var endObserver: (any NSObjectProtocol)?
@@ -214,6 +254,11 @@ final class VideoPlayback {
         player.replaceCurrentItem(with: playerItem)
         if let loaded = try? await playerItem.asset.load(.duration), loaded.isNumeric, loaded.seconds > 0 {
             duration = loaded.seconds
+        }
+        if let track = try? await playerItem.asset.loadTracks(withMediaType: .video).first,
+           let geometry = try? await track.load(.naturalSize, .preferredTransform) {
+            let rotated = geometry.0.applying(geometry.1)
+            videoSize = CGSize(width: abs(rotated.width), height: abs(rotated.height))
         }
         observe(playerItem)
         isReady = true

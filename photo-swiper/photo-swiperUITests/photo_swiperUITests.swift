@@ -205,6 +205,69 @@ final class photo_swiperUITests: XCTestCase {
     }
 
     @MainActor
+    func testPhotoPreviewSwipesDecide() throws {
+        let app = launch()
+        XCTAssertTrue(element(app, containing: " of ").waitForExistence(timeout: 5))
+        let position = element(app, containing: " of ").label
+        let preview = app.descendants(matching: .any)["photoPreview"]
+
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        XCTAssertTrue(preview.waitForExistence(timeout: 3))
+        drag(app, to: CGVector(dx: 0.02, dy: 0.5))
+        XCTAssertTrue(preview.waitForNonExistence(timeout: 3), "A decision closes the preview")
+        XCTAssertTrue(element(app, containing: position).waitForNonExistence(timeout: 3), "The card leaves the deck")
+        XCTAssertFalse(emptyPile(app).exists, "Delete in full screen adds to the pile")
+
+        app.buttons["Undo"].tap()
+        XCTAssertTrue(element(app, containing: position).waitForExistence(timeout: 3))
+        XCTAssertTrue(emptyPile(app).waitForExistence(timeout: 3), "Undo restores a full-screen decision")
+        sleep(1)
+
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        XCTAssertTrue(preview.waitForExistence(timeout: 3))
+        drag(app, to: CGVector(dx: 0.5, dy: 0.1))
+        XCTAssertTrue(preview.waitForNonExistence(timeout: 3))
+        XCTAssertTrue(element(app, containing: position).waitForNonExistence(timeout: 3), "Swiping up is Later, not close")
+        XCTAssertTrue(emptyPile(app).exists, "Later never adds to the pile")
+    }
+
+    /// A slow drag the way a finger does it: a short one springs back and decides nothing, a
+    /// long one held past the threshold still decides on release.
+    @MainActor
+    func testPhotoPreviewSlowSwipeTracksFinger() throws {
+        let app = launch()
+        XCTAssertTrue(element(app, containing: " of ").waitForExistence(timeout: 5))
+        let position = element(app, containing: " of ").label
+        let preview = app.descendants(matching: .any)["photoPreview"]
+
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        XCTAssertTrue(preview.waitForExistence(timeout: 3))
+        slowDrag(app, to: CGVector(dx: 0.4, dy: 0.5))
+        sleep(1)
+        XCTAssertTrue(preview.exists, "A short drag springs back")
+        XCTAssertTrue(element(app, containing: position).exists)
+
+        slowDrag(app, to: CGVector(dx: 0.12, dy: 0.5))
+        XCTAssertTrue(preview.waitForNonExistence(timeout: 3), "Held past the threshold, it decides")
+        XCTAssertFalse(emptyPile(app).exists, "Delete in full screen adds to the pile")
+    }
+
+    @MainActor
+    func testVideoPreviewSwipeRightKeeps() throws {
+        let app = launch("-startAt", "video")
+        XCTAssertTrue(element(app, containing: "Video ·").waitForExistence(timeout: 5))
+        let position = element(app, containing: " of ").label
+
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        let scrubber = app.descendants(matching: .any)["videoScrubber"]
+        XCTAssertTrue(scrubber.waitForExistence(timeout: 3))
+        slowDrag(app, to: CGVector(dx: 0.88, dy: 0.5))
+        XCTAssertTrue(scrubber.waitForNonExistence(timeout: 3), "A decision closes the preview")
+        XCTAssertTrue(element(app, containing: position).waitForNonExistence(timeout: 3), "The card leaves the deck")
+        XCTAssertTrue(emptyPile(app).exists, "Keep never adds to the pile")
+    }
+
+    @MainActor
     func testPendingPileDeletesByDefaultAndKeepsUnmarked() throws {
         let app = launch()
         XCTAssertTrue(element(app, containing: "1 of 20").waitForExistence(timeout: 5))
@@ -298,5 +361,11 @@ final class photo_swiperUITests: XCTestCase {
     private func drag(_ app: XCUIApplication, to target: CGVector, hold: TimeInterval = 0.05) {
         let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
         start.press(forDuration: hold, thenDragTo: app.coordinate(withNormalizedOffset: target))
+    }
+
+    /// Moves slowly and holds at the end before lifting, so every step of the drag registers.
+    private func slowDrag(_ app: XCUIApplication, to target: CGVector) {
+        let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+        start.press(forDuration: 0.1, thenDragTo: app.coordinate(withNormalizedOffset: target), withVelocity: .slow, thenHoldForDuration: 1)
     }
 }

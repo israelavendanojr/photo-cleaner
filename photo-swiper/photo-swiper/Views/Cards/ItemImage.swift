@@ -5,10 +5,13 @@ import SwiftUI
 struct ItemImage: View {
     let reference: ImageReference
     var contentMode: ContentMode = .fill
+    /// The image's own size once known, for laying out around the picture rather than the frame.
+    var onImageSize: (CGSize) -> Void = { _ in }
 
-    init(_ reference: ImageReference, contentMode: ContentMode = .fill) {
+    init(_ reference: ImageReference, contentMode: ContentMode = .fill, onImageSize: @escaping (CGSize) -> Void = { _ in }) {
         self.reference = reference
         self.contentMode = contentMode
+        self.onImageSize = onImageSize
     }
 
     var body: some View {
@@ -19,8 +22,11 @@ struct ItemImage: View {
                     Image(name)
                         .resizable()
                         .aspectRatio(contentMode: contentMode)
+                        .onAppear {
+                            if let size = UIImage(named: name)?.size { onImageSize(size) }
+                        }
                 case .photoKit(let id):
-                    PhotoKitImage(id: id, contentMode: contentMode)
+                    PhotoKitImage(id: id, contentMode: contentMode, onImageSize: onImageSize)
                 }
             }
             .clipped()
@@ -40,6 +46,7 @@ private struct PhotoKitImage: View {
 
     let id: String
     let contentMode: ContentMode
+    let onImageSize: (CGSize) -> Void
     @Environment(\.displayScale) private var displayScale
     @State private var size = CGSize.zero
     @State private var image: UIImage?
@@ -64,6 +71,7 @@ private struct PhotoKitImage: View {
                 let pixelSize = ThumbnailPipeline.pixelSize(for: size, scale: displayScale)
                 for await next in ThumbnailPipeline.shared.images(for: id, pixelSize: pixelSize) {
                     image = next
+                    onImageSize(next.size)
                 }
             }
     }

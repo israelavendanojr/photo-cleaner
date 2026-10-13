@@ -24,10 +24,12 @@ struct SwipeDeck: View {
     /// Cards already decided but still flying off. They stay in the stack until the animation
     /// ends, so the next card is live the moment the previous one is released.
     @State private var departing: [FeedCard] = []
-    /// The video open in the full-screen player. Watching never decides anything.
+    /// The video open in the full-screen player.
     @State private var previewingVideo: LibraryItem?
-    /// The photo open full screen. Looking never decides anything either.
+    /// The photo open full screen.
     @State private var previewingPhoto: LibraryItem?
+    /// A swipe made in full screen. The top card flies off that way once the preview closes.
+    @State private var previewDecision: SwipeDirection?
     /// What was pre-cached before this deck appeared, handed back when it goes (a nested deck).
     @State private var outerPreheat: [String: CGSize]?
     @Environment(\.displayScale) private var displayScale
@@ -74,11 +76,17 @@ struct SwipeDeck: View {
             ActionBar { request = $0 }
                 .disabled(currentCard == nil)
         }
-        .fullScreenCover(item: $previewingVideo) { item in
-            VideoPreviewView(item: item)
+        .fullScreenCover(item: $previewingVideo, onDismiss: flyOutPreviewDecision) { item in
+            VideoPreviewView(item: item, label: previewLabel) { direction in
+                previewDecision = direction
+                previewingVideo = nil
+            }
         }
-        .fullScreenCover(item: $previewingPhoto) { item in
-            PhotoPreviewView(item: item)
+        .fullScreenCover(item: $previewingPhoto, onDismiss: flyOutPreviewDecision) { item in
+            PhotoPreviewView(item: item, label: previewLabel) { direction in
+                previewDecision = direction
+                previewingPhoto = nil
+            }
         }
         .onChange(of: returning) { _, returning in
             // Undo can bring back a card that is still flying; it's the top card again.
@@ -119,6 +127,17 @@ struct SwipeDeck: View {
     private var visibleCards: [FeedCard] {
         let stack = [currentCard, nextCard].compactMap { $0 }
         return departing.filter { card in !stack.contains { $0.id == card.id } } + stack
+    }
+
+    private func previewLabel(_ direction: SwipeDirection) -> String {
+        currentCard.map { label(direction, $0) } ?? ""
+    }
+
+    /// Once a preview closes on a decision, the card leaves like an action-button swipe.
+    private func flyOutPreviewDecision() {
+        guard let direction = previewDecision else { return }
+        previewDecision = nil
+        request = direction
     }
 
     private func entrance(for card: FeedCard) -> SwipeDirection? {
