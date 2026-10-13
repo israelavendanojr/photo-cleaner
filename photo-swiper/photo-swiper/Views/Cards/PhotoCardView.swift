@@ -12,11 +12,7 @@ struct PhotoCardView: View {
             .blur(radius: isBlurry ? 10 : 0, opaque: true)
             .overlay { BottomScrim() }
             .overlay {
-                CardCenterButton(
-                    systemImage: "arrow.up.left.and.arrow.down.right",
-                    accessibilityLabel: "View full screen",
-                    action: onOpen
-                )
+                CardCenterButton(accessibilityLabel: "View full screen", action: onOpen)
             }
             .overlay(alignment: .bottomLeading) { caption }
             .overlay(alignment: .topLeading) {

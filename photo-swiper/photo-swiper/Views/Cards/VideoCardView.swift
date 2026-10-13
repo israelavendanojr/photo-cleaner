@@ -9,7 +9,7 @@ struct VideoCardView: View {
         ItemImage(item.image)
             .overlay { BottomScrim() }
             .overlay {
-                CardCenterButton(systemImage: "play.fill", accessibilityLabel: "Play video", iconOffset: 3, action: onPlay)
+                CardCenterButton(accessibilityLabel: "Play video", action: onPlay)
             }
             .overlay(alignment: .topLeading) {
                 if let duration = item.duration {
