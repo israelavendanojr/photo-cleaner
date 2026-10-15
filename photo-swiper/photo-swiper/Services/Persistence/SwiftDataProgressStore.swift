@@ -5,7 +5,8 @@ import SwiftData
 /// Progress kept on device with SwiftData. Every mutating call saves before returning.
 @MainActor
 final class SwiftDataProgressStore: ProgressStoring {
-    static let schema: [any PersistentModel.Type] = [ItemProgress.self, SessionProgress.self]
+    /// Every model in the app's one container. The feature index shares it so both live in one file.
+    nonisolated static let schema: [any PersistentModel.Type] = [ItemProgress.self, SessionProgress.self, AssetFeatureRecord.self]
     private static let skipFavoritesKey = "skipFavorites"
     private static let log = Logger(subsystem: "com.israelavendanojr.photo-swiper", category: "progress")
 
@@ -22,15 +23,20 @@ final class SwiftDataProgressStore: ProgressStoring {
         self.defaults = defaults
     }
 
-    /// The app's on-disk store.
-    static func onDisk() throws -> SwiftDataProgressStore {
-        SwiftDataProgressStore(container: try ModelContainer(for: Schema(schema)))
+    /// The app's container: the default on-disk store, a store at `url`, or one in memory.
+    nonisolated static func makeContainer(url: URL? = nil, inMemory: Bool = false) throws -> ModelContainer {
+        let configuration = if let url { ModelConfiguration(url: url) } else { ModelConfiguration(isStoredInMemoryOnly: inMemory) }
+        return try ModelContainer(for: Schema(schema), configurations: configuration)
+    }
+
+    /// The app's on-disk store, or one at `url` (tests).
+    static func onDisk(url: URL? = nil) throws -> SwiftDataProgressStore {
+        SwiftDataProgressStore(container: try makeContainer(url: url))
     }
 
     /// A throwaway store that never touches disk or `UserDefaults`.
     static func inMemory() throws -> SwiftDataProgressStore {
-        let container = try ModelContainer(for: Schema(schema), configurations: ModelConfiguration(isStoredInMemoryOnly: true))
-        return SwiftDataProgressStore(container: container, defaults: nil)
+        SwiftDataProgressStore(container: try makeContainer(inMemory: true), defaults: nil)
     }
 
     // MARK: Decisions
