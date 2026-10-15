@@ -85,17 +85,21 @@ final class FeedViewModel {
     private let library: any PhotoLibraryProviding
     private let builder: any FeedBuilding
     private let store: any ProgressStoring
+    /// Runs the background feature index on the real library. Nil for mocks, previews, and tests.
+    private let indexScheduler: IndexScheduler?
     private let now: () -> Date
 
     init(
         library: any PhotoLibraryProviding,
         builder: any FeedBuilding,
         store: any ProgressStoring = InMemoryProgressStore(),
+        indexScheduler: IndexScheduler? = nil,
         now: @escaping () -> Date = Date.init
     ) {
         self.library = library
         self.builder = builder
         self.store = store
+        self.indexScheduler = indexScheduler
         self.now = now
         skipFavorites = store.skipFavorites
     }
@@ -111,6 +115,7 @@ final class FeedViewModel {
         self.library = library
         self.builder = builder
         self.store = store
+        indexScheduler = nil
         now = Date.init
         skipFavorites = store.skipFavorites
         libraryStats = stats
@@ -195,6 +200,7 @@ final class FeedViewModel {
             return
         }
         phase = .loading
+        indexScheduler?.accessGranted()
         libraryStats = await library.stats()
         observeLibraryChanges()
         if let saved = store.loadSession() {

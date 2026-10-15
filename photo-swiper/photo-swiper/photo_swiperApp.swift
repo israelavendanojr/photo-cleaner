@@ -5,6 +5,7 @@
 //  Created by Israel Avendano Jr. on 10/7/26.
 //
 
+import SwiftData
 import SwiftUI
 
 @main
@@ -25,28 +26,38 @@ struct photo_swiperApp: App {
 private extension FeedViewModel {
     /// The real library and saved progress by default. In debug builds, `-mockLibrary YES` uses mock
     /// services, `-startAt similar|batch|video|end|celebrated|caughtUp` jumps straight to a mock state,
-    /// and `-resetProgress YES` wipes saved progress first. Mocks never read or write saved progress.
+    /// and `-resetProgress YES` wipes saved progress first. Mocks never read or write saved progress
+    /// and never start the feature index.
     static func launch() -> FeedViewModel {
-        guard LibraryServices.usesMock else {
-            return FeedViewModel(library: PhotoKitLibrary(), builder: PhotoKitFeedBuilder(), store: savedProgress())
-        }
+        guard LibraryServices.usesMock else { return real() }
         if let raw = UserDefaults.standard.string(forKey: "startAt"), let start = MockStart(rawValue: raw) {
             return .mock(startingAt: start)
         }
         return FeedViewModel(library: MockPhotoLibrary(), builder: MockFeedBuilder())
     }
 
-    static func savedProgress() -> any ProgressStoring {
+    /// Saved progress and the feature index share one on-disk container.
+    static func real() -> FeedViewModel {
+        let library = PhotoKitLibrary()
+        let container: ModelContainer
         do {
-            let store = try SwiftDataProgressStore.onDisk()
-            #if DEBUG
-            if UserDefaults.standard.bool(forKey: "resetProgress") { store.reset() }
-            #endif
-            return store
+            container = try SwiftDataProgressStore.makeContainer()
         } catch {
-            // Keep the app usable; progress just won't outlive this launch.
+            // Keep the app usable; progress just won't outlive this launch, and nothing is indexed.
             assertionFailure("Couldn't open saved progress: \(error)")
-            return InMemoryProgressStore()
+            return FeedViewModel(library: library, builder: PhotoKitFeedBuilder(), store: InMemoryProgressStore())
         }
+        let store = SwiftDataProgressStore(container: container)
+        #if DEBUG
+        if UserDefaults.standard.bool(forKey: "resetProgress") { store.reset() }
+        #endif
+        let index = FeatureIndex(container: container)
+        let indexer = LibraryIndexer(source: PhotoKitIndexSource(), analyzer: VisionImageAnalyzer(), index: index)
+        return FeedViewModel(
+            library: library,
+            builder: PhotoKitFeedBuilder(index: index),
+            store: store,
+            indexScheduler: IndexScheduler(indexer: indexer, library: library)
+        )
     }
 }
