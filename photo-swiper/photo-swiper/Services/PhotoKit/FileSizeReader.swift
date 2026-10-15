@@ -8,7 +8,12 @@ import Photos
 /// what deletion removes. It's local metadata, so it works for iCloud-only assets without downloading.
 enum FileSizeReader {
     static func bytes(for asset: PHAsset) -> Int64 {
-        let total = PHAssetResource.assetResources(for: asset).reduce(Int64(0)) { sum, resource in
+        bytes(for: asset, resources: PHAssetResource.assetResources(for: asset))
+    }
+
+    /// For callers that already fetched the asset's resources.
+    static func bytes(for asset: PHAsset, resources: [PHAssetResource]) -> Int64 {
+        let total = resources.reduce(Int64(0)) { sum, resource in
             sum + ((resource.value(forKey: "fileSize") as? NSNumber)?.int64Value ?? 0)
         }
         return total > 0 ? total : estimate(for: asset)

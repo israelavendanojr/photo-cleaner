@@ -2,93 +2,83 @@ import CoreLocation
 import Foundation
 import Photos
 
-/// Builds sessions from the real library, newest first.
+/// Builds sessions from the real library, most worth reviewing first.
 ///
-/// Phase 1 cards are single photos, videos, and weekly screenshot batches. Similar shots and
-/// blur/accidental flags need on-device ML and come later. Items in `FeedOptions.excluding`,
-/// such as ones already decided, are skipped.
+/// The newest `poolSize` undecided items compete; `FeedRanker` scores them from metadata and
+/// `SessionPlanner` takes the top `photosPerSession`, batching screenshots by week. Similar shots and
+/// blur/accidental flags need image analysis and come later. Items in `FeedOptions.excluding`, such
+/// as ones already decided, are skipped.
 actor PhotoKitFeedBuilder: FeedBuilding {
     static let photosPerSession = 20
+    /// How many of the newest undecided items compete for a session. Sizes are read live, so this
+    /// stays bounded until a background index caches features for the whole library.
+    static let poolSize = 500
     /// Fewer screenshots than this in a week show up as ordinary photo cards.
     static let minBatch = 3
     static let maxBatch = 40
 
     private let places = PlaceNamer()
+    private let planner = SessionPlanner(
+        limit: PhotoKitFeedBuilder.photosPerSession,
+        minBatch: PhotoKitFeedBuilder.minBatch,
+        maxBatch: PhotoKitFeedBuilder.maxBatch
+    )
 
-    private enum Slot {
-        case single(PHAsset)
-        case screenshots(week: Date)
+    private struct Entry {
+        let asset: PHAsset
+        let features: AssetFeatures
     }
 
     func makeSession(number: Int, options: FeedOptions) async -> Session {
-        let (slots, weeks) = pickSlots(options)
-        let assets = slots.flatMap { slot -> [PHAsset] in
-            switch slot {
-            case .single(let asset): [asset]
-            case .screenshots(let week): weeks[week] ?? []
-            }
-        }
+        let pool = candidatePool(options)
+        let byID = Dictionary(pool.map { ($0.asset.localIdentifier, $0) }, uniquingKeysWith: { first, _ in first })
+        let slots = planner.plan(
+            pool.map { RankCandidate(id: $0.asset.localIdentifier, features: $0.features) },
+            now: .now
+        )
 
+        let chosen = slots.flatMap(\.ids).compactMap { byID[$0] }
         let locations = Dictionary(
-            assets.compactMap { asset in asset.location.map { (asset.localIdentifier, $0) } },
+            chosen.compactMap { entry in entry.asset.location.map { (entry.asset.localIdentifier, $0) } },
             uniquingKeysWith: { first, _ in first }
         )
         let names = await places.names(for: locations, within: .milliseconds(1500))
-        let item = { (asset: PHAsset) in AssetMapper.item(for: asset, location: names[asset.localIdentifier]) }
+        let item = { (id: LibraryItem.ID) -> LibraryItem? in
+            byID[id].map { AssetMapper.item(for: $0.asset, features: $0.features, location: names[id]) }
+        }
 
-        var cards: [FeedCard] = []
-        for slot in slots {
+        let cards: [FeedCard] = slots.compactMap { slot in
             switch slot {
-            case .single(let asset):
-                cards.append(FeedCard(item: item(asset)))
-            case .screenshots(let week):
-                let shots = weeks[week] ?? []
-                if shots.count < Self.minBatch {
-                    cards += shots.map { FeedCard(item: item($0)) }
-                } else {
-                    cards.append(.batch(ItemBatch(
-                        id: "s\(number)-shots-\(Int(week.timeIntervalSince1970))",
-                        kind: .screenshots,
-                        label: "Screenshots",
-                        title: "\(shots.count) screenshots from \(Self.phrase(forWeek: week))",
-                        items: shots.map(item)
-                    )))
-                }
+            case .single(let id):
+                return item(id).map(FeedCard.init(item:))
+            case .screenshots(let week, let ids):
+                let shots = ids.compactMap(item)
+                guard !shots.isEmpty else { return nil }
+                return FeedCard.batch(ItemBatch(
+                    id: "s\(number)-shots-\(Int(week.timeIntervalSince1970))",
+                    kind: .screenshots,
+                    label: "Screenshots",
+                    title: "\(shots.count) screenshots from \(Self.phrase(forWeek: week))",
+                    items: shots
+                ))
             }
         }
         return Session(number: number, cards: cards, scanPercentAtStart: nil)
     }
 
-    /// Walks the library newest first until the session has `photosPerSession` photos. Screenshots
-    /// are pulled out into one slot per calendar week, placed where that week's newest screenshot appears.
-    private func pickSlots(_ options: FeedOptions) -> ([Slot], [Date: [PHAsset]]) {
+    /// The newest `poolSize` undecided items with their features.
+    private func candidatePool(_ options: FeedOptions) -> [Entry] {
         let result = PHAsset.fetchAssets(with: PhotoKitLibrary.fetchOptions(skipFavorites: options.skipFavorites))
-        let calendar = Calendar.current
-        var slots: [Slot] = []
-        var weeks: [Date: [PHAsset]] = [:]
-        var photoCount = 0
+        var pool: [Entry] = []
+        pool.reserveCapacity(min(Self.poolSize, result.count))
         var index = 0
-
-        while index < result.count, photoCount < Self.photosPerSession {
+        while index < result.count, pool.count < Self.poolSize {
             let asset = result.object(at: index)
             index += 1
             guard !options.excluding.contains(asset.localIdentifier) else { continue }
-
-            guard AssetMapper.isScreenshot(asset) else {
-                slots.append(.single(asset))
-                photoCount += 1
-                continue
-            }
-            let date = asset.creationDate ?? .distantPast
-            let week = calendar.dateInterval(of: .weekOfYear, for: date)?.start ?? date
-            let shots = weeks[week, default: []]
-            // Overflow waits for a later session.
-            guard shots.count < Self.maxBatch else { continue }
-            if shots.isEmpty { slots.append(.screenshots(week: week)) }
-            weeks[week] = shots + [asset]
-            photoCount += 1
+            pool.append(Entry(asset: asset, features: AssetMapper.features(for: asset)))
         }
-        return (slots, weeks)
+        return pool
     }
 
     /// "this week", "last week", or "the week of Sep 22".

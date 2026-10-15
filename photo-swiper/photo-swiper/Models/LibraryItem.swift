@@ -33,6 +33,8 @@ struct LibraryItem: Identifiable, Hashable, Sendable, Codable {
     var flags: [Flag] = []
     var isFavorite = false
     let image: ImageReference
+    /// What the ranker saw when it picked this item. Nil for mock items and ones saved before ranking existed.
+    var features: AssetFeatures?
 
     var isVideo: Bool {
         if case .video = kind { true } else { false }
