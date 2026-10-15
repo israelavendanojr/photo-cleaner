@@ -25,6 +25,17 @@ struct FeedRanker: Sendable {
         /// Someone spent time editing it.
         var edited = -1.5
         var favorite = -2.0
+        /// A pocket shot, blown-out frame, or soft junk. See `ImageFlags.isAccidental`.
+        var accidental = 2.0
+        /// Reads as blurry. See `ImageFlags.isBlurry`.
+        var blurry = 1.0
+        /// A receipt, document, or code: useful once, rarely worth keeping.
+        var utility = 0.8
+        /// Per point of aesthetics score below zero, so -1 adds the full weight.
+        var lowAesthetic = 1.0
+        /// Aesthetics scores above `highAestheticFrom` sink, reaching this at a score of 1.
+        var highAesthetic = -0.5
+        var highAestheticFrom = 0.5
     }
 
     /// One reason for a score, e.g. "size" +1.70.
@@ -62,6 +73,23 @@ struct FeedRanker: Sendable {
         }
         if features.isFavorite {
             parts.append(Part(name: "favorite", value: w.favorite))
+        }
+        // Image signals only exist once the index has analyzed the item. Without them the score is unchanged.
+        if ImageFlags.isAccidental(features) {
+            parts.append(Part(name: "accidental", value: w.accidental))
+        } else if ImageFlags.isBlurry(features) {
+            parts.append(Part(name: "blurry", value: w.blurry))
+        }
+        if features.isUtility == true {
+            parts.append(Part(name: "utility", value: w.utility))
+        }
+        if let aesthetic = features.aesthetic {
+            if aesthetic < 0 {
+                parts.append(Part(name: "low aesthetic", value: w.lowAesthetic * min(-aesthetic, 1)))
+            } else if aesthetic > w.highAestheticFrom {
+                let above = (min(aesthetic, 1) - w.highAestheticFrom) / (1 - w.highAestheticFrom)
+                parts.append(Part(name: "high aesthetic", value: w.highAesthetic * above))
+            }
         }
         return Breakdown(parts: parts.filter { $0.value != 0 })
     }

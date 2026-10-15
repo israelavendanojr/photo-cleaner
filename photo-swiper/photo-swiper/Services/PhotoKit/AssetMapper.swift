@@ -1,7 +1,7 @@
 import Foundation
 import Photos
 
-/// `PHAsset` → `LibraryItem` and `AssetFeatures`.
+/// `PHAsset` → `LibraryItem` and `AssetFeatures`. Review flags come from `ImageFlags`.
 enum AssetMapper {
     static func item(for asset: PHAsset, features: AssetFeatures, location: String?) -> LibraryItem {
         LibraryItem(
@@ -10,7 +10,7 @@ enum AssetMapper {
             date: features.createdAt,
             location: location,
             bytes: features.bytes,
-            flags: features.isScreenshot ? [.screenshot] : [],
+            flags: (features.isScreenshot ? [.screenshot] : []) + ImageFlags.classify(features),
             isFavorite: features.isFavorite,
             image: .photoKit(localIdentifier: asset.localIdentifier),
             features: features

@@ -80,6 +80,67 @@ struct FeedRankerTests {
     }
 }
 
+struct FeedRankerImageSignalTests {
+    private let ranker = FeedRanker()
+    private static let legacyParts: Set<String> = ["size", "video", "screenshot", "shot age", "age", "burst", "edited", "favorite"]
+
+    private func analyzed(
+        sharpness: Double = 500, dark: Double = 0.05, aesthetic: Double = 0, utility: Bool = false
+    ) -> AssetFeatures {
+        var f = features()
+        f.sharpness = sharpness
+        f.exposure = ExposureStats(mean: 0.5, darkFraction: dark, brightFraction: 0.05)
+        f.aesthetic = aesthetic
+        f.isUtility = utility
+        return f
+    }
+
+    private func part(_ name: String, of features: AssetFeatures) -> Double? {
+        ranker.score(features, now: now).parts.first { $0.name == name }?.value
+    }
+
+    @Test func unanalyzedFeaturesScoreExactlyAsBefore() {
+        let samples = [
+            features(), features(mb: 300, videoSeconds: 90, daysOld: 800, edited: true),
+            features(mb: 0.5, screenshot: true, daysOld: 45), features(inBurst: true, favorite: true),
+        ]
+        for sample in samples {
+            let breakdown = ranker.score(sample, now: now)
+            #expect(Set(breakdown.parts.map(\.name)).isSubset(of: Self.legacyParts))
+        }
+        // Pinned from the metadata-only ranker: size log10(2) plus one day of age.
+        let plain = ranker.score(features(), now: now)
+        #expect(abs(plain.total - (log10(2.0) + 0.1 / 365)) < 1e-9)
+    }
+
+    @Test func aGoodAnalyzedPhotoAddsNoParts() {
+        #expect(ranker.score(analyzed(), now: now) == ranker.score(features(), now: now))
+    }
+
+    @Test func accidentalRanksHighest() {
+        #expect(part("accidental", of: analyzed(sharpness: 1, dark: 1)) == FeedRanker.Weights().accidental)
+        #expect(part("blurry", of: analyzed(sharpness: 1, dark: 1)) == nil, "Accidental replaces blurry")
+        #expect(ranker.score(analyzed(sharpness: 1, dark: 1), now: now).total > ranker.score(analyzed(sharpness: 5), now: now).total)
+    }
+
+    @Test func blurryRanksHigher() {
+        #expect(part("blurry", of: analyzed(sharpness: 5)) == FeedRanker.Weights().blurry)
+        #expect(ranker.score(analyzed(sharpness: 5), now: now).total > ranker.score(analyzed(), now: now).total)
+    }
+
+    @Test func utilityRanksHigher() {
+        #expect(part("utility", of: analyzed(utility: true)) == FeedRanker.Weights().utility)
+    }
+
+    @Test func lowAestheticRisesAndHighAestheticSinks() {
+        #expect(part("low aesthetic", of: analyzed(aesthetic: -1)) == FeedRanker.Weights().lowAesthetic)
+        #expect(part("low aesthetic", of: analyzed(aesthetic: -0.5)) == FeedRanker.Weights().lowAesthetic / 2)
+        #expect(part("high aesthetic", of: analyzed(aesthetic: 0.5)) == nil)
+        #expect(part("high aesthetic", of: analyzed(aesthetic: 1)) == FeedRanker.Weights().highAesthetic)
+        #expect(ranker.score(analyzed(aesthetic: 0.9), now: now).total < ranker.score(analyzed(aesthetic: 0.2), now: now).total)
+    }
+}
+
 struct SessionPlannerTests {
     private var calendar: Calendar {
         var calendar = Calendar(identifier: .gregorian)
