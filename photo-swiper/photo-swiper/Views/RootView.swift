@@ -10,7 +10,7 @@ struct RootView: View {
         ZStack {
             DS.Palette.paper.ignoresSafeArea()
             switch vm.phase {
-            case .loading:
+            case .loading, .onboarding:
                 ProgressView()
                     .tint(DS.Palette.secondary)
             case .noAccess:

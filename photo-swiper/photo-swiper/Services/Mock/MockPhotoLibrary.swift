@@ -6,9 +6,17 @@ struct MockPhotoLibrary: PhotoLibraryProviding {
     var reviewedItems = 3_740
     /// Simulated latency of the system delete prompt.
     var deleteDelay: Duration = .milliseconds(350)
+    /// True to act like a fresh install that hasn't been asked for access yet.
+    var needsPrompt = false
+    /// What the system prompt grants.
+    var grantedAccess = LibraryAccess.full
+
+    func needsAccessPrompt() -> Bool {
+        needsPrompt
+    }
 
     func requestAccess() async -> LibraryAccess {
-        .full
+        grantedAccess
     }
 
     func stats() async -> LibraryStats {

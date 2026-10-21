@@ -18,7 +18,7 @@ struct LibraryAccessView: View {
                 .dsSerif(34, relativeTo: .largeTitle)
                 .foregroundStyle(DS.Palette.ink)
                 .padding(.top, DS.Spacing.l)
-            Text("Photo Swiper needs access to your library to find photos you may want to clear. Nothing is uploaded.")
+            Text("\(AppInfo.name) needs access to your library to find photos you may want to clear. Nothing is uploaded.")
                 .font(.callout)
                 .foregroundStyle(DS.Palette.secondary)
                 .padding(.top, DS.Spacing.xs)
