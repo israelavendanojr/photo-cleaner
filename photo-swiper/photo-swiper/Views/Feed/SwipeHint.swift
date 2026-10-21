@@ -1,61 +1,45 @@
 import SwiftUI
 
-/// Shown on the very first card: which way each decision goes. Fades as the card is dragged.
+/// A quiet caption under the deck until the first decision. The nudge's stamps show the rest.
 struct SwipeHint: View {
     var body: some View {
-        VStack(spacing: DS.Spacing.xxs) {
-            Text("← Delete · Keep →")
-            Text("↑ Later")
-                .opacity(0.8)
-        }
-        .font(.subheadline.weight(.semibold))
-        .foregroundStyle(.white)
-        .padding(.horizontal, DS.Spacing.m)
-        .padding(.vertical, DS.Spacing.s)
-        .background {
-            RoundedRectangle(cornerRadius: DS.Radius.tile, style: .continuous)
-                .fill(.ultraThinMaterial)
-                .environment(\.colorScheme, .dark)
-        }
-        .allowsHitTesting(false)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Swipe left to delete, right to keep, or up for later")
+        Text("Swipe to sort")
+            .font(.footnote.weight(.medium))
+            .foregroundStyle(DS.Palette.secondary)
+            .allowsHitTesting(false)
+            .accessibilityLabel("Swipe left to delete, right to keep, or up for later")
     }
 }
 
-/// One gentle left-then-right sway, so a first-time user sees the card moves. Off with Reduce Motion.
-struct SwipeNudge: ViewModifier {
-    let isActive: Bool
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var trigger = false
+/// A first-time demo on the real top card: it leans left far enough for the Delete stamp to
+/// show, then right for Keep, without reaching the commit threshold.
+enum SwipeNudge {
+    /// Short of `SwipeThresholds.horizontal`, so nothing arms or fires a haptic.
+    static let reach: CGFloat = 95
+    static let firstDelay = Duration.seconds(1.2)
+    /// How long the card must be left alone before the demo plays again.
+    static let idleBeforeReplay = Duration.seconds(5)
+    /// The first run and up to two replays.
+    static let maxRuns = 3
 
-    func body(content: Content) -> some View {
-        content
-            .keyframeAnimator(initialValue: 0.0, trigger: trigger) { view, x in
-                view
-                    .rotationEffect(.degrees(x / 32))
-                    .offset(x: x)
-            } keyframes: { _ in
-                KeyframeTrack {
-                    SpringKeyframe(-24, duration: 0.35)
-                    SpringKeyframe(0, duration: 0.3)
-                    SpringKeyframe(24, duration: 0.35)
-                    SpringKeyframe(0, duration: 0.45)
-                }
-            }
-            .task(id: isActive) {
-                guard isActive, !reduceMotion else { return }
-                try? await Task.sleep(for: .seconds(0.8))
-                guard !Task.isCancelled else { return }
-                trigger.toggle()
-            }
+    /// Moves the card through the demo. `move` returns false when the user has taken over,
+    /// which ends the demo where it is.
+    @MainActor
+    static func perform(_ move: (CGSize) -> Bool) async throws {
+        for (x, hold) in [(-reach, 0.75), (0, 0.35), (reach, 0.75), (0, 0)] {
+            var moved = false
+            withAnimation(DS.Motion.calm) { moved = move(CGSize(width: x, height: 0)) }
+            guard moved else { return }
+            if hold > 0 { try await Task.sleep(for: .seconds(hold)) }
+        }
     }
 }
 
 #Preview {
-    PhotoCardView(item: PreviewSamples.plainPhoto)
-        .overlay { SwipeHint() }
-        .modifier(SwipeNudge(isActive: true))
-        .padding(14)
-        .background(DS.Palette.paper)
+    VStack {
+        PhotoCardView(item: PreviewSamples.plainPhoto)
+            .padding(14)
+        SwipeHint()
+    }
+    .background(DS.Palette.paper)
 }

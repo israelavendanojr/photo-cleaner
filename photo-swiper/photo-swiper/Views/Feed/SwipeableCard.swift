@@ -19,13 +19,18 @@ struct SwipeableCard<Content: View>: View {
     let onRelease: (SwipeDirection) -> Void
     /// Called after the fly-out animation finishes.
     let onSwipe: (SwipeDirection) -> Void
+    /// Plays the first-time swipe demo (`SwipeNudge`) while the card sits untouched.
+    let nudges: Bool
     @ViewBuilder let content: Content
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var offset: CGSize
     @State private var armed: SwipeDirection?
     @State private var isFlying = false
     /// Bumped per fly-out so a cancelled flight's completion is ignored.
     @State private var flight = 0
+    @State private var isDragging = false
+    @State private var lastTouch: ContinuousClock.Instant?
 
     /// - Parameter entrance: When set, the card starts off-screen on that side and springs in (undo).
     init(
@@ -36,6 +41,7 @@ struct SwipeableCard<Content: View>: View {
         progress: Binding<Double>,
         onRelease: @escaping (SwipeDirection) -> Void = { _ in },
         onSwipe: @escaping (SwipeDirection) -> Void,
+        nudges: Bool = false,
         @ViewBuilder content: () -> Content
     ) {
         self.isEnabled = isEnabled
@@ -45,6 +51,7 @@ struct SwipeableCard<Content: View>: View {
         _request = request
         _progress = progress
         self.onSwipe = onSwipe
+        self.nudges = nudges
         self.content = content()
         _offset = State(initialValue: entrance.map { SwipeThresholds.offscreen($0, from: .zero) } ?? .zero)
     }
@@ -73,6 +80,10 @@ struct SwipeableCard<Content: View>: View {
                 request = nil
                 fly(direction)
             }
+            .task(id: nudges && isEnabled && !reduceMotion) {
+                guard nudges, isEnabled, !reduceMotion else { return }
+                await runNudges()
+            }
             .accessibilityActions {
                 if isEnabled {
                     ForEach(SwipeDirection.allCases, id: \.self) { direction in
@@ -93,6 +104,8 @@ struct SwipeableCard<Content: View>: View {
         DragGesture(minimumDistance: 8)
             .onChanged { value in
                 guard !isFlying else { return }
+                isDragging = true
+                lastTouch = .now
                 offset = value.translation
                 progress = Self.progress(for: value.translation)
                 let direction = SwipeThresholds.armed(value.translation)
@@ -102,6 +115,8 @@ struct SwipeableCard<Content: View>: View {
                 }
             }
             .onEnded { value in
+                isDragging = false
+                lastTouch = .now
                 guard !isFlying else { return }
                 if let direction = SwipeThresholds.commit(value.translation, predicted: value.predictedEndTranslation) {
                     fly(direction)
@@ -128,6 +143,29 @@ struct SwipeableCard<Content: View>: View {
             onSwipe(direction)
         }
         onRelease(direction)
+    }
+
+    // MARK: Nudge
+
+    /// Plays the demo after a short pause, then again whenever the card has been left alone a while.
+    private func runNudges() async {
+        var wait = SwipeNudge.firstDelay
+        for _ in 0..<SwipeNudge.maxRuns {
+            do {
+                try await Task.sleep(for: wait)
+                while isDragging || isFlying || lastTouch.map({ .now - $0 < SwipeNudge.idleBeforeReplay }) == true {
+                    try await Task.sleep(for: .milliseconds(250))
+                }
+                try await SwipeNudge.perform { position in
+                    guard !isDragging, !isFlying else { return false }
+                    offset = position
+                    return true
+                }
+            } catch {
+                return
+            }
+            wait = SwipeNudge.idleBeforeReplay
+        }
     }
 
     // MARK: Geometry

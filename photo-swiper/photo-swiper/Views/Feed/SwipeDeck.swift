@@ -17,7 +17,7 @@ struct SwipeDeck: View {
     /// Set to swipe the top card in code. The action buttons use it too.
     @Binding var request: SwipeDirection?
     var onOpenBatch: (ItemBatch) -> Void = { _ in }
-    /// Shows the swipe hint and a one-time nudge on the top card.
+    /// Shows the swipe caption and plays the swipe demo on the top card.
     var showsHint = false
     /// Deals the cards in from above when the deck first appears (straight after onboarding).
     var dealsIn = false
@@ -59,7 +59,8 @@ struct SwipeDeck: View {
                         request: isTop ? $request : .constant(nil),
                         progress: isTop ? $progress : .constant(0),
                         onRelease: { release($0, card: card) },
-                        onSwipe: { finish($0, card: card) }
+                        onSwipe: { finish($0, card: card) },
+                        nudges: isTop && showsHint
                     ) {
                         CardContentView(
                             card: card,
@@ -67,15 +68,7 @@ struct SwipeDeck: View {
                             onPlayVideo: { previewingVideo = $0 },
                             onOpenPhoto: { previewingPhoto = $0 }
                         )
-                        .overlay {
-                            if isTop && showsHint {
-                                SwipeHint()
-                                    .opacity(1 - progress)
-                                    .transition(.opacity)
-                            }
-                        }
                     }
-                    .modifier(SwipeNudge(isActive: isTop && showsHint))
                     .scaleEffect(isFront ? 1 : 0.95 + 0.05 * progress)
                     .offset(y: isFront ? 0 : 12 * (1 - progress))
                     .modifier(DealIn(isDealt: isDealt, order: isTop ? 1 : 0))
@@ -90,6 +83,14 @@ struct SwipeDeck: View {
 
             ActionBar { request = $0 }
                 .disabled(currentCard == nil)
+                .overlay(alignment: .top) {
+                    // In the gap above the lowered Later button, without taking space, so
+                    // nothing moves when it goes.
+                    if showsHint {
+                        SwipeHint()
+                            .transition(.opacity)
+                    }
+                }
                 .modifier(DealIn(isDealt: isDealt, order: 2))
         }
         .fullScreenCover(item: $previewingVideo, onDismiss: flyOutPreviewDecision) { item in
