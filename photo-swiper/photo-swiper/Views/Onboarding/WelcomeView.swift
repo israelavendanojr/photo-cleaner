@@ -25,7 +25,7 @@ struct WelcomeView: View {
                 .onboardingEntrance(order: 3)
         }
         .onboardingLayout(footerOrder: 4) {
-            VStack(spacing: DS.Spacing.m) {
+            VStack(spacing: DS.Spacing.s) {
                 PageDots(current: 0, count: 2)
                 Button("Continue") {
                     Haptics.advance()
