@@ -64,7 +64,8 @@ private extension FeedViewModel {
             library: library,
             builder: PhotoKitFeedBuilder(index: index),
             store: store,
-            indexScheduler: IndexScheduler(indexer: indexer, library: library)
+            indexScheduler: IndexScheduler(indexer: indexer, library: library),
+            firstSessionMinimum: FeedViewModel.onboardingPreparingMinimum
         )
     }
 }
