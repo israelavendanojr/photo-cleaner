@@ -32,6 +32,24 @@ final class photo_swiperUITests: XCTestCase {
     }
 
     @MainActor
+    func testOnboardingLeadsToFeed() throws {
+        let app = launch("-startAt", "onboarding")
+        XCTAssertTrue(element(app, containing: "Lighten your library.").waitForExistence(timeout: 5))
+        attachScreenshot(app, "welcome")
+
+        app.buttons["Continue"].tap()
+        let allow = app.buttons["Allow Photo Access"]
+        XCTAssertTrue(allow.waitForExistence(timeout: 3))
+        XCTAssertTrue(element(app, containing: "One permission").exists)
+        sleep(1)
+        attachScreenshot(app, "photo access")
+
+        allow.tap()
+        XCTAssertTrue(element(app, containing: " of ").waitForExistence(timeout: 5), "Allowing opens the feed")
+        XCTAssertFalse(allow.exists)
+    }
+
+    @MainActor
     func testShortDragSnapsBack() throws {
         let app = launch()
         XCTAssertTrue(element(app, containing: "1 of 50").waitForExistence(timeout: 5))
@@ -343,8 +361,9 @@ final class photo_swiperUITests: XCTestCase {
 
     private func launch(_ arguments: String...) -> XCUIApplication {
         let app = XCUIApplication()
-        // Always the mock library, so tests never hit the photo permission prompt.
-        app.launchArguments = ["-mockLibrary", "YES"] + arguments
+        // Always the mock library, so tests never hit the photo permission prompt. The swipe
+        // hint's nudge would move the card under a drag, so it counts as already seen.
+        app.launchArguments = ["-mockLibrary", "YES", "-hasSeenSwipeHint", "YES"] + arguments
         app.launch()
         return app
     }
