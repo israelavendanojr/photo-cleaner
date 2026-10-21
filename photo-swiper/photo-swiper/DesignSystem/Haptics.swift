@@ -8,6 +8,16 @@ enum Haptics {
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
     }
 
+    /// Moving on to the next onboarding step.
+    static func advance() {
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+    }
+
+    /// Photo access was granted (full or limited).
+    static func accessGranted() {
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
+    }
+
     /// Something was added to the "to clear" pile.
     static func delete() {
         UIImpactFeedbackGenerator(style: .soft).impactOccurred(intensity: 0.8)

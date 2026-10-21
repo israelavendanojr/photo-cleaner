@@ -21,12 +21,12 @@ struct PhotoAccessPrimerView: View {
                 .foregroundStyle(DS.Palette.ink)
                 .accessibilityAddTraits(.isHeader)
                 .padding(.top, DS.Spacing.xxl)
-                .onboardingEntrance()
+                .onboardingEntrance(order: 0)
             Text("To find similar shots and blurry ones, \(AppInfo.name) needs to see your whole library.")
                 .font(.body)
                 .foregroundStyle(DS.Palette.secondary)
                 .padding(.top, DS.Spacing.m)
-                .onboardingEntrance()
+                .onboardingEntrance(order: 1)
             VStack(alignment: .leading, spacing: 0) {
                 ForEach(Array(steps.enumerated()), id: \.offset) { i, step in
                     StepRow(
@@ -36,14 +36,15 @@ struct PhotoAccessPrimerView: View {
                         status: status(ofStep: i),
                         isLast: i == steps.count - 1
                     )
-                    .onboardingEntrance(delay: 0.2 + Double(i) * 0.12)
+                    .onboardingEntrance(order: 2 + i)
                 }
             }
             .padding(.top, DS.Spacing.xxl)
             .animation(DS.Motion.calm, value: progress)
         }
-        .onboardingLayout {
+        .onboardingLayout(footerOrder: 2 + steps.count) {
             VStack(spacing: DS.Spacing.m) {
+                PageDots(current: 1, count: 2)
                 Button(action: onContinue) { buttonLabel }
                     .buttonStyle(.pill(.ink))
                     // Not `.disabled`, which would dim the button while it shows progress.
@@ -168,8 +169,10 @@ private struct StepRow: View {
 
 #Preview("Idle") {
     PhotoAccessPrimerView(progress: .idle, onContinue: {})
+        .background(DS.Palette.paper)
 }
 
 #Preview("Preparing") {
     PhotoAccessPrimerView(progress: .preparing, onContinue: {})
+        .background(DS.Palette.paper)
 }

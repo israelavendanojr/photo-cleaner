@@ -8,25 +8,32 @@ struct WelcomeView: View {
         VStack(alignment: .leading, spacing: 0) {
             StackedPhotosIllustration()
                 .frame(maxWidth: .infinity)
+                .onboardingEntrance(order: 0)
             Text("Lighten your library.")
                 .dsSerif(46, relativeTo: .largeTitle, weight: .medium)
                 .foregroundStyle(DS.Palette.ink)
                 .accessibilityAddTraits(.isHeader)
                 .padding(.top, DS.Spacing.xl)
-                .onboardingEntrance()
+                .onboardingEntrance(order: 1)
             Text("Clear the photos you don't need, one easy swipe at a time.")
                 .font(.body)
                 .foregroundStyle(DS.Palette.secondary)
                 .padding(.top, DS.Spacing.m)
-                .onboardingEntrance()
+                .onboardingEntrance(order: 2)
             assurances
                 .padding(.top, DS.Spacing.l)
-                .onboardingEntrance()
+                .onboardingEntrance(order: 3)
         }
-        .onboardingLayout {
-            Button("Continue", action: onContinue)
+        .onboardingLayout(footerOrder: 4) {
+            VStack(spacing: DS.Spacing.m) {
+                PageDots(current: 0, count: 2)
+                Button("Continue") {
+                    Haptics.advance()
+                    onContinue()
+                }
                 .buttonStyle(.pill(.ink))
                 .accessibilityIdentifier("onboarding.welcome.continue")
+            }
         }
     }
 
@@ -77,4 +84,5 @@ private struct AssuranceRow: View {
 
 #Preview {
     WelcomeView(onContinue: {})
+        .background(DS.Palette.paper)
 }

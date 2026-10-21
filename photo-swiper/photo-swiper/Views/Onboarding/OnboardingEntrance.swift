@@ -6,6 +6,9 @@ struct OnboardingEntrance: ViewModifier {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isVisible = false
 
+    /// Gap between one element's entrance and the next.
+    static let step = 0.09
+
     func body(content: Content) -> some View {
         let shown = isVisible || reduceMotion
         content
@@ -19,13 +22,16 @@ struct OnboardingEntrance: ViewModifier {
 }
 
 extension View {
-    func onboardingEntrance(delay: Double = 0) -> some View {
-        modifier(OnboardingEntrance(delay: delay))
+    /// Enters `order` steps after the screen's first element.
+    func onboardingEntrance(order: Int) -> some View {
+        modifier(OnboardingEntrance(delay: Double(order) * OnboardingEntrance.step))
     }
 
     /// Scrolling content with the primary action pinned below it, so small screens and large
-    /// text scroll instead of clipping.
-    func onboardingLayout<Footer: View>(@ViewBuilder footer: () -> Footer) -> some View {
+    /// text scroll instead of clipping. The footer enters at `footerOrder`, after the content.
+    ///
+    /// Only the footer is opaque, so a screen leaving underneath stays visible while this one enters.
+    func onboardingLayout<Footer: View>(footerOrder: Int, @ViewBuilder footer: () -> Footer) -> some View {
         ScrollView {
             self
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -47,7 +53,7 @@ extension View {
                         .offset(y: -DS.Spacing.l)
                         .allowsHitTesting(false)
                 }
+                .onboardingEntrance(order: footerOrder)
         }
-        .background(DS.Palette.paper)
     }
 }

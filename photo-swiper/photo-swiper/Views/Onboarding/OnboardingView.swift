@@ -13,17 +13,22 @@ struct OnboardingView: View {
             switch step {
             case .welcome:
                 WelcomeView { go(to: .access) }
-                    .transition(slide(from: .leading))
+                    .transition(leaving(toward: .leading))
             case .access:
                 PhotoAccessPrimerView(progress: primerProgress) {
+                    Haptics.advance()
                     Task { await vm.start() }
                 }
-                .transition(slide(from: .trailing))
+                .transition(leaving(toward: .trailing))
                 .simultaneousGesture(backSwipe)
                 .accessibilityAction(.escape) { go(to: .welcome) }
             }
         }
         .background(DS.Palette.paper)
+        .onChange(of: vm.isPreparingFirstSession) { _, isPreparing in
+            // Only full or limited access gets here; a denial goes straight to the no-access screen.
+            if isPreparing { Haptics.accessGranted() }
+        }
     }
 
     private var primerProgress: PhotoAccessPrimerView.Progress {
@@ -34,11 +39,18 @@ struct OnboardingView: View {
     private func go(to next: Step) {
         // No going back once the system prompt is up or access is granted.
         guard primerProgress == .idle else { return }
-        withAnimation(reduceMotion ? .easeInOut(duration: 0.25) : DS.Motion.gentle) { step = next }
+        withAnimation(reduceMotion ? .easeInOut(duration: 0.25) : DS.Motion.page) { step = next }
     }
 
-    private func slide(from edge: Edge) -> AnyTransition {
-        reduceMotion ? .opacity : .move(edge: edge)
+    /// The incoming page appears at once and runs its own staggered entrance; the outgoing one
+    /// fades as it drifts a little toward `edge`. Welcome only ever leaves forward and the primer
+    /// only ever leaves back, so each page's direction is fixed.
+    private func leaving(toward edge: Edge) -> AnyTransition {
+        let drift: CGFloat = reduceMotion ? 0 : 32
+        return .asymmetric(
+            insertion: reduceMotion ? .opacity : .identity,
+            removal: .opacity.combined(with: .offset(x: edge == .leading ? -drift : drift))
+        )
     }
 
     /// A swipe in from the left edge goes back to Welcome.
