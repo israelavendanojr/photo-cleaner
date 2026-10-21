@@ -8,6 +8,7 @@ struct CardStackView: View {
     /// The batch being gone through one by one, and its outcome once finished.
     @State private var reviewingBatch: ItemBatch?
     @State private var batchOutcome: [LibraryItem.ID: Decision]?
+    @AppStorage(DefaultsKey.hasSeenSwipeHint) private var hasSeenSwipeHint = false
 
     var body: some View {
         SwipeDeck(
@@ -17,7 +18,8 @@ struct CardStackView: View {
             label: vm.swipeLabel,
             onDecide: decide,
             request: $request,
-            onOpenBatch: { reviewingBatch = $0 }
+            onOpenBatch: { reviewingBatch = $0 },
+            showsHint: !hasSeenSwipeHint
         )
         .fullScreenCover(item: $reviewingBatch, onDismiss: flyOutReviewedBatch) { batch in
             BatchReviewView(batch: batch, draft: vm.draft(for: batch)) { outcome in
@@ -34,6 +36,7 @@ struct CardStackView: View {
     }
 
     private func decide(_ direction: SwipeDirection, card: FeedCard) {
+        hasSeenSwipeHint = true
         if let outcome = batchOutcome {
             batchOutcome = nil
             vm.decideIndividually(outcome)

@@ -17,6 +17,8 @@ struct SwipeDeck: View {
     /// Set to swipe the top card in code. The action buttons use it too.
     @Binding var request: SwipeDirection?
     var onOpenBatch: (ItemBatch) -> Void = { _ in }
+    /// Shows the swipe hint and a one-time nudge on the top card.
+    var showsHint = false
 
     /// How far the top card is toward committing, 0...1.
     @State private var progress = 0.0
@@ -61,7 +63,15 @@ struct SwipeDeck: View {
                             onPlayVideo: { previewingVideo = $0 },
                             onOpenPhoto: { previewingPhoto = $0 }
                         )
+                        .overlay {
+                            if isTop && showsHint {
+                                SwipeHint()
+                                    .opacity(1 - progress)
+                                    .transition(.opacity)
+                            }
+                        }
                     }
+                    .modifier(SwipeNudge(isActive: isTop && showsHint))
                     .scaleEffect(isFront ? 1 : 0.95 + 0.05 * progress)
                     .offset(y: isFront ? 0 : 12 * (1 - progress))
                     .allowsHitTesting(isTop)
