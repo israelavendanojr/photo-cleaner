@@ -5,6 +5,8 @@ struct RootView: View {
     @Environment(FeedViewModel.self) private var vm
     @State private var tab: AppTab = .feed
     @State private var isPilePresented = false
+    /// The feed is about to replace onboarding, so its first deck deals in.
+    @State private var dealsInDeck = false
 
     var body: some View {
         ZStack {
@@ -15,7 +17,8 @@ struct RootView: View {
                     .tint(DS.Palette.secondary)
             case .onboarding:
                 OnboardingView()
-                    .transition(.opacity)
+                    .transition(.opacity.combined(with: .scale(scale: 0.98)))
+                    .onAppear { dealsInDeck = true }
             case .noAccess:
                 LibraryAccessView()
                     .transition(.opacity)
@@ -27,8 +30,11 @@ struct RootView: View {
                     .transition(.opacity)
             }
         }
+        .environment(\.dealsInFirstDeck, dealsInDeck)
         .animation(DS.Motion.gentle, value: vm.phase)
         .onChange(of: vm.phase) { old, new in
+            // Only the feed that replaces onboarding deals in.
+            if old != .onboarding, new != .onboarding { dealsInDeck = false }
             // A session started from the end screen opens on the feed.
             if new == .feed, old == .endOfSession || old == .celebrated { tab = .feed }
         }

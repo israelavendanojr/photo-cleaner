@@ -19,6 +19,8 @@ struct SwipeDeck: View {
     var onOpenBatch: (ItemBatch) -> Void = { _ in }
     /// Shows the swipe hint and a one-time nudge on the top card.
     var showsHint = false
+    /// Deals the cards in from above when the deck first appears (straight after onboarding).
+    var dealsIn = false
 
     /// How far the top card is toward committing, 0...1.
     @State private var progress = 0.0
@@ -34,10 +36,12 @@ struct SwipeDeck: View {
     @State private var previewDecision: SwipeDirection?
     /// What was pre-cached before this deck appeared, handed back when it goes (a nested deck).
     @State private var outerPreheat: [String: CGSize]?
+    @State private var hasDealt = false
     @Environment(\.displayScale) private var displayScale
 
     private var currentCard: FeedCard? { cards.indices.contains(index) ? cards[index] : nil }
     private var nextCard: FeedCard? { cards.indices.contains(index + 1) ? cards[index + 1] : nil }
+    private var isDealt: Bool { hasDealt || !dealsIn }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -74,6 +78,7 @@ struct SwipeDeck: View {
                     .modifier(SwipeNudge(isActive: isTop && showsHint))
                     .scaleEffect(isFront ? 1 : 0.95 + 0.05 * progress)
                     .offset(y: isFront ? 0 : 12 * (1 - progress))
+                    .modifier(DealIn(isDealt: isDealt, order: isTop ? 1 : 0))
                     .allowsHitTesting(isTop)
                     .zIndex(isDeparting ? 2 : isTop ? 1 : 0)
                     .transition(isFront ? .identity : .opacity.combined(with: .scale(scale: 0.92)))
@@ -85,6 +90,7 @@ struct SwipeDeck: View {
 
             ActionBar { request = $0 }
                 .disabled(currentCard == nil)
+                .modifier(DealIn(isDealt: isDealt, order: 2))
         }
         .fullScreenCover(item: $previewingVideo, onDismiss: flyOutPreviewDecision) { item in
             VideoPreviewView(item: item, label: previewLabel) { direction in
@@ -103,7 +109,10 @@ struct SwipeDeck: View {
             guard let returning else { return }
             departing.removeAll { $0.id == returning.cardID }
         }
-        .onAppear { outerPreheat = ThumbnailPipeline.shared.preheated }
+        .onAppear {
+            outerPreheat = ThumbnailPipeline.shared.preheated
+            if dealsIn { hasDealt = true }
+        }
         .onDisappear {
             if let outerPreheat { ThumbnailPipeline.shared.preheat(outerPreheat) }
         }

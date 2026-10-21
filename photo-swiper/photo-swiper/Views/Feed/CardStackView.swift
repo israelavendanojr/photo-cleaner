@@ -9,6 +9,7 @@ struct CardStackView: View {
     @State private var reviewingBatch: ItemBatch?
     @State private var batchOutcome: [LibraryItem.ID: Decision]?
     @AppStorage(DefaultsKey.hasSeenSwipeHint) private var hasSeenSwipeHint = false
+    @Environment(\.dealsInFirstDeck) private var dealsIn
 
     var body: some View {
         SwipeDeck(
@@ -19,7 +20,8 @@ struct CardStackView: View {
             onDecide: decide,
             request: $request,
             onOpenBatch: { reviewingBatch = $0 },
-            showsHint: !hasSeenSwipeHint
+            showsHint: !hasSeenSwipeHint,
+            dealsIn: dealsIn
         )
         .fullScreenCover(item: $reviewingBatch, onDismiss: flyOutReviewedBatch) { batch in
             BatchReviewView(batch: batch, draft: vm.draft(for: batch)) { outcome in
