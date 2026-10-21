@@ -1,10 +1,12 @@
 import SwiftUI
 
-/// Second onboarding screen: explains the one permission right before iOS asks for it.
+/// Second onboarding screen: explains the one permission right before iOS asks for it, then
+/// shows the first session being prepared once access is granted.
 struct PhotoAccessPrimerView: View {
-    /// True while the system prompt is up.
-    let isRequesting: Bool
-    let onAllow: () -> Void
+    enum Progress { case idle, requesting, preparing }
+
+    let progress: Progress
+    let onContinue: () -> Void
 
     private let steps = [
         ("Allow access", "iOS will ask you next."),
@@ -25,19 +27,30 @@ struct PhotoAccessPrimerView: View {
                 .foregroundStyle(DS.Palette.secondary)
                 .padding(.top, DS.Spacing.m)
                 .onboardingEntrance()
-            VStack(alignment: .leading, spacing: DS.Spacing.xl) {
+            VStack(alignment: .leading, spacing: 0) {
                 ForEach(Array(steps.enumerated()), id: \.offset) { i, step in
-                    StepRow(number: i + 1, title: step.0, detail: step.1)
-                        .onboardingEntrance(delay: 0.2 + Double(i) * 0.12)
+                    StepRow(
+                        number: i + 1,
+                        title: step.0,
+                        detail: step.1,
+                        status: status(ofStep: i),
+                        isLast: i == steps.count - 1
+                    )
+                    .onboardingEntrance(delay: 0.2 + Double(i) * 0.12)
                 }
             }
             .padding(.top, DS.Spacing.xxl)
+            .animation(DS.Motion.calm, value: progress)
         }
         .onboardingLayout {
             VStack(spacing: DS.Spacing.m) {
-                Button("Allow Photo Access", action: onAllow)
+                Button(action: onContinue) { buttonLabel }
                     .buttonStyle(.pill(.ink))
-                    .disabled(isRequesting)
+                    // Not `.disabled`, which would dim the button while it shows progress.
+                    .allowsHitTesting(progress == .idle)
+                    .accessibilityLabel("Continue")
+                    .accessibilityValue(progress == .preparing ? "Finding your first photos" : "")
+                    .accessibilityIdentifier("onboarding.access.continue")
                 Text("Limited access works too, you'll just see fewer suggestions.")
                     .font(.footnote)
                     .foregroundStyle(DS.Palette.secondary)
@@ -45,33 +58,118 @@ struct PhotoAccessPrimerView: View {
             }
         }
     }
+
+    /// Both labels are always laid out, so the button keeps its size when it switches.
+    private var buttonLabel: some View {
+        let isPreparing = progress == .preparing
+        return ZStack {
+            Text("Continue")
+                .opacity(isPreparing ? 0 : 1)
+            HStack(spacing: DS.Spacing.xs) {
+                ProgressView()
+                    .tint(.white)
+                Text("Finding your first photos…")
+            }
+            .opacity(isPreparing ? 1 : 0)
+        }
+        .multilineTextAlignment(.center)
+        .animation(DS.Motion.calm, value: isPreparing)
+    }
+
+    private func status(ofStep i: Int) -> StepRow.Status {
+        guard progress == .preparing else { return .idle }
+        return switch i {
+        case 0: .done
+        case 1: .active
+        default: .waiting
+        }
+    }
 }
 
 private struct StepRow: View {
+    /// Idle before access is granted; afterward step 1 is done and step 2 is underway.
+    enum Status { case idle, done, active, waiting }
+
     let number: Int
     let title: String
     let detail: String
+    let status: Status
+    /// The last step has no rule running down to the next one.
+    let isLast: Bool
+
+    @ScaledMetric(relativeTo: .title2) private var markWidth: CGFloat = 22
+    @ScaledMetric(relativeTo: .title2) private var markHeight: CGFloat = 34
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: DS.Spacing.l) {
-            Text("\(number)")
-                .dsSerif(28, relativeTo: .title2)
-                .foregroundStyle(DS.Palette.brick)
-                .frame(minWidth: 18, alignment: .leading)
+            mark
             VStack(alignment: .leading, spacing: DS.Spacing.xxs) {
                 Text(title)
                     .font(.callout.weight(.semibold))
-                    .foregroundStyle(DS.Palette.ink)
+                    .foregroundStyle(status == .waiting ? DS.Palette.secondary : DS.Palette.ink)
                 Text(detail)
                     .font(.subheadline)
                     .foregroundStyle(DS.Palette.secondary)
             }
         }
+        .padding(.bottom, isLast ? 0 : DS.Spacing.xl)
+        .background(alignment: .topLeading) {
+            if !isLast {
+                // Connects this step's mark to the next one; grows with the row.
+                Rectangle()
+                    .fill(DS.Palette.line)
+                    .frame(width: 1)
+                    .padding(.top, markHeight + DS.Spacing.xxs)
+                    .padding(.bottom, DS.Spacing.xxs)
+                    .padding(.leading, markWidth / 2)
+            }
+        }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Step \(number), \(title). \(detail)")
+        .accessibilityLabel(accessibilityText)
+    }
+
+    /// The numeral always holds the space, so swapping in the checkmark never moves the row.
+    private var mark: some View {
+        let isDone = status == .done
+        return Text("\(number)")
+            .dsSerif(28, relativeTo: .title2)
+            .foregroundStyle(markColor)
+            .opacity(isDone ? 0 : 1)
+            .blur(radius: isDone ? 4 : 0)
+            .scaleEffect(isDone ? 0.6 : 1)
+            .frame(width: markWidth)
+            .overlay {
+                if isDone {
+                    Image(systemName: "checkmark")
+                        .font(.title3.weight(.semibold))
+                        .foregroundStyle(DS.Palette.brick)
+                        .transition(.blurReplace)
+                }
+            }
+    }
+
+    private var markColor: Color {
+        switch status {
+        case .idle, .done: DS.Palette.brick
+        case .active: DS.Palette.ink
+        case .waiting: DS.Palette.secondary
+        }
+    }
+
+    private var accessibilityText: String {
+        let state = switch status {
+        case .done: ", done"
+        case .active: ", in progress"
+        case .idle, .waiting: ""
+        }
+        return "Step \(number)\(state), \(title). \(detail)"
     }
 }
 
-#Preview {
-    PhotoAccessPrimerView(isRequesting: false, onAllow: {})
+#Preview("Idle") {
+    PhotoAccessPrimerView(progress: .idle, onContinue: {})
+}
+
+#Preview("Preparing") {
+    PhotoAccessPrimerView(progress: .preparing, onContinue: {})
 }

@@ -37,15 +37,16 @@ final class photo_swiperUITests: XCTestCase {
         XCTAssertTrue(element(app, containing: "Lighten your library.").waitForExistence(timeout: 5))
         attachScreenshot(app, "welcome")
 
-        app.buttons["Continue"].tap()
-        let allow = app.buttons["Allow Photo Access"]
+        app.buttons["onboarding.welcome.continue"].tap()
+        let allow = app.buttons["onboarding.access.continue"]
         XCTAssertTrue(allow.waitForExistence(timeout: 3))
+        XCTAssertEqual(allow.label, "Continue", "App Review rejects pre-permission buttons that say Allow")
         XCTAssertTrue(element(app, containing: "One permission").exists)
         sleep(1)
         attachScreenshot(app, "photo access")
 
         allow.tap()
-        XCTAssertTrue(element(app, containing: " of ").waitForExistence(timeout: 5), "Allowing opens the feed")
+        XCTAssertTrue(element(app, containing: " of ").waitForExistence(timeout: 8), "Continuing opens the feed")
         XCTAssertFalse(allow.exists)
     }
 

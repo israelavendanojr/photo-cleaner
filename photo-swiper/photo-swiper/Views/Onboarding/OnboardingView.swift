@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// First launch: Welcome, then the photo access primer. Nothing asks for access until Allow.
+/// First launch: Welcome, then the photo access primer. Nothing asks for access until its Continue.
 struct OnboardingView: View {
     private enum Step { case welcome, access }
 
@@ -15,7 +15,7 @@ struct OnboardingView: View {
                 WelcomeView { go(to: .access) }
                     .transition(slide(from: .leading))
             case .access:
-                PhotoAccessPrimerView(isRequesting: vm.isRequestingAccess) {
+                PhotoAccessPrimerView(progress: primerProgress) {
                     Task { await vm.start() }
                 }
                 .transition(slide(from: .trailing))
@@ -26,7 +26,14 @@ struct OnboardingView: View {
         .background(DS.Palette.paper)
     }
 
+    private var primerProgress: PhotoAccessPrimerView.Progress {
+        if vm.isPreparingFirstSession { return .preparing }
+        return vm.isRequestingAccess ? .requesting : .idle
+    }
+
     private func go(to next: Step) {
+        // No going back once the system prompt is up or access is granted.
+        guard primerProgress == .idle else { return }
         withAnimation(reduceMotion ? .easeInOut(duration: 0.25) : DS.Motion.gentle) { step = next }
     }
 

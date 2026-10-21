@@ -26,6 +26,7 @@ struct WelcomeView: View {
         .onboardingLayout {
             Button("Continue", action: onContinue)
                 .buttonStyle(.pill(.ink))
+                .accessibilityIdentifier("onboarding.welcome.continue")
         }
     }
 
