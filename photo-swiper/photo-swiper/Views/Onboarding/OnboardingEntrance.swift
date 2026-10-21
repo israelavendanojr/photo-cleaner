@@ -8,6 +8,8 @@ struct OnboardingEntrance: ViewModifier {
 
     /// Gap between one element's entrance and the next.
     static let step = 0.09
+    /// Lets the previous page clear before the first element arrives.
+    static let lead = 0.12
 
     func body(content: Content) -> some View {
         let shown = isVisible || reduceMotion
@@ -24,7 +26,7 @@ struct OnboardingEntrance: ViewModifier {
 extension View {
     /// Enters `order` steps after the screen's first element.
     func onboardingEntrance(order: Int) -> some View {
-        modifier(OnboardingEntrance(delay: Double(order) * OnboardingEntrance.step))
+        modifier(OnboardingEntrance(delay: OnboardingEntrance.lead + Double(order) * OnboardingEntrance.step))
     }
 
     /// Scrolling content with the primary action pinned below it, so small screens and large

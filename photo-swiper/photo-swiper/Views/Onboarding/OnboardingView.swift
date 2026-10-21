@@ -49,7 +49,9 @@ struct OnboardingView: View {
         let drift: CGFloat = reduceMotion ? 0 : 32
         return .asymmetric(
             insertion: reduceMotion ? .opacity : .identity,
+            // Clears out quickly, so the headlines don't double up as the next page enters.
             removal: .opacity.combined(with: .offset(x: edge == .leading ? -drift : drift))
+                .animation(.easeOut(duration: 0.22))
         )
     }
 

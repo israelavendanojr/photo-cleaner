@@ -13,8 +13,7 @@ struct RootView: View {
             DS.Palette.paper.ignoresSafeArea()
             switch vm.phase {
             case .loading:
-                ProgressView()
-                    .tint(DS.Palette.secondary)
+                DelayedProgressView()
             case .onboarding:
                 OnboardingView()
                     .transition(.opacity.combined(with: .scale(scale: 0.98)))
@@ -80,6 +79,22 @@ struct RootView: View {
             FeedView(onOpenPile: { isPilePresented = true })
                 .transition(.opacity)
         }
+    }
+}
+
+/// A spinner that only shows if loading takes a moment, so a quick launch into onboarding or
+/// the feed doesn't flash it.
+private struct DelayedProgressView: View {
+    @State private var isShown = false
+
+    var body: some View {
+        ProgressView()
+            .tint(DS.Palette.secondary)
+            .opacity(isShown ? 1 : 0)
+            .task {
+                try? await Task.sleep(for: .seconds(0.6))
+                withAnimation(.easeIn(duration: 0.2)) { isShown = true }
+            }
     }
 }
 

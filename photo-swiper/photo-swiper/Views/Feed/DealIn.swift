@@ -21,6 +21,6 @@ struct DealIn: ViewModifier {
             .scaleEffect(moves ? 0.92 : 1)
             .rotationEffect(.degrees(moves ? (order.isMultiple(of: 2) ? 2 : -3) : 0))
             .offset(y: moves ? -90 : 0)
-            .animation(DS.Motion.calm.delay(0.1 + Double(order) * Self.step), value: isDealt)
+            .animation(DS.Motion.calm.delay(Double(order) * Self.step), value: isDealt)
     }
 }
