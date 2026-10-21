@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Switches between the tabs (feed and library), the end of a session, and the access states.
+/// Switches between onboarding, the tabs (feed and library), the end of a session, and the access states.
 struct RootView: View {
     @Environment(FeedViewModel.self) private var vm
     @State private var tab: AppTab = .feed
@@ -10,9 +10,12 @@ struct RootView: View {
         ZStack {
             DS.Palette.paper.ignoresSafeArea()
             switch vm.phase {
-            case .loading, .onboarding:
+            case .loading:
                 ProgressView()
                     .tint(DS.Palette.secondary)
+            case .onboarding:
+                OnboardingView()
+                    .transition(.opacity)
             case .noAccess:
                 LibraryAccessView()
                     .transition(.opacity)
