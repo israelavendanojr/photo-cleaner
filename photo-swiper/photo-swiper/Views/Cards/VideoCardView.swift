@@ -18,6 +18,7 @@ struct VideoCardView: View {
                 }
             }
             .overlay(alignment: .bottomLeading) { caption }
+            .rankDebugBadge(for: item)
             .clipShape(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
             .cardShadow()
             .accessibilityElement(children: .ignore)

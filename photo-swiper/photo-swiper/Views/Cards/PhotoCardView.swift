@@ -22,6 +22,7 @@ struct PhotoCardView: View {
                         .padding(18)
                 }
             }
+            .rankDebugBadge(for: item)
             .clipShape(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
             .cardShadow()
             .accessibilityElement(children: .combine)
