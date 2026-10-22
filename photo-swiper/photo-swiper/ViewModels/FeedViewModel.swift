@@ -410,6 +410,8 @@ final class FeedViewModel {
     func dismissPaywall() {
         guard phase == .paywall else { return }
         finished = true
+        // The rest screen only carries the figure over straight from the celebration.
+        celebration = nil
         phase = .resting
         saveProgress()
     }
@@ -697,6 +699,8 @@ extension FeedViewModel {
     /// Named starting points for previews and `-startAt` launch arguments.
     enum MockStart: String {
         case first, video, similar, batch, end, celebrated, onboarding
+        /// The session's end with everything kept: nothing pending, nothing freed.
+        case endNothingToClear
         /// Done for now with deletes still pending.
         case resting
         /// Confirmed, then done for now: freed bytes, nothing pending.
@@ -756,6 +760,9 @@ extension FeedViewModel {
             if start == .celebratedRest { vm.applyConfirmedDelete(vm.pendingItems) }
             vm.finishForNow()
             vm.isWelcomeBack = start == .welcomeBack
+        case .endNothingToClear:
+            while vm.phase == .feed { vm.decide(.right) }
+            vm.dismissChip()
         case .paywall:
             vm.simulateSession()
             vm.applyConfirmedDelete(vm.pendingItems)

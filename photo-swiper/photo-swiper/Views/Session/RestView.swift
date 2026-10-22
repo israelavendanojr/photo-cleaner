@@ -4,10 +4,13 @@ import SwiftUI
 /// they are, and anything still waiting to be deleted. Unlike caught-up, more is waiting.
 struct RestView: View {
     @Environment(FeedViewModel.self) private var vm
+    @Environment(\.freedFigureNamespace) private var freedFigure
     var onOpenPile: () -> Void = {}
     var onSeeLibrary: () -> Void = {}
 
     private var pendingCount: Int { vm.pendingItems.count }
+    /// Arriving straight from the celebration, the freed figure moves over instead of entering.
+    private var carriesFigure: Bool { vm.celebration != nil && freedFigure != nil }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -27,7 +30,10 @@ struct RestView: View {
                 .foregroundStyle(DS.Palette.secondary)
                 .padding(.top, DS.Spacing.xs)
                 .onboardingEntrance(order: 2)
-            if vm.freedBytes > 0 {
+            if vm.freedBytes > 0, carriesFigure {
+                freed
+                    .padding(.top, DS.Spacing.xl)
+            } else if vm.freedBytes > 0 {
                 freed
                     .padding(.top, DS.Spacing.xl)
                     .onboardingEntrance(order: 3)
@@ -63,6 +69,7 @@ struct RestView: View {
                 .foregroundStyle(DS.Palette.brick)
                 .lineLimit(1)
                 .minimumScaleFactor(0.5)
+                .freedFigure(in: carriesFigure ? freedFigure : nil)
             Text("freed so far")
                 .font(.callout)
                 .foregroundStyle(DS.Palette.secondary)

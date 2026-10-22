@@ -8,6 +8,8 @@ struct RootView: View {
     /// The feed is about to replace onboarding, so its first deck deals in.
     @State private var dealsInDeck = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// Carries the freed figure from the celebration to the rest screen.
+    @Namespace private var freedFigure
 
     var body: some View {
         ZStack {
@@ -35,6 +37,7 @@ struct RootView: View {
             }
         }
         .environment(\.dealsInFirstDeck, dealsInDeck)
+        .environment(\.freedFigureNamespace, reduceMotion ? nil : freedFigure)
         .animation(DS.Motion.gentle, value: vm.phase)
         .onChange(of: vm.phase) { old, new in
             // Only the feed that replaces onboarding or the paywall deals in.
@@ -96,6 +99,24 @@ struct RootView: View {
         default:
             FeedView(onOpenPile: { isPilePresented = true })
                 .transition(.opacity)
+        }
+    }
+}
+
+extension EnvironmentValues {
+    /// Shared by the end screen and the rest screen so the freed figure moves between them.
+    /// Nil with Reduce Motion, which crossfades instead.
+    @Entry var freedFigureNamespace: Namespace.ID?
+}
+
+extension View {
+    /// The big freed number, matched across screens when `namespace` is set.
+    @ViewBuilder
+    func freedFigure(in namespace: Namespace.ID?) -> some View {
+        if let namespace {
+            matchedGeometryEffect(id: "freedFigure", in: namespace)
+        } else {
+            self
         }
     }
 }
