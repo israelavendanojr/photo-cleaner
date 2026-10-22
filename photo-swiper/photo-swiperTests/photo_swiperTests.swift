@@ -12,12 +12,20 @@ import Testing
 /// A library whose access, delete results, and outside changes the test controls.
 final class FakeLibrary: PhotoLibraryProviding, @unchecked Sendable {
     var access = LibraryAccess.full
+    /// True while the user hasn't been asked for access yet.
+    var needsPrompt = false
+    /// How many times the system prompt would have been shown.
+    private(set) var requestCount = 0
     var onDelete: ([LibraryItem]) throws -> DeletionOutcome = { DeletionOutcome(deleted: $0.map(\.id)) }
     /// Items gone from the library, as reported to launch-time reconciliation.
     var gone: Set<LibraryItem.ID> = []
     private var listeners: [AsyncStream<Set<LibraryItem.ID>>.Continuation] = []
 
-    func requestAccess() async -> LibraryAccess { access }
+    func needsAccessPrompt() -> Bool { needsPrompt }
+    func requestAccess() async -> LibraryAccess {
+        requestCount += 1
+        return access
+    }
     func stats() async -> LibraryStats { LibraryStats(totalItems: 100, reviewedItems: 0, freedBytes: 0) }
     func delete(_ items: [LibraryItem]) async throws -> DeletionOutcome { try onDelete(items) }
     func vanishedItems() -> AsyncStream<Set<LibraryItem.ID>> {

@@ -17,6 +17,10 @@ final class PhotoKitLibrary: NSObject, PhotoLibraryProviding, @unchecked Sendabl
 
     // MARK: PhotoLibraryProviding
 
+    func needsAccessPrompt() -> Bool {
+        PHPhotoLibrary.authorizationStatus(for: .readWrite) == .notDetermined
+    }
+
     func requestAccess() async -> LibraryAccess {
         // Returns the current status without prompting once the user has answered.
         let status = await PHPhotoLibrary.requestAuthorization(for: .readWrite)

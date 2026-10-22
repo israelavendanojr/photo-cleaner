@@ -2,6 +2,9 @@ import Foundation
 
 /// Access to the user's library. `MockPhotoLibrary` fakes it; `PhotoKitLibrary` is the real one.
 protocol PhotoLibraryProviding: Sendable {
+    /// True until the user has answered the system access prompt. Never prompts.
+    func needsAccessPrompt() -> Bool
+
     /// Asks for read/write access if needed and reports what was granted.
     func requestAccess() async -> LibraryAccess
 

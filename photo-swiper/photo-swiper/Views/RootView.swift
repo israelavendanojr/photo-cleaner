@@ -1,18 +1,23 @@
 import SwiftUI
 
-/// Switches between the tabs (feed and library), the end of a session, and the access states.
+/// Switches between onboarding, the tabs (feed and library), the end of a session, and the access states.
 struct RootView: View {
     @Environment(FeedViewModel.self) private var vm
     @State private var tab: AppTab = .feed
     @State private var isPilePresented = false
+    /// The feed is about to replace onboarding, so its first deck deals in.
+    @State private var dealsInDeck = false
 
     var body: some View {
         ZStack {
             DS.Palette.paper.ignoresSafeArea()
             switch vm.phase {
             case .loading:
-                ProgressView()
-                    .tint(DS.Palette.secondary)
+                DelayedProgressView()
+            case .onboarding:
+                OnboardingView()
+                    .transition(.opacity.combined(with: .scale(scale: 0.98)))
+                    .onAppear { dealsInDeck = true }
             case .noAccess:
                 LibraryAccessView()
                     .transition(.opacity)
@@ -24,8 +29,11 @@ struct RootView: View {
                     .transition(.opacity)
             }
         }
+        .environment(\.dealsInFirstDeck, dealsInDeck)
         .animation(DS.Motion.gentle, value: vm.phase)
         .onChange(of: vm.phase) { old, new in
+            // Only the feed that replaces onboarding deals in.
+            if old != .onboarding, new != .onboarding { dealsInDeck = false }
             // A session started from the end screen opens on the feed.
             if new == .feed, old == .endOfSession || old == .celebrated { tab = .feed }
         }
@@ -71,6 +79,22 @@ struct RootView: View {
             FeedView(onOpenPile: { isPilePresented = true })
                 .transition(.opacity)
         }
+    }
+}
+
+/// A spinner that only shows if loading takes a moment, so a quick launch into onboarding or
+/// the feed doesn't flash it.
+private struct DelayedProgressView: View {
+    @State private var isShown = false
+
+    var body: some View {
+        ProgressView()
+            .tint(DS.Palette.secondary)
+            .opacity(isShown ? 1 : 0)
+            .task {
+                try? await Task.sleep(for: .seconds(0.6))
+                withAnimation(.easeIn(duration: 0.2)) { isShown = true }
+            }
     }
 }
 

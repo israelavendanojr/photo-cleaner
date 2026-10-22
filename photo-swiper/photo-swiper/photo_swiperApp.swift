@@ -25,10 +25,17 @@ struct photo_swiperApp: App {
 
 private extension FeedViewModel {
     /// The real library and saved progress by default. In debug builds, `-mockLibrary YES` uses mock
-    /// services, `-startAt similar|batch|video|end|celebrated|caughtUp` jumps straight to a mock state,
-    /// and `-resetProgress YES` wipes saved progress first. Mocks never read or write saved progress
-    /// and never start the feature index.
+    /// services, `-startAt similar|batch|video|end|celebrated|caughtUp|onboarding` jumps straight to a
+    /// mock state, `-resetProgress YES` wipes saved progress first, and `-resetOnboarding YES` shows
+    /// onboarding and the swipe hint again. Mocks never read or write saved progress and never start
+    /// the feature index.
     static func launch() -> FeedViewModel {
+        #if DEBUG
+        if UserDefaults.standard.bool(forKey: "resetOnboarding") {
+            UserDefaults.standard.removeObject(forKey: DefaultsKey.hasOnboarded)
+            UserDefaults.standard.removeObject(forKey: DefaultsKey.hasSeenSwipeHint)
+        }
+        #endif
         guard LibraryServices.usesMock else { return real() }
         if let raw = UserDefaults.standard.string(forKey: "startAt"), let start = MockStart(rawValue: raw) {
             return .mock(startingAt: start)
@@ -57,7 +64,8 @@ private extension FeedViewModel {
             library: library,
             builder: PhotoKitFeedBuilder(index: index),
             store: store,
-            indexScheduler: IndexScheduler(indexer: indexer, library: library)
+            indexScheduler: IndexScheduler(indexer: indexer, library: library),
+            firstSessionMinimum: FeedViewModel.onboardingPreparingMinimum
         )
     }
 }

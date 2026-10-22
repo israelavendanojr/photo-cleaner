@@ -10,6 +10,8 @@ import Observation
 final class FeedViewModel {
     enum Phase: Equatable {
         case loading
+        /// First launch: explains the app before the system asks for photo access.
+        case onboarding
         /// The user denied photo access.
         case noAccess
         case feed
@@ -59,6 +61,11 @@ final class FeedViewModel {
     private(set) var celebration: Celebration?
     private(set) var stats = LibraryStats(totalItems: 0, reviewedItems: 0, freedBytes: 0)
     private(set) var access = LibraryAccess.full
+    /// The system access prompt is up.
+    private(set) var isRequestingAccess = false
+    /// Access was just granted from onboarding and the first session is being built.
+    /// Onboarding stays up meanwhile instead of a loading screen.
+    private(set) var isPreparingFirstSession = false
     /// Something about the last delete the user should know, e.g. items the system refused.
     var deleteNotice: String?
     /// Applies to the next session built.
@@ -87,6 +94,10 @@ final class FeedViewModel {
     private let store: any ProgressStoring
     /// Runs the background feature index on the real library. Nil for mocks, previews, and tests.
     private let indexScheduler: IndexScheduler?
+    /// Holds whether onboarding is done.
+    private let defaults: UserDefaults
+    /// Shortest time onboarding shows its "preparing" state, so the step change can be read.
+    private let firstSessionMinimum: Duration
     private let now: () -> Date
 
     init(
@@ -94,12 +105,16 @@ final class FeedViewModel {
         builder: any FeedBuilding,
         store: any ProgressStoring = InMemoryProgressStore(),
         indexScheduler: IndexScheduler? = nil,
+        defaults: UserDefaults = .standard,
+        firstSessionMinimum: Duration = .zero,
         now: @escaping () -> Date = Date.init
     ) {
         self.library = library
         self.builder = builder
         self.store = store
         self.indexScheduler = indexScheduler
+        self.defaults = defaults
+        self.firstSessionMinimum = firstSessionMinimum
         self.now = now
         skipFavorites = store.skipFavorites
     }
@@ -116,6 +131,8 @@ final class FeedViewModel {
         self.builder = builder
         self.store = store
         indexScheduler = nil
+        defaults = .standard
+        firstSessionMinimum = .zero
         now = Date.init
         skipFavorites = store.skipFavorites
         libraryStats = stats
@@ -191,23 +208,48 @@ final class FeedViewModel {
 
     // MARK: Intents
 
-    /// Also called again from the no-access screen when the app returns from Settings.
+    /// Called at launch, from onboarding's Allow button, and again from the no-access screen
+    /// when the app returns from Settings. A first launch stops at onboarding without prompting.
     func start() async {
-        guard phase == .loading || phase == .noAccess else { return }
+        guard phase == .loading || phase == .noAccess || phase == .onboarding, !isRequestingAccess else { return }
+        if phase == .loading, library.needsAccessPrompt(), !defaults.bool(forKey: DefaultsKey.hasOnboarded) {
+            phase = .onboarding
+            return
+        }
+        let fromOnboarding = phase == .onboarding
+        if fromOnboarding { defaults.set(true, forKey: DefaultsKey.hasOnboarded) }
+        isRequestingAccess = true
         access = await library.requestAccess()
+        isRequestingAccess = false
         guard access != .denied else {
             phase = .noAccess
             return
         }
-        phase = .loading
+        if fromOnboarding {
+            isPreparingFirstSession = true
+        } else {
+            phase = .loading
+        }
         indexScheduler?.accessGranted()
+        let clock = ContinuousClock()
+        let started = clock.now
         libraryStats = await library.stats()
         observeLibraryChanges()
-        if let saved = store.loadSession() {
-            await restore(saved)
-        } else {
-            await loadSession(number: store.lastSessionNumber() + 1)
+        let saved = store.loadSession()
+        // Captions can do without place names for the first session; they arrive with the next.
+        let next = saved == nil
+            ? await makeSession(number: store.lastSessionNumber() + 1, placeBudget: fromOnboarding ? .zero : nil)
+            : nil
+        if fromOnboarding {
+            let remaining = firstSessionMinimum - (clock.now - started)
+            if remaining > .zero { try? await Task.sleep(for: remaining) }
         }
+        if let saved {
+            await restore(saved)
+        } else if let next {
+            apply(next)
+        }
+        isPreparingFirstSession = false
         refreshTotals()
     }
 
@@ -447,9 +489,14 @@ final class FeedViewModel {
     }
 
     private func loadSession(number: Int) async {
-        let options = FeedOptions(skipFavorites: skipFavorites, excluding: store.excludedFromNewSession(asOf: now()))
-        let next = await builder.makeSession(number: number, options: options)
-        apply(next)
+        apply(await makeSession(number: number))
+    }
+
+    /// - Parameter placeBudget: Overrides how long to wait on place names; nil keeps the default.
+    private func makeSession(number: Int, placeBudget: Duration? = nil) async -> Session {
+        var options = FeedOptions(skipFavorites: skipFavorites, excluding: store.excludedFromNewSession(asOf: now()))
+        if let placeBudget { options.placeBudget = placeBudget }
+        return await builder.makeSession(number: number, options: options)
     }
 
     private func apply(_ next: Session) {
@@ -561,10 +608,25 @@ private extension FeedCard {
 extension FeedViewModel {
     /// Named starting points for previews and `-startAt` launch arguments.
     enum MockStart: String {
-        case first, video, similar, batch, end, celebrated, caughtUp
+        case first, video, similar, batch, end, celebrated, caughtUp, onboarding
     }
 
+    /// Long enough to see onboarding's step change before the feed deals in.
+    static let onboardingPreparingMinimum = Duration.seconds(1)
+
     static func mock(startingAt start: MockStart = .first) -> FeedViewModel {
+        if start == .onboarding {
+            // Unstarted, on a library that hasn't been asked yet, with nothing remembered.
+            let suite = "mock.onboarding"
+            let defaults = UserDefaults(suiteName: suite) ?? .standard
+            defaults.removePersistentDomain(forName: suite)
+            return FeedViewModel(
+                library: MockPhotoLibrary(needsPrompt: true),
+                builder: MockFeedBuilder(),
+                defaults: defaults,
+                firstSessionMinimum: onboardingPreparingMinimum
+            )
+        }
         let builder = MockFeedBuilder()
         let library = MockPhotoLibrary()
         let vm = FeedViewModel(
@@ -587,6 +649,8 @@ extension FeedViewModel {
             if start == .celebrated { vm.applyConfirmedDelete(vm.pendingItems) }
         case .caughtUp:
             vm.finishForNow()
+        case .onboarding:
+            break
         }
         return vm
     }

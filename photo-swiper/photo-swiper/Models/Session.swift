@@ -28,4 +28,6 @@ struct FeedOptions: Sendable {
     var skipFavorites = true
     /// Items a session must not offer, e.g. ones already decided.
     var excluding: Set<LibraryItem.ID> = []
+    /// How long to wait on place names for captions. Zero skips the lookup.
+    var placeBudget: Duration = .milliseconds(1500)
 }

@@ -46,7 +46,7 @@ actor PhotoKitFeedBuilder: FeedBuilding {
             assets.compactMap { id, asset in asset.location.map { (id, $0) } },
             uniquingKeysWith: { first, _ in first }
         )
-        let names = await places.names(for: locations, within: .milliseconds(1500))
+        let names = await places.names(for: locations, within: options.placeBudget)
         let item = { (id: LibraryItem.ID) -> LibraryItem? in
             guard let asset = assets[id], let features = pool.features[id] else { return nil }
             return AssetMapper.item(for: asset, features: features, location: names[id])
