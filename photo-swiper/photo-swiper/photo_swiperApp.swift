@@ -25,10 +25,11 @@ struct photo_swiperApp: App {
 
 private extension FeedViewModel {
     /// The real library and saved progress by default. In debug builds, `-mockLibrary YES` uses mock
-    /// services, `-startAt similar|batch|video|end|celebrated|caughtUp|onboarding` jumps straight to a
-    /// mock state, `-resetProgress YES` wipes saved progress first, and `-resetOnboarding YES` shows
-    /// onboarding and the swipe hint again. Mocks never read or write saved progress and never start
-    /// the feature index.
+    /// services, `-startAt similar|batch|video|end|celebrated|resting|welcomeBack|paywall|caughtUp|onboarding`
+    /// jumps straight to a mock state, `-resetProgress YES` wipes saved progress first, and
+    /// `-resetOnboarding YES` shows onboarding and the swipe hint again. `-unlocked YES|NO` sets the
+    /// stand-in purchase (mocks start locked). Mocks never read or write saved progress and never
+    /// start the feature index.
     static func launch() -> FeedViewModel {
         #if DEBUG
         if UserDefaults.standard.bool(forKey: "resetOnboarding") {
@@ -36,15 +37,16 @@ private extension FeedViewModel {
             UserDefaults.standard.removeObject(forKey: DefaultsKey.hasSeenSwipeHint)
         }
         #endif
-        guard LibraryServices.usesMock else { return real() }
+        guard LibraryServices.usesMock else { return real(entitlements: EntitlementServices.make(mock: false)) }
+        let entitlements = EntitlementServices.make(mock: true)
         if let raw = UserDefaults.standard.string(forKey: "startAt"), let start = MockStart(rawValue: raw) {
-            return .mock(startingAt: start)
+            return .mock(startingAt: start, entitlements: entitlements)
         }
-        return FeedViewModel(library: MockPhotoLibrary(), builder: MockFeedBuilder())
+        return FeedViewModel(library: MockPhotoLibrary(), builder: MockFeedBuilder(), entitlements: entitlements)
     }
 
     /// Saved progress and the feature index share one on-disk container.
-    static func real() -> FeedViewModel {
+    static func real(entitlements: any EntitlementStore) -> FeedViewModel {
         let library = PhotoKitLibrary()
         let container: ModelContainer
         do {
@@ -52,7 +54,9 @@ private extension FeedViewModel {
         } catch {
             // Keep the app usable; progress just won't outlive this launch, and nothing is indexed.
             assertionFailure("Couldn't open saved progress: \(error)")
-            return FeedViewModel(library: library, builder: PhotoKitFeedBuilder(), store: InMemoryProgressStore())
+            return FeedViewModel(
+                library: library, builder: PhotoKitFeedBuilder(), store: InMemoryProgressStore(), entitlements: entitlements
+            )
         }
         let store = SwiftDataProgressStore(container: container)
         #if DEBUG
@@ -64,6 +68,7 @@ private extension FeedViewModel {
             library: library,
             builder: PhotoKitFeedBuilder(index: index),
             store: store,
+            entitlements: entitlements,
             indexScheduler: IndexScheduler(indexer: indexer, library: library),
             firstSessionMinimum: FeedViewModel.onboardingPreparingMinimum
         )

@@ -46,7 +46,7 @@ struct RestView: View {
         .onboardingLayout(footerOrder: 6) {
             VStack(spacing: DS.Spacing.s) {
                 Button("Start another session") {
-                    Task { await vm.startNewSession() }
+                    Task { await vm.requestNextSession() }
                 }
                 .buttonStyle(.pill(.ink))
                 Button("See your library", action: onSeeLibrary)

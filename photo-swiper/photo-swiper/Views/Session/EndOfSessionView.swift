@@ -142,7 +142,7 @@ struct EndOfSessionView: View {
             }
             HStack(spacing: DS.Spacing.s) {
                 Button("Keep going") {
-                    Task { await vm.startNewSession() }
+                    Task { await vm.requestNextSession() }
                 }
                 .buttonStyle(.pill(.outline))
                 Button("Done for now", action: vm.finishForNow)

@@ -24,6 +24,8 @@ struct RootView: View {
             case .feed, .resting, .caughtUp:
                 tabs
                     .transition(.opacity)
+            case .paywall:
+                Color.clear
             case .endOfSession, .celebrated:
                 EndOfSessionView()
                     .transition(.opacity)

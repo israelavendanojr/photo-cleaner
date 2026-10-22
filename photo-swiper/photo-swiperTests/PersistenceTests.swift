@@ -28,7 +28,7 @@ struct FeedViewModelPersistenceTests {
 
     private func launch(_ store: any ProgressStoring, at date: Date? = nil) async -> FeedViewModel {
         let now = date ?? clock
-        let vm = FeedViewModel(library: library, builder: builder, store: store, now: { now })
+        let vm = FeedViewModel(library: library, builder: builder, store: store, entitlements: TestEntitlements(), now: { now })
         await vm.start()
         return vm
     }
@@ -104,7 +104,7 @@ struct FeedViewModelPersistenceTests {
         #expect(relaunched.freedBytes == freed)
         #expect(relaunched.pendingItems.isEmpty)
 
-        await relaunched.startNewSession()
+        await relaunched.requestNextSession()
         #expect(relaunched.pendingItems.isEmpty)
         #expect(relaunched.freedBytes == freed)
         #expect(relaunched.session?.number == 2)
@@ -149,12 +149,12 @@ struct FeedViewModelPersistenceTests {
         vm.finishForNow()
 
         let soon = await launch(store, at: clock.addingTimeInterval(3600))
-        await soon.startNewSession()
+        await soon.requestNextSession()
         let early = try #require(builder.requests.last).excluding
         #expect(early.isSuperset(of: [kept, later, deleted]))
 
         let nextDay = await launch(store, at: clock.addingTimeInterval(25 * 3600))
-        await nextDay.startNewSession()
+        await nextDay.requestNextSession()
         let late = try #require(builder.requests.last).excluding
         #expect(late.isSuperset(of: [kept, deleted]))
         #expect(!late.contains(later))
@@ -187,7 +187,7 @@ struct FeedViewModelPersistenceTests {
         let relaunched = await launch(store)
 
         #expect(relaunched.phase == .resting)
-        await relaunched.startNewSession()
+        await relaunched.requestNextSession()
         #expect(relaunched.session?.number == 2)
         #expect(relaunched.phase == .feed)
     }
@@ -205,7 +205,7 @@ struct FeedViewModelPersistenceTests {
         #expect(relaunched.pendingBytes == vm.pendingBytes)
 
         // Moving on carries the unconfirmed pile into the next session.
-        await relaunched.startNewSession()
+        await relaunched.requestNextSession()
         #expect(Set(relaunched.pendingItems.map(\.id)) == Set(vm.pendingItems.map(\.id)))
     }
 
@@ -214,7 +214,7 @@ struct FeedViewModelPersistenceTests {
         let store = try makeStore(kind)
         let vm = await launch(store)
         for _ in 0..<3 { vm.decide(.left) }
-        await vm.startNewSession()
+        await vm.requestNextSession()
         vm.decide(.left)
         // One carried from the first session, one from this one.
         let carried = try #require(vm.pendingItems.first)
@@ -233,7 +233,7 @@ struct FeedViewModelPersistenceTests {
         let store = try makeStore(kind)
         let vm = await launch(store)
         for _ in 0..<3 { vm.decide(.left) }
-        await vm.startNewSession()
+        await vm.requestNextSession()
         vm.decide(.left)
         // One carried from the first session, one from this one.
         let carried = try #require(vm.pendingItems.first)

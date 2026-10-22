@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import Observation
 import Testing
 @testable import photo_swiper
 
@@ -41,12 +42,39 @@ final class FakeLibrary: PhotoLibraryProviding, @unchecked Sendable {
     }
 }
 
+/// Entitlements the test controls. Unlocked by default, so tests about other things can run
+/// as many sessions as they like.
+@MainActor
+@Observable
+final class TestEntitlements: EntitlementStore {
+    var isUnlocked: Bool
+    let displayPrice = "$12.99"
+    var unlockResult = true
+    var restoreResult = true
+    private(set) var unlockCount = 0
+
+    init(isUnlocked: Bool = true) {
+        self.isUnlocked = isUnlocked
+    }
+
+    func unlock() async -> Bool {
+        unlockCount += 1
+        if unlockResult { isUnlocked = true }
+        return unlockResult
+    }
+
+    func restore() async -> Bool {
+        if restoreResult { isUnlocked = true }
+        return restoreResult
+    }
+}
+
 @MainActor
 struct FeedViewModelLibraryTests {
     private let library = FakeLibrary()
 
     private func started() async -> FeedViewModel {
-        let vm = FeedViewModel(library: library, builder: MockFeedBuilder())
+        let vm = FeedViewModel(library: library, builder: MockFeedBuilder(), entitlements: TestEntitlements())
         await vm.start()
         return vm
     }

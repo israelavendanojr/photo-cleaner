@@ -22,7 +22,16 @@ final class FeedViewModel {
         case resting
         /// The feed is genuinely exhausted: a new session found nothing to show.
         case caughtUp
+        /// The free session is used up and another was asked for.
+        case paywall
     }
+
+    enum PaywallStatus: Equatable {
+        case idle, purchasing, restoring, purchaseFailed, restoreFailed
+    }
+
+    /// Sessions anyone can start without unlocking.
+    static let freeSessions = 1
 
     /// The "+3.4 MB" chip shown briefly after a delete.
     struct DeleteChip: Equatable {
@@ -70,6 +79,7 @@ final class FeedViewModel {
     private(set) var isPreparingFirstSession = false
     /// Resting was restored at launch, so the rest screen greets the user back.
     private(set) var isWelcomeBack = false
+    private(set) var paywallStatus = PaywallStatus.idle
     /// Something about the last delete the user should know, e.g. items the system refused.
     var deleteNotice: String?
     /// Applies to the next session built.
@@ -96,6 +106,7 @@ final class FeedViewModel {
     private let library: any PhotoLibraryProviding
     private let builder: any FeedBuilding
     private let store: any ProgressStoring
+    private let entitlements: any EntitlementStore
     /// Runs the background feature index on the real library. Nil for mocks, previews, and tests.
     private let indexScheduler: IndexScheduler?
     /// Holds whether onboarding is done.
@@ -108,6 +119,7 @@ final class FeedViewModel {
         library: any PhotoLibraryProviding,
         builder: any FeedBuilding,
         store: any ProgressStoring = InMemoryProgressStore(),
+        entitlements: any EntitlementStore,
         indexScheduler: IndexScheduler? = nil,
         defaults: UserDefaults = .standard,
         firstSessionMinimum: Duration = .zero,
@@ -116,6 +128,7 @@ final class FeedViewModel {
         self.library = library
         self.builder = builder
         self.store = store
+        self.entitlements = entitlements
         self.indexScheduler = indexScheduler
         self.defaults = defaults
         self.firstSessionMinimum = firstSessionMinimum
@@ -128,12 +141,14 @@ final class FeedViewModel {
         library: any PhotoLibraryProviding,
         builder: any FeedBuilding,
         store: any ProgressStoring = InMemoryProgressStore(),
+        entitlements: any EntitlementStore,
         session: Session,
         stats: LibraryStats
     ) {
         self.library = library
         self.builder = builder
         self.store = store
+        self.entitlements = entitlements
         indexScheduler = nil
         defaults = .standard
         firstSessionMinimum = .zero
@@ -178,6 +193,19 @@ final class FeedViewModel {
         stats.totalItems == 0 ? 0 : min(1, Double(libraryReviewedCount) / Double(stats.totalItems))
     }
     var freedBytes: Int64 { stats.freedBytes }
+
+    var isUnlocked: Bool { entitlements.isUnlocked }
+    var displayPrice: String { entitlements.displayPrice }
+    /// Library items not yet kept or deleted, for the paywall's "left to look through".
+    var photosLeftToReview: Int { max(0, stats.totalItems - libraryReviewedCount) }
+
+    /// The number the next new session gets.
+    private var nextSessionNumber: Int { max(session?.number ?? 0, store.lastSessionNumber()) + 1 }
+
+    /// Past the free sessions, a new one needs the unlock. Nothing else is ever gated.
+    private func needsUnlock(forSession number: Int) -> Bool {
+        number > Self.freeSessions && !entitlements.isUnlocked
+    }
 
     // MARK: Card helpers
 
@@ -240,9 +268,12 @@ final class FeedViewModel {
         libraryStats = await library.stats()
         observeLibraryChanges()
         let saved = store.loadSession()
+        // A session in progress always resumes; only a brand new one can be gated.
+        let number = store.lastSessionNumber() + 1
+        let gated = saved == nil && needsUnlock(forSession: number)
         // Captions can do without place names for the first session; they arrive with the next.
-        let next = saved == nil
-            ? await makeSession(number: store.lastSessionNumber() + 1, placeBudget: fromOnboarding ? .zero : nil)
+        let next = saved == nil && !gated
+            ? await makeSession(number: number, placeBudget: fromOnboarding ? .zero : nil)
             : nil
         if fromOnboarding {
             let remaining = firstSessionMinimum - (clock.now - started)
@@ -252,6 +283,9 @@ final class FeedViewModel {
             await restore(saved)
         } else if let next {
             apply(next)
+        } else if gated {
+            paywallStatus = .idle
+            phase = .paywall
         }
         isPreparingFirstSession = false
         refreshTotals()
@@ -357,8 +391,39 @@ final class FeedViewModel {
         return true
     }
 
-    func startNewSession() async {
-        await loadSession(number: max(session?.number ?? 0, store.lastSessionNumber()) + 1)
+    /// "Keep going" and "Start another session". Past the free session without the unlock, this
+    /// opens the paywall instead, and the current session counts as finished.
+    func requestNextSession() async {
+        let number = nextSessionNumber
+        guard !needsUnlock(forSession: number) else {
+            finished = true
+            isWelcomeBack = false
+            paywallStatus = .idle
+            phase = .paywall
+            saveProgress()
+            return
+        }
+        await loadSession(number: number)
+    }
+
+    /// "Not now" on the paywall.
+    func dismissPaywall() {
+        guard phase == .paywall else { return }
+        finished = true
+        phase = .resting
+        saveProgress()
+    }
+
+    /// Buys the unlock from the paywall, then deals the next session. False if it didn't go through.
+    @discardableResult
+    func unlockFromPaywall() async -> Bool {
+        await settlePaywall(.purchasing, failure: .purchaseFailed) { await $0.unlock() }
+    }
+
+    /// Restores an earlier purchase from the paywall, then deals the next session.
+    @discardableResult
+    func restoreFromPaywall() async -> Bool {
+        await settlePaywall(.restoring, failure: .restoreFailed) { await $0.restore() }
     }
 
     func finishForNow() {
@@ -373,6 +438,22 @@ final class FeedViewModel {
     }
 
     // MARK: Internals
+
+    private func settlePaywall(
+        _ working: PaywallStatus,
+        failure: PaywallStatus,
+        _ attempt: (any EntitlementStore) async -> Bool
+    ) async -> Bool {
+        guard phase == .paywall, paywallStatus != .purchasing, paywallStatus != .restoring else { return false }
+        paywallStatus = working
+        guard await attempt(entitlements), entitlements.isUnlocked else {
+            paywallStatus = failure
+            return false
+        }
+        await loadSession(number: nextSessionNumber)
+        paywallStatus = .idle
+        return true
+    }
 
     /// Records per-item decisions for the current card and moves on.
     /// `direction` is the side the card left from, so undo brings it back the same way.
@@ -622,13 +703,20 @@ extension FeedViewModel {
         case celebratedRest
         /// Resting, as restored on a later launch.
         case welcomeBack
+        /// The first session done and deleted, and another asked for while locked.
+        case paywall
         case caughtUp
     }
 
     /// Long enough to see onboarding's step change before the feed deals in.
     static let onboardingPreparingMinimum = Duration.seconds(1)
 
-    static func mock(startingAt start: MockStart = .first) -> FeedViewModel {
+    /// Mocks start locked unless `entitlements` says otherwise (or `-unlocked YES` in debug builds).
+    static func mock(
+        startingAt start: MockStart = .first,
+        entitlements: (any EntitlementStore)? = nil
+    ) -> FeedViewModel {
+        let entitlements = entitlements ?? EntitlementServices.make(mock: true)
         if start == .onboarding {
             // Unstarted, on a library that hasn't been asked yet, with nothing remembered.
             let suite = "mock.onboarding"
@@ -637,6 +725,7 @@ extension FeedViewModel {
             return FeedViewModel(
                 library: MockPhotoLibrary(needsPrompt: true),
                 builder: MockFeedBuilder(),
+                entitlements: entitlements,
                 defaults: defaults,
                 firstSessionMinimum: onboardingPreparingMinimum
             )
@@ -646,6 +735,7 @@ extension FeedViewModel {
         let vm = FeedViewModel(
             library: library,
             builder: builder,
+            entitlements: entitlements,
             session: builder.makeSessionNow(number: 1),
             stats: LibraryStats(totalItems: library.totalItems, reviewedItems: library.reviewedItems, freedBytes: 0)
         )
@@ -666,6 +756,11 @@ extension FeedViewModel {
             if start == .celebratedRest { vm.applyConfirmedDelete(vm.pendingItems) }
             vm.finishForNow()
             vm.isWelcomeBack = start == .welcomeBack
+        case .paywall:
+            vm.simulateSession()
+            vm.applyConfirmedDelete(vm.pendingItems)
+            vm.finished = true
+            vm.phase = .paywall
         case .caughtUp:
             vm.apply(Session(number: 2, cards: []))
         case .onboarding:
@@ -673,6 +768,14 @@ extension FeedViewModel {
         }
         return vm
     }
+
+    #if DEBUG
+    /// Shows a paywall state without going through a purchase, for previews.
+    func previewPaywall(status: PaywallStatus) {
+        phase = .paywall
+        paywallStatus = status
+    }
+    #endif
 
     /// Decides every card with a plausible mix of deletes, keeps, and laters.
     private func simulateSession() {
