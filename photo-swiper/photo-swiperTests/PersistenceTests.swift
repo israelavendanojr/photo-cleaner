@@ -100,7 +100,7 @@ struct FeedViewModelPersistenceTests {
         #expect(vm.freedBytes == freed)
 
         let relaunched = await launch(store)
-        #expect(relaunched.phase == .caughtUp)
+        #expect(relaunched.phase == .resting)
         #expect(relaunched.freedBytes == freed)
         #expect(relaunched.pendingItems.isEmpty)
 
@@ -186,7 +186,7 @@ struct FeedViewModelPersistenceTests {
 
         let relaunched = await launch(store)
 
-        #expect(relaunched.phase == .caughtUp)
+        #expect(relaunched.phase == .resting)
         await relaunched.startNewSession()
         #expect(relaunched.session?.number == 2)
         #expect(relaunched.phase == .feed)

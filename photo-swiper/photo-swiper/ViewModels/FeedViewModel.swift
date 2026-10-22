@@ -18,7 +18,9 @@ final class FeedViewModel {
         case endOfSession
         /// Pending items were confirmed and deleted.
         case celebrated
-        /// The user is done for now; nothing left in the feed.
+        /// The user chose to stop ("Done for now"), or confirmed and left. More is waiting.
+        case resting
+        /// The feed is genuinely exhausted: a new session found nothing to show.
         case caughtUp
     }
 
@@ -66,6 +68,8 @@ final class FeedViewModel {
     /// Access was just granted from onboarding and the first session is being built.
     /// Onboarding stays up meanwhile instead of a loading screen.
     private(set) var isPreparingFirstSession = false
+    /// Resting was restored at launch, so the rest screen greets the user back.
+    private(set) var isWelcomeBack = false
     /// Something about the last delete the user should know, e.g. items the system refused.
     var deleteNotice: String?
     /// Applies to the next session built.
@@ -82,7 +86,7 @@ final class FeedViewModel {
     private var carriedPending: [LibraryItem] = []
     /// Items deleted, gone from the library, or undeletable. They stay decided but are no longer pending.
     private var settledIDs: Set<LibraryItem.ID> = []
-    /// The user is done with this session ("Done for now" or confirmed); relaunch shows caught-up.
+    /// The user is done with this session ("Done for now" or confirmed); relaunch shows resting.
     private var finished = false
     /// Totals the library reports itself; saved progress is added on top.
     private var libraryStats = LibraryStats(totalItems: 0, reviewedItems: 0, freedBytes: 0)
@@ -359,7 +363,8 @@ final class FeedViewModel {
 
     func finishForNow() {
         finished = true
-        phase = .caughtUp
+        isWelcomeBack = false
+        phase = .resting
         saveProgress()
     }
 
@@ -507,6 +512,7 @@ final class FeedViewModel {
         drafts = [:]
         history = []
         finished = false
+        isWelcomeBack = false
         let ids = Set(next.items.map(\.id))
         carriedPending = store.pile().filter { !ids.contains($0.id) }
         celebration = nil
@@ -547,7 +553,8 @@ final class FeedViewModel {
         history = []
         celebration = nil
         returningCard = nil
-        phase = if finished || cards.isEmpty { .caughtUp } else if index < cards.count { .feed } else { .endOfSession }
+        isWelcomeBack = finished && !cards.isEmpty
+        phase = if cards.isEmpty { .caughtUp } else if finished { .resting } else if index < cards.count { .feed } else { .endOfSession }
         if !gone.isEmpty { saveProgress() }
     }
 
@@ -608,7 +615,14 @@ private extension FeedCard {
 extension FeedViewModel {
     /// Named starting points for previews and `-startAt` launch arguments.
     enum MockStart: String {
-        case first, video, similar, batch, end, celebrated, caughtUp, onboarding
+        case first, video, similar, batch, end, celebrated, onboarding
+        /// Done for now with deletes still pending.
+        case resting
+        /// Confirmed, then done for now: freed bytes, nothing pending.
+        case celebratedRest
+        /// Resting, as restored on a later launch.
+        case welcomeBack
+        case caughtUp
     }
 
     /// Long enough to see onboarding's step change before the feed deals in.
@@ -647,8 +661,13 @@ extension FeedViewModel {
         case .end, .celebrated:
             vm.simulateSession()
             if start == .celebrated { vm.applyConfirmedDelete(vm.pendingItems) }
-        case .caughtUp:
+        case .resting, .celebratedRest, .welcomeBack:
+            vm.simulateSession()
+            if start == .celebratedRest { vm.applyConfirmedDelete(vm.pendingItems) }
             vm.finishForNow()
+            vm.isWelcomeBack = start == .welcomeBack
+        case .caughtUp:
+            vm.apply(Session(number: 2, cards: []))
         case .onboarding:
             break
         }

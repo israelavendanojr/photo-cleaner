@@ -21,7 +21,7 @@ struct RootView: View {
             case .noAccess:
                 LibraryAccessView()
                     .transition(.opacity)
-            case .feed, .caughtUp:
+            case .feed, .resting, .caughtUp:
                 tabs
                     .transition(.opacity)
             case .endOfSession, .celebrated:
@@ -34,8 +34,8 @@ struct RootView: View {
         .onChange(of: vm.phase) { old, new in
             // Only the feed that replaces onboarding deals in.
             if old != .onboarding, new != .onboarding { dealsInDeck = false }
-            // A session started from the end screen opens on the feed.
-            if new == .feed, old == .endOfSession || old == .celebrated { tab = .feed }
+            // A session started from the end or rest screen opens on the feed.
+            if new == .feed, [.endOfSession, .celebrated, .resting, .caughtUp].contains(old) { tab = .feed }
         }
         .sheet(isPresented: $isPilePresented) {
             PendingPileView(showsDone: true)
@@ -72,10 +72,14 @@ struct RootView: View {
 
     @ViewBuilder
     private var feedTab: some View {
-        if vm.phase == .caughtUp {
+        switch vm.phase {
+        case .resting:
+            RestView(onOpenPile: { isPilePresented = true }, onSeeLibrary: { tab = .library })
+                .transition(.opacity)
+        case .caughtUp:
             CaughtUpView()
                 .transition(.opacity)
-        } else {
+        default:
             FeedView(onOpenPile: { isPilePresented = true })
                 .transition(.opacity)
         }
