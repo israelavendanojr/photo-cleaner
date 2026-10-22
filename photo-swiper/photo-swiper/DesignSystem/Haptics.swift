@@ -28,6 +28,11 @@ enum Haptics {
         UINotificationFeedbackGenerator().notificationOccurred(.success)
     }
 
+    /// The unlock was bought or restored.
+    static func unlocked() {
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
+    }
+
     /// A different tab was picked.
     static func tabChange() {
         UISelectionFeedbackGenerator().selectionChanged()
