@@ -11,4 +11,6 @@ enum DefaultsKey {
     static let hasOnboarded = "hasOnboarded"
     /// Set after the first swipe, so the swipe hint shows once ever.
     static let hasSeenSwipeHint = "hasSeenSwipeHint"
+    /// Debug builds only: the stand-in unlock was bought. Release builds never read it.
+    static let debugUnlocked = "debugUnlocked"
 }

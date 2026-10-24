@@ -27,7 +27,7 @@ struct CaughtUpView: View {
             }
             Spacer()
             Button("Start another session") {
-                Task { await vm.startNewSession() }
+                Task { await vm.requestNextSession() }
             }
             .buttonStyle(.pill(.ink))
         }

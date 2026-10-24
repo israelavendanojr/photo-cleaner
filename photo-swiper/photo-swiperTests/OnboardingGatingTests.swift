@@ -36,7 +36,7 @@ struct OnboardingGatingTests {
     }
 
     private func launched() async -> FeedViewModel {
-        let vm = FeedViewModel(library: library, builder: MockFeedBuilder(), defaults: defaults)
+        let vm = FeedViewModel(library: library, builder: MockFeedBuilder(), entitlements: TestEntitlements(), defaults: defaults)
         await vm.start()
         return vm
     }
@@ -89,7 +89,7 @@ struct OnboardingGatingTests {
         library.needsPrompt = true
         let builder = GatedBuilder()
         builder.isGated = true
-        let vm = FeedViewModel(library: library, builder: builder, defaults: defaults)
+        let vm = FeedViewModel(library: library, builder: builder, entitlements: TestEntitlements(), defaults: defaults)
         await vm.start()
         let allow = Task { await vm.start() }
         while !builder.isWaiting { await Task.yield() }
@@ -105,10 +105,10 @@ struct OnboardingGatingTests {
     @Test func theFirstSessionSkipsPlaceNamesAndLaterOnesDont() async {
         library.needsPrompt = true
         let builder = GatedBuilder()
-        let vm = FeedViewModel(library: library, builder: builder, defaults: defaults)
+        let vm = FeedViewModel(library: library, builder: builder, entitlements: TestEntitlements(), defaults: defaults)
         await vm.start()
         await vm.start()
-        await vm.startNewSession()
+        await vm.requestNextSession()
         #expect(builder.requests.map(\.placeBudget) == [.zero, FeedOptions().placeBudget])
     }
 
@@ -116,7 +116,7 @@ struct OnboardingGatingTests {
         library.needsPrompt = true
         library.access = .denied
         let builder = GatedBuilder()
-        let vm = FeedViewModel(library: library, builder: builder, defaults: defaults)
+        let vm = FeedViewModel(library: library, builder: builder, entitlements: TestEntitlements(), defaults: defaults)
         await vm.start()
         await vm.start()
         #expect(vm.phase == .noAccess)

@@ -5,10 +5,13 @@ struct EndOfSessionView: View {
     @Environment(FeedViewModel.self) private var vm
     @State private var isConfirming = false
     @State private var isDeleting = false
+    @Environment(\.freedFigureNamespace) private var freedFigure
 
     private var celebration: FeedViewModel.Celebration? { vm.celebration }
     private var isCelebrated: Bool { celebration != nil }
     private var pendingCount: Int { vm.pendingItems.count }
+    /// Nothing deleted and nothing waiting: the session still ends, just without a number.
+    private var isEmpty: Bool { !isCelebrated && pendingCount == 0 }
 
     var body: some View {
         ScrollView {
@@ -67,37 +70,41 @@ struct EndOfSessionView: View {
             Text("Session complete · \(vm.photoTotal) photos")
                 .font(.footnote)
                 .foregroundStyle(DS.Palette.secondary)
-            Text(isCelebrated ? "Lighter already." : "A little lighter.")
+            Text(isCelebrated ? "Lighter already." : isEmpty ? "Everything stays." : "A little lighter.")
                 .dsSerif(40, relativeTo: .largeTitle, weight: .medium)
                 .foregroundStyle(DS.Palette.ink)
                 .padding(.top, DS.Spacing.xxs)
                 .id(isCelebrated)
                 .transition(.opacity)
-            Text(Format.size(celebration?.bytes ?? vm.pendingBytes))
-                .dsSerif(76, relativeTo: .largeTitle)
-                .foregroundStyle(DS.Palette.brick)
-                .lineLimit(1)
-                .minimumScaleFactor(0.5)
-                .padding(.top, DS.Spacing.m)
-                .id(isCelebrated)
-                .transition(.scale(scale: 0.92, anchor: .leading).combined(with: .opacity))
-            Text(isCelebrated
-                 ? "freed from \(celebration?.count ?? 0) photos"
-                 : "ready to clear from \(pendingCount) photos")
-                .font(.callout)
-                .foregroundStyle(DS.Palette.secondary)
-                .padding(.top, DS.Spacing.xs)
-                .contentTransition(.opacity)
+            if isEmpty {
+                Text("Nothing marked to clear this time.")
+                    .font(.callout)
+                    .foregroundStyle(DS.Palette.secondary)
+                    .padding(.top, DS.Spacing.s)
+            } else {
+                Text(Format.size(celebration?.bytes ?? vm.pendingBytes))
+                    .dsSerif(76, relativeTo: .largeTitle)
+                    .foregroundStyle(DS.Palette.brick)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.5)
+                    // Only a freed figure carries over to the rest screen.
+                    .freedFigure(in: isCelebrated ? freedFigure : nil)
+                    .padding(.top, DS.Spacing.m)
+                    .id(isCelebrated)
+                    .transition(.scale(scale: 0.92, anchor: .leading).combined(with: .opacity))
+                Text(isCelebrated
+                     ? "freed from \(celebration?.count ?? 0) photos"
+                     : "ready to clear from \(pendingCount) photos")
+                    .font(.callout)
+                    .foregroundStyle(DS.Palette.secondary)
+                    .padding(.top, DS.Spacing.xs)
+                    .contentTransition(.opacity)
+            }
         }
     }
 
     @ViewBuilder private var pendingDetails: some View {
-        if vm.pendingItems.isEmpty {
-            Text("Nothing marked to clear this time.")
-                .font(.callout)
-                .foregroundStyle(DS.Palette.secondary)
-                .padding(.top, DS.Spacing.l)
-        } else {
+        if !vm.pendingItems.isEmpty {
             PendingThumbnailGrid(items: vm.pendingItems)
                 .padding(.top, DS.Spacing.l)
         }
@@ -129,20 +136,18 @@ struct EndOfSessionView: View {
 
     private var actions: some View {
         VStack(spacing: DS.Spacing.s) {
-            Text(isCelebrated
-                 ? "Nicely done. The rest of your library will wait."
-                 : "They'll rest in Recently Deleted for 30 days, just in case.")
+            Text(footnote)
                 .font(.footnote)
                 .foregroundStyle(DS.Palette.secondary)
                 .multilineTextAlignment(.center)
-            if !isCelebrated {
+            if !isCelebrated, !isEmpty {
                 Button("Delete \(pendingCount) \(pendingCount == 1 ? "Photo" : "Photos")") { isConfirming = true }
                     .buttonStyle(.pill(.brick))
                     .disabled(pendingCount == 0 || isDeleting)
             }
             HStack(spacing: DS.Spacing.s) {
                 Button("Keep going") {
-                    Task { await vm.startNewSession() }
+                    Task { await vm.requestNextSession() }
                 }
                 .buttonStyle(.pill(.outline))
                 Button("Done for now", action: vm.finishForNow)
@@ -157,6 +162,12 @@ struct EndOfSessionView: View {
     }
 
     // MARK: Helpers
+
+    private var footnote: String {
+        if isCelebrated { "Nicely done. The rest of your library will wait." }
+        else if isEmpty { "Stop here, or keep going when you're ready." }
+        else { "They'll rest in Recently Deleted for 30 days, just in case." }
+    }
 
     private var hasDeleteNotice: Binding<Bool> {
         Binding(get: { vm.deleteNotice != nil }, set: { if !$0 { vm.deleteNotice = nil } })
@@ -180,6 +191,11 @@ struct EndOfSessionView: View {
 #Preview("Ready to clear") {
     EndOfSessionView()
         .environment(FeedViewModel.mock(startingAt: .end))
+}
+
+#Preview("Nothing to clear") {
+    EndOfSessionView()
+        .environment(FeedViewModel.mock(startingAt: .endNothingToClear))
 }
 
 #Preview("Celebrated") {
