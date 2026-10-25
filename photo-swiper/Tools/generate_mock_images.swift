@@ -149,17 +149,6 @@ func screenshot(header: UInt32, body: UInt32, line: UInt32, block: UInt32) -> CG
     }
 }
 
-/// A forwarded image: a framed picture with a caption band.
-func forwarded(_ bg: UInt32, _ art: UInt32, _ band: UInt32) -> CGImage {
-    canvas(750, 1125) { ctx, w, h in
-        fill(ctx, band, CGPath(rect: CGRect(x: 0, y: 0, width: w, height: h), transform: nil))
-        fill(ctx, bg, rounded(CGRect(x: w * 0.08, y: h * 0.2, width: w * 0.84, height: h * 0.5), 30))
-        glow(ctx, art, center: CGPoint(x: w * 0.5, y: h * 0.45), radius: w * 0.26, softness: 0.9)
-        fill(ctx, 0xFFFFFF, alpha: 0.75, rounded(CGRect(x: w * 0.18, y: h * 0.76, width: w * 0.64, height: 26), 13))
-        fill(ctx, 0xFFFFFF, alpha: 0.5, rounded(CGRect(x: w * 0.28, y: h * 0.8, width: w * 0.44, height: 26), 13))
-    }
-}
-
 // MARK: - Catalog
 
 let images: [(String, CGImage)] = [
@@ -187,10 +176,6 @@ let images: [(String, CGImage)] = [
     }),
     ("video-waves", landscape(sky: [(0xBCD6E0, 0), (0xF3ECE4, 0.5)], layers: [(0x7FA3B4, 0.55, 0.0), (0x5E8698, 0.68, 0.02), (0xE9DCC6, 0.82, 0.05)])),
     ("video-party", interior(0x6E4A52, 0x2A1E24, lamp: CGPoint(x: 0.5, y: 0.35))),
-    ("fwd-1", forwarded(0xF2C39A, 0xFFF1D6, 0x3A3A3C)),
-    ("fwd-2", forwarded(0xBCD6E0, 0xFFFFFF, 0x2B2A2D)),
-    ("fwd-3", forwarded(0xD6E2D4, 0xF4F1E8, 0x46413C)),
-    ("fwd-4", forwarded(0xECE6F2, 0xA08BC4, 0x2F2A26)),
     ("shot-light", screenshot(header: 0xE4EBF3, body: 0xFFFFFF, line: 0xD3D9E0, block: 0x7FA3D6)),
     ("shot-dark", screenshot(header: 0x2B2A2D, body: 0x1C1B1E, line: 0x45444A, block: 0xC6A46C)),
     ("shot-cream", screenshot(header: 0xF3ECE4, body: 0xFFFFFF, line: 0xE3DAD0, block: 0xD98A68)),

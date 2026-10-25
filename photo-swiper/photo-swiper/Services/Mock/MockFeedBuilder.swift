@@ -3,7 +3,7 @@ import Foundation
 /// Builds a 20-card session from the bundled mock images.
 ///
 /// Card positions mirror the reference demo: videos at 3 and 11, similar shots
-/// at 6 and 15, batches at 8 and 18, single photos everywhere else. That's 51 photos,
+/// at 6 and 15, a screenshot batch at 8, single photos everywhere else. That's 43 photos,
 /// more than a real session's target, so the demo shows off every card kind. 
 struct MockFeedBuilder: FeedBuilding {
     static let cardsPerSession = 20
@@ -51,10 +51,9 @@ private struct Factory {
         switch index {
         case 3: .video(video(bytes: 1_228_000_000, duration: 252, image: "video-waves", location: "Malibu"))
         case 11: .video(video(bytes: 846_000_000, duration: 167, image: "video-party", location: "Home"))
-        case 6: .similar(similar(cardIndex: index, image: "similar-a", reason: "Sharpest, eyes open."))
-        case 15: .similar(similar(cardIndex: index, image: "similar-b", reason: "Best light, nobody blinking."))
+        case 6: .similar(similar(cardIndex: index, image: "similar-a", reason: "Sharpest of the set"))
+        case 15: .similar(similar(cardIndex: index, image: "similar-b", reason: "Best exposure"))
         case 8: .batch(screenshots(cardIndex: index))
-        case 18: .batch(forwarded(cardIndex: index))
         default: .photo(photo())
         }
     }
@@ -110,16 +109,6 @@ private struct Factory {
             )
         }
         return ItemBatch(id: cardID(cardIndex), kind: .screenshots, label: "Screenshots", title: "14 screenshots from last week", items: items)
-    }
-
-    private mutating func forwarded(cardIndex: Int) -> ItemBatch {
-        let items = (0..<9).map { k in
-            LibraryItem(
-                id: nextID(), kind: .photo, date: nextDate(), location: "WhatsApp",
-                bytes: megabytes(0.4 + rng.unit() * 0.6), flags: [.forwarded], image: .bundled("fwd-\(k % 4 + 1)")
-            )
-        }
-        return ItemBatch(id: cardID(cardIndex), kind: .forwarded, label: "Saved & forwarded", title: "9 forwarded images", items: items)
     }
 
     // MARK: Helpers

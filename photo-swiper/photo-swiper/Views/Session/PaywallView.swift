@@ -100,7 +100,7 @@ struct PaywallView: View {
     private var bullets: some View {
         VStack(alignment: .leading, spacing: DS.Spacing.s) {
             ForEach(["Unlimited swiping, every month of your library",
-                     "Similar-shot picks and batch cards",
+                     "Similar-shot picks and screenshot batches",
                      "Future updates included"], id: \.self) { line in
                 HStack(alignment: .firstTextBaseline, spacing: DS.Spacing.s) {
                     Circle()

@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// A batch of low-value items (screenshots, forwards) decided all at once,
+/// A batch of screenshots decided all at once,
 /// or opened with a tap to go through one by one.
 struct ScreenshotBatchCardView: View {
     /// Size of each fanned thumbnail, and how many are shown. Pre-caching requests the same.

@@ -11,14 +11,13 @@ struct LibraryItem: Identifiable, Hashable, Sendable, Codable {
 
     /// Why the app thinks an item might be worth clearing.
     enum Flag: String, Hashable, Sendable, Codable {
-        case blurry, accidental, screenshot, forwarded, receipt
+        case blurry, accidental, screenshot, receipt
 
         var label: String {
             switch self {
             case .blurry: "Possibly blurry"
             case .accidental: "Accidental shot"
             case .screenshot: "Screenshot"
-            case .forwarded: "Forwarded"
             case .receipt: "Receipt or code"
             }
         }

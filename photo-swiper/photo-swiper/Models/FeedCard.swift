@@ -34,7 +34,7 @@ struct SimilarGroup: Identifiable, Hashable, Sendable, Codable {
     let id: String
     let items: [LibraryItem]
     let bestID: LibraryItem.ID
-    /// Why the best pick won, e.g. "Sharpest, eyes open."
+    /// Why the best pick won, e.g. "Sharpest of the set".
     let reason: String
 
     var best: LibraryItem { items.first { $0.id == bestID } ?? items[0] }
@@ -44,7 +44,7 @@ struct SimilarGroup: Identifiable, Hashable, Sendable, Codable {
 /// A group of low-value items cleared or kept together.
 struct ItemBatch: Identifiable, Hashable, Sendable, Codable {
     enum Kind: Hashable, Sendable, Codable {
-        case screenshots, forwarded
+        case screenshots
     }
 
     let id: String
