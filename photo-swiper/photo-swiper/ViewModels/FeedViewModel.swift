@@ -693,8 +693,14 @@ private extension FeedCard {
     }
 }
 
+extension FeedViewModel {
+    /// Long enough to see onboarding's step change before the feed deals in.
+    static let onboardingPreparingMinimum = Duration.seconds(1)
+}
+
 // MARK: - Mock setup
 
+#if DEBUG
 extension FeedViewModel {
     /// Named starting points for previews and `-startAt` launch arguments.
     enum MockStart: String {
@@ -711,9 +717,6 @@ extension FeedViewModel {
         case paywall
         case caughtUp
     }
-
-    /// Long enough to see onboarding's step change before the feed deals in.
-    static let onboardingPreparingMinimum = Duration.seconds(1)
 
     /// Mocks start locked unless `entitlements` says otherwise (or `-unlocked YES` in debug builds).
     static func mock(
@@ -776,13 +779,11 @@ extension FeedViewModel {
         return vm
     }
 
-    #if DEBUG
     /// Shows a paywall state without going through a purchase, for previews.
     func previewPaywall(status: PaywallStatus) {
         phase = .paywall
         paywallStatus = status
     }
-    #endif
 
     /// Decides every card with a plausible mix of deletes, keeps, and laters.
     private func simulateSession() {
@@ -799,3 +800,4 @@ extension FeedViewModel {
         dismissChip()
     }
 }
+#endif

@@ -188,6 +188,7 @@ struct EndOfSessionView: View {
     }
 }
 
+#if DEBUG
 #Preview("Ready to clear") {
     EndOfSessionView()
         .environment(FeedViewModel.mock(startingAt: .end))
@@ -202,3 +203,4 @@ struct EndOfSessionView: View {
     EndOfSessionView()
         .environment(FeedViewModel.mock(startingAt: .celebrated))
 }
+#endif

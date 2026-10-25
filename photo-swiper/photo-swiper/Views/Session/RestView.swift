@@ -126,6 +126,7 @@ struct RestView: View {
     }
 }
 
+#if DEBUG
 #Preview("Resting") {
     RestView()
         .environment(FeedViewModel.mock(startingAt: .celebratedRest))
@@ -140,3 +141,4 @@ struct RestView: View {
     RestView()
         .environment(FeedViewModel.mock(startingAt: .welcomeBack))
 }
+#endif

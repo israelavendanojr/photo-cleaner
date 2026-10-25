@@ -29,20 +29,22 @@ private extension FeedViewModel {
     /// jumps straight to a mock state, `-resetProgress YES` wipes saved progress first, and
     /// `-resetOnboarding YES` shows onboarding and the swipe hint again. `-unlocked YES|NO` sets the
     /// stand-in purchase (mocks start locked). Mocks never read or write saved progress and never
-    /// start the feature index.
+    /// start the feature index. Release builds always run on the real library.
     static func launch() -> FeedViewModel {
         #if DEBUG
         if UserDefaults.standard.bool(forKey: "resetOnboarding") {
             UserDefaults.standard.removeObject(forKey: DefaultsKey.hasOnboarded)
             UserDefaults.standard.removeObject(forKey: DefaultsKey.hasSeenSwipeHint)
         }
-        #endif
-        guard LibraryServices.usesMock else { return real(entitlements: EntitlementServices.make(mock: false)) }
-        let entitlements = EntitlementServices.make(mock: true)
-        if let raw = UserDefaults.standard.string(forKey: "startAt"), let start = MockStart(rawValue: raw) {
-            return .mock(startingAt: start, entitlements: entitlements)
+        if LibraryServices.usesMock {
+            let entitlements = EntitlementServices.make(mock: true)
+            if let raw = UserDefaults.standard.string(forKey: "startAt"), let start = MockStart(rawValue: raw) {
+                return .mock(startingAt: start, entitlements: entitlements)
+            }
+            return FeedViewModel(library: MockPhotoLibrary(), builder: MockFeedBuilder(), entitlements: entitlements)
         }
-        return FeedViewModel(library: MockPhotoLibrary(), builder: MockFeedBuilder(), entitlements: entitlements)
+        #endif
+        return real(entitlements: EntitlementServices.make(mock: false))
     }
 
     /// Saved progress and the feature index share one on-disk container.

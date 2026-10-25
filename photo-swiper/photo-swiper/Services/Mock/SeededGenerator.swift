@@ -1,5 +1,6 @@
 import Foundation
 
+#if DEBUG
 /// Deterministic random numbers so mock sessions look the same on every run.
 struct SeededGenerator: RandomNumberGenerator {
     private var state: UInt64
@@ -22,3 +23,4 @@ struct SeededGenerator: RandomNumberGenerator {
         Double.random(in: 0..<1, using: &self)
     }
 }
+#endif

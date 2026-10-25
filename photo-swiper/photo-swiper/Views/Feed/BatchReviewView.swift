@@ -100,7 +100,9 @@ struct BatchReviewView: View {
     }
 }
 
+#if DEBUG
 #Preview {
     BatchReviewView(batch: PreviewSamples.screenshotBatch) { print($0) }
         .environment(FeedViewModel.mock())
 }
+#endif

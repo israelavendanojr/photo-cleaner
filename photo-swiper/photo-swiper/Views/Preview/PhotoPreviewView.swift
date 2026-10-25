@@ -207,6 +207,8 @@ private struct ZoomState {
     var isZoomed: Bool { scale > 1.01 }
 }
 
+#if DEBUG
 #Preview {
     PhotoPreviewView(item: PreviewSamples.blurryPhoto)
 }
+#endif

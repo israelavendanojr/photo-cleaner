@@ -29,6 +29,7 @@ struct SwipeOverlay: View {
     }
 }
 
+#if DEBUG
 #Preview {
     HStack(spacing: 8) {
         ForEach([CGSize(width: -140, height: 0), CGSize(width: 140, height: 0), CGSize(width: 0, height: -140)], id: \.width) { offset in
@@ -40,3 +41,4 @@ struct SwipeOverlay: View {
     .padding()
     .background(DS.Palette.paper)
 }
+#endif

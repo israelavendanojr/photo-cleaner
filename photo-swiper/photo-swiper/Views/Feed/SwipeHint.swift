@@ -35,6 +35,7 @@ enum SwipeNudge {
     }
 }
 
+#if DEBUG
 #Preview {
     VStack {
         PhotoCardView(item: PreviewSamples.plainPhoto)
@@ -43,3 +44,4 @@ enum SwipeNudge {
     }
     .background(DS.Palette.paper)
 }
+#endif

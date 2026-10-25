@@ -1,5 +1,6 @@
 import Foundation
 
+#if DEBUG
 /// Builds a 20-card session from the bundled mock images.
 ///
 /// Card positions mirror the reference demo: videos at 3 and 11, similar shots
@@ -130,3 +131,4 @@ private struct Factory {
         Int64((mb * 10).rounded() * 100_000)
     }
 }
+#endif

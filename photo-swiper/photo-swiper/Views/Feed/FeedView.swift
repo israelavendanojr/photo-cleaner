@@ -19,6 +19,7 @@ struct FeedView: View {
     }
 }
 
+#if DEBUG
 #Preview("Feed") {
     FeedView()
         .environment(FeedViewModel.mock())
@@ -28,3 +29,4 @@ struct FeedView: View {
     FeedView()
         .environment(FeedViewModel.mock(startingAt: .similar))
 }
+#endif

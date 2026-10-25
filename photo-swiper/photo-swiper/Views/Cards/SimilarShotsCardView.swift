@@ -134,6 +134,7 @@ private struct SimilarThumbnail: View {
     }
 }
 
+#if DEBUG
 #Preview {
     @Previewable @State var marked = Set(PreviewSamples.similarGroup.others.map(\.id))
 
@@ -144,3 +145,4 @@ private struct SimilarThumbnail: View {
     .padding(14)
     .background(DS.Palette.paper)
 }
+#endif

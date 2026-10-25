@@ -54,8 +54,10 @@ struct VideoCardView: View {
     }
 }
 
+#if DEBUG
 #Preview {
     VideoCardView(item: PreviewSamples.video)
         .padding(14)
         .background(DS.Palette.paper)
 }
+#endif

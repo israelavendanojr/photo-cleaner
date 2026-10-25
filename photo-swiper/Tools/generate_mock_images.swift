@@ -1,6 +1,7 @@
 // Generates the soft, illustrated mock images used by the mock feed.
-// Usage: swift Tools/generate_mock_images.swift photo-swiper/Assets.xcassets/Mock
-// Output is deterministic; re-running overwrites the image sets.
+// Usage: swift Tools/generate_mock_images.swift photo-swiper/MockAssets.xcassets/Mock
+// Output is deterministic; re-running overwrites the image sets. The six photos onboarding shows
+// (see StackedPhotosIllustration) live in Assets.xcassets/Illustration so Release keeps them; move them there.
 
 import CoreGraphics
 import Foundation

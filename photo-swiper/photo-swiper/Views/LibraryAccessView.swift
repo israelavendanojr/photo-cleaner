@@ -39,7 +39,9 @@ struct LibraryAccessView: View {
     }
 }
 
+#if DEBUG
 #Preview {
     LibraryAccessView()
         .environment(FeedViewModel.mock())
 }
+#endif

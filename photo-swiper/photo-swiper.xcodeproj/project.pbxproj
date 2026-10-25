@@ -428,6 +428,10 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = T824YM9ABT;
 				ENABLE_PREVIEWS = YES;
+				EXCLUDED_SOURCE_FILE_NAMES = (
+					MockAssets.xcassets,
+					"mock-video.mp4",
+				);
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Info.plist;
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Photo Swiper looks through your library on this iPhone to find photos you may want to clear. Nothing is uploaded.";
