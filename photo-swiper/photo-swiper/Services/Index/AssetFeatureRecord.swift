@@ -19,6 +19,8 @@ final class AssetFeatureRecord {
     var isInBurst: Bool
     var isBurstPick: Bool
     var hasAdjustments: Bool
+    var burstID: String?
+    var isUserBurstPick: Bool?
 
     // Image signals; nil when not analyzed.
     var sharpness: Double?
@@ -27,6 +29,8 @@ final class AssetFeatureRecord {
     var brightFraction: Double?
     var aesthetic: Double?
     var isUtility: Bool?
+    /// Float32 vector bytes; see `FeaturePrint`. Only `FeatureIndex.featurePrints(for:)` reads it.
+    @Attribute(.externalStorage) var featurePrint: Data?
 
     /// The asset's `modificationDate` when it was indexed. A different one means it was edited since.
     var modifiedAt: Date?
@@ -61,12 +65,15 @@ final class AssetFeatureRecord {
         isInBurst = features.isInBurst
         isBurstPick = features.isBurstPick
         hasAdjustments = features.hasAdjustments
+        burstID = features.burstID
+        isUserBurstPick = features.isUserBurstPick
         sharpness = features.sharpness
         exposureMean = features.exposure?.mean
         darkFraction = features.exposure?.darkFraction
         brightFraction = features.exposure?.brightFraction
         aesthetic = features.aesthetic
         isUtility = features.isUtility
+        featurePrint = entry.featurePrint
         modifiedAt = entry.modifiedAt
         featureVersion = entry.version
         indexedAt = entry.indexedAt
@@ -79,7 +86,8 @@ final class AssetFeatureRecord {
         }
         return AssetFeatures(
             createdAt: createdAt, bytes: bytes, isVideo: isVideo, duration: duration, isScreenshot: isScreenshot,
-            isFavorite: isFavorite, isInBurst: isInBurst, isBurstPick: isBurstPick, hasAdjustments: hasAdjustments,
+            isFavorite: isFavorite, isInBurst: isInBurst, isBurstPick: isBurstPick, burstID: burstID,
+            isUserBurstPick: isUserBurstPick, hasAdjustments: hasAdjustments,
             sharpness: sharpness, exposure: exposure, aesthetic: aesthetic, isUtility: isUtility
         )
     }

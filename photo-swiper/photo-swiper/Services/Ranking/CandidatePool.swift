@@ -36,7 +36,7 @@ enum CandidatePool {
         excluding: Set<LibraryItem.ID>,
         indexed: [LibraryItem.ID: IndexedFeatures],
         poolSize: Int,
-        version: Int = IndexFreshness.currentVersion
+        version: Int = IndexFreshness.rankableVersion
     ) -> Result {
         var result = Result(totalCount: library.count)
         for entry in library {

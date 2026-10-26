@@ -2,8 +2,10 @@ import Foundation
 
 /// Read access to cached features. `FeatureIndex` is the real one; tests use a fake.
 protocol FeatureIndexReading: Sendable {
-    /// Every cached record. Callers decide which are still fresh with `IndexFreshness`.
+    /// Every cached record, without feature prints. Callers decide which are still fresh with `IndexFreshness`.
     func indexed() async -> [LibraryItem.ID: IndexedFeatures]
+    /// Stored feature prints for `ids`. Items without one are left out.
+    func featurePrints(for ids: [LibraryItem.ID]) async -> [LibraryItem.ID: FeaturePrint]
 }
 
 /// What decides whether a record is stale: the asset's edit date and the analysis version.
@@ -25,12 +27,18 @@ struct IndexEntry: Sendable {
     let modifiedAt: Date?
     let version: Int
     let indexedAt: Date
+    /// A `FeaturePrint`'s bytes; nil when not analyzed or Vision failed.
+    var featurePrint: Data? = nil
 }
 
 /// The one rule for "this record can be used as is", shared by the indexer's work queue and the feed.
 enum IndexFreshness {
-    /// Bump when analysis changes in a way that shifts stored values; every record is redone.
-    static let currentVersion = 1
+    /// Bump when analysis changes or adds a stored value; the indexer redoes every older record.
+    /// 2 added feature prints, burst identifiers, and the user's burst pick.
+    static let currentVersion = 2
+    /// The oldest version the feed still ranks on. Bump only when a stored value changes meaning, so a
+    /// re-analysis doesn't drop ranking back to the live pool until the whole library is redone.
+    static let rankableVersion = 1
 
     static func isCurrent(_ stamp: IndexStamp, assetModifiedAt: Date?, version: Int = currentVersion) -> Bool {
         stamp.version >= version && stamp.modifiedAt == assetModifiedAt

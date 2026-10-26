@@ -1,4 +1,5 @@
 import CoreGraphics
+import Foundation
 import ImageIO
 
 /// Computes image signals from one decoded image. `VisionImageAnalyzer` is the real one; tests fake it.
@@ -12,6 +13,8 @@ struct ImageSignals: Hashable, Sendable {
     var exposure: ExposureStats?
     var aesthetic: Double?
     var isUtility: Bool?
+    /// A `FeaturePrint`'s bytes. Kept beside `AssetFeatures`, not in it, so it never reaches saved decisions.
+    var featurePrint: Data?
 }
 
 extension AssetFeatures {
