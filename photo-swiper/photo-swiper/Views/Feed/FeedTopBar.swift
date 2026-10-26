@@ -45,9 +45,11 @@ struct FeedTopBar: View {
     }
 }
 
+#if DEBUG
 #Preview {
     FeedTopBar(onUndo: {})
         .environment(FeedViewModel.mock())
         .padding(20)
         .background(DS.Palette.paper)
 }
+#endif

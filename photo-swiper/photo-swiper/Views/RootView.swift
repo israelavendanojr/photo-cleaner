@@ -147,7 +147,9 @@ private extension View {
     }
 }
 
+#if DEBUG
 #Preview {
     RootView()
         .environment(FeedViewModel.mock())
 }
+#endif

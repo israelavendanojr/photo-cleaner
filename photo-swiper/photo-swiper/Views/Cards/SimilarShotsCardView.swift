@@ -56,6 +56,7 @@ struct SimilarShotsCardView: View {
             }
             .accessibilityElement()
             .accessibilityLabel("Best pick. \(group.reason)")
+            .rankDebugBadge(for: group)
     }
 
     private var thumbnails: some View {
@@ -134,6 +135,7 @@ private struct SimilarThumbnail: View {
     }
 }
 
+#if DEBUG
 #Preview {
     @Previewable @State var marked = Set(PreviewSamples.similarGroup.others.map(\.id))
 
@@ -144,3 +146,4 @@ private struct SimilarThumbnail: View {
     .padding(14)
     .background(DS.Palette.paper)
 }
+#endif

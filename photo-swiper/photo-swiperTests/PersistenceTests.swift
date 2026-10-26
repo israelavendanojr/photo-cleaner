@@ -1,4 +1,5 @@
 import Foundation
+import SwiftData
 import Testing
 @testable import photo_swiper
 
@@ -255,5 +256,27 @@ struct FeedViewModelPersistenceTests {
 
         let relaunched = await launch(store)
         #expect(relaunched.skipFavorites == false)
+    }
+
+    /// A session saved while the Forwarded batch existed can't be decoded. It's dropped, not a crash,
+    /// and the next launch deals a fresh session while saved decisions stay put.
+    @Test func aSavedSessionWithARemovedCardKindStartsFresh() async throws {
+        let container = try SwiftDataProgressStore.makeContainer(inMemory: true)
+        let store = SwiftDataProgressStore(container: container, defaults: nil)
+        let vm = await launch(store)
+        vm.decide(.left)
+        let decided = try #require(vm.cards.first?.items.first)
+
+        let row = try #require(try container.mainContext.fetch(FetchDescriptor<SessionProgress>()).first)
+        let json = try #require(String(data: row.snapshot, encoding: .utf8))
+        #expect(json.contains(#"{"screenshots":{}}"#))
+        row.snapshot = Data(json.replacingOccurrences(of: #"{"screenshots":{}}"#, with: #"{"forwarded":{}}"#).utf8)
+        try container.mainContext.save()
+
+        #expect(store.loadSession() == nil)
+        let relaunched = await launch(store)
+        #expect(relaunched.phase == .feed)
+        #expect(builder.requests.count == 2, "A new session was built")
+        #expect(store.decisions(for: [decided.id])[decided.id]?.decision == .delete)
     }
 }

@@ -157,7 +157,9 @@ private struct OverviewRow: View {
     }
 }
 
+#if DEBUG
 #Preview {
     LibraryView()
         .environment(FeedViewModel.mock(startingAt: .batch))
 }
+#endif

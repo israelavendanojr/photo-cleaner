@@ -38,7 +38,9 @@ struct CaughtUpView: View {
     }
 }
 
+#if DEBUG
 #Preview {
     CaughtUpView()
         .environment(FeedViewModel.mock(startingAt: .caughtUp))
 }
+#endif

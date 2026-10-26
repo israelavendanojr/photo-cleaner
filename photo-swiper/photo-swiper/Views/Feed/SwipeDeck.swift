@@ -189,6 +189,7 @@ struct SwipeDeck: View {
     }
 }
 
+#if DEBUG
 #Preview {
     @Previewable @State var index = 0
     @Previewable @State var request: SwipeDirection?
@@ -205,3 +206,4 @@ struct SwipeDeck: View {
     .environment(FeedViewModel.mock())
     .background(DS.Palette.paper)
 }
+#endif

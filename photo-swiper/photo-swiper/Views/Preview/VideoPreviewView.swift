@@ -376,6 +376,8 @@ private struct PlayerLayerView: UIViewRepresentable {
     }
 }
 
+#if DEBUG
 #Preview {
     VideoPreviewView(item: PreviewSamples.video)
 }
+#endif

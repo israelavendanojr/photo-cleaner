@@ -51,8 +51,10 @@ struct CardStackView: View {
     }
 }
 
+#if DEBUG
 #Preview {
     CardStackView()
         .environment(FeedViewModel.mock())
         .background(DS.Palette.paper)
 }
+#endif

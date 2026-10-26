@@ -66,7 +66,9 @@ struct OnboardingView: View {
     }
 }
 
+#if DEBUG
 #Preview {
     OnboardingView()
         .environment(FeedViewModel.mock(startingAt: .onboarding))
 }
+#endif

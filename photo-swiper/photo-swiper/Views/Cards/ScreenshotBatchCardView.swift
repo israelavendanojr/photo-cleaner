@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// A batch of low-value items (screenshots, forwards) decided all at once,
+/// A batch of screenshots decided all at once,
 /// or opened with a tap to go through one by one.
 struct ScreenshotBatchCardView: View {
     /// Size of each fanned thumbnail, and how many are shown. Pre-caching requests the same.
@@ -86,9 +86,11 @@ private struct FannedThumbnails: View {
     }
 }
 
+#if DEBUG
 #Preview {
     ScreenshotBatchCardView(batch: PreviewSamples.screenshotBatch, onOpen: {})
         .frame(height: 600)
         .padding(14)
         .background(DS.Palette.paper)
 }
+#endif

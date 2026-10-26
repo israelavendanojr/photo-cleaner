@@ -197,4 +197,74 @@ struct SessionPlannerTests {
     @Test func emptyPoolMakesEmptyPlan() {
         #expect(planner().plan([], now: now).isEmpty)
     }
+
+    // MARK: Similar groups
+
+    private func group(_ ids: [String], best: String? = nil) -> PlannedGroup {
+        PlannedGroup(ids: ids, bestID: best ?? ids[0], reason: "Sharpest of the set")
+    }
+
+    private func photos(_ ids: [String], mb: Double = 3) -> [RankCandidate] {
+        ids.map { photo($0, mb: mb) }
+    }
+
+    private func similarIDs(_ plan: [SessionPlanner.Slot]) -> [[String]] {
+        plan.compactMap { if case .similar(let ids, _, _) = $0 { ids } else { nil } }
+    }
+
+    @Test func aGroupBecomesOneSlotWithItsKeeper() {
+        let plan = planner().plan(photos(["a", "b", "c", "d"]), groups: [group(["a", "b", "c"], best: "b")], now: now)
+        #expect(plan.contains(.similar(ids: ["a", "b", "c"], bestID: "b", reason: "Sharpest of the set")))
+        #expect(plan.contains(.single("d")))
+        #expect(plan.count == 2)
+    }
+
+    @Test func groupedPhotosNeverShowAsSinglesEvenWhenTheGroupWaits() {
+        // Room for one group of three plus one more item; the second group doesn't fit.
+        let pool = photos(["a", "b", "c", "d", "e"], mb: 50) + photos(["x"], mb: 1)
+        let plan = planner(limit: 4).plan(pool, groups: [group(["a", "b", "c"]), group(["d", "e"])], now: now)
+        let ids = plan.flatMap(\.ids)
+        #expect(ids.count == Set(ids).count, "No item appears twice")
+        #expect(!ids.contains("d") && !ids.contains("e"))
+        #expect(similarIDs(plan) == [["a", "b", "c"]])
+        #expect(plan.contains(.single("x")))
+    }
+
+    @Test func everyMemberCountsTowardTheLimit() {
+        let pool = photos(["a", "b", "c", "d"], mb: 50) + photos(["p0", "p1", "p2", "p3"])
+        let plan = planner(limit: 6).plan(pool, groups: [group(["a", "b", "c", "d"])], now: now)
+        #expect(plan.flatMap(\.ids).count == 6)
+        #expect(plan.count == 3)
+    }
+
+    @Test func groupsRankByWhatTheyWouldClear() {
+        let pool = photos(["s0", "s1"], mb: 2) + photos(["b0", "b1"], mb: 80) + photos(["p0", "p1", "p2", "p3"], mb: 0.2)
+        let plan = planner().plan(pool, groups: [group(["s0", "s1"]), group(["b0", "b1"])], now: now)
+        #expect(similarIDs(plan) == [["b0", "b1"], ["s0", "s1"]])
+    }
+
+    @Test func similarCardsAreNeverBackToBack() {
+        let groups = (0..<3).map { g in group(["g\(g)a", "g\(g)b"]) }
+        let pool = groups.flatMap { photos($0.ids, mb: 100) } + photos(["p0"], mb: 0.2)
+        let plan = planner().plan(pool, groups: groups, now: now)
+        for (a, b) in zip(plan, plan.dropFirst()) {
+            #expect(!(a.isSimilar && b.isSimilar), "\(plan)")
+        }
+        #expect(similarIDs(plan).count == 2, "Only one single to separate them, so the third group waits")
+        let ids = plan.flatMap(\.ids)
+        #expect(!ids.contains("g2a") && !ids.contains("g2b"), "The waiting group's photos don't become singles")
+    }
+
+    @Test func aSimilarCardComesWithinTheFirstFive() {
+        let pool = (0..<12).map { photo("big\($0)", mb: 900) } + photos(["a", "b"], mb: 1)
+        let plan = planner().plan(pool, groups: [group(["a", "b"])], now: now)
+        let position = plan.firstIndex(where: \.isSimilar)
+        #expect(position == 2)
+        #expect(plan.count == 13)
+    }
+
+    @Test func aGroupWithAMemberMissingFromThePoolIsSkipped() {
+        let plan = planner().plan(photos(["a", "c"]), groups: [group(["a", "b"]), group(["c", "d"], best: "x")], now: now)
+        #expect(plan.isEmpty, "Neither group can be shown, and their photos still don't show as singles")
+    }
 }

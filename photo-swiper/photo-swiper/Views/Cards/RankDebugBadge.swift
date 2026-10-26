@@ -10,6 +10,15 @@ extension View {
         self
         #endif
     }
+
+    /// Debug builds only: a similar group's size and widest feature-print distance, for tuning grouping.
+    func rankDebugBadge(for group: SimilarGroup) -> some View {
+        #if DEBUG
+        overlay(alignment: .topTrailing) { SimilarityDebugBadge(group: group) }
+        #else
+        self
+        #endif
+    }
 }
 
 #if DEBUG
@@ -49,6 +58,25 @@ private struct RankDebugBadge: View {
         if let aesthetic = f.aesthetic { lines.append(String(format: "aes %+.2f", aesthetic)) }
         if f.isUtility == true { lines.append("utility") }
         return lines
+    }
+}
+
+/// "6 shots · max d 0.312". Mock groups have no distance and show nothing.
+private struct SimilarityDebugBadge: View {
+    let group: SimilarGroup
+    @AppStorage("debug.showRankScores") private var isOn = true
+
+    var body: some View {
+        if isOn, let distance = group.maxDistance {
+            Text("\(group.items.count) shots · max d \(String(format: "%.3f", distance))")
+                .font(.system(size: 10, design: .monospaced))
+                .foregroundStyle(.white)
+                .padding(6)
+                .background(.black.opacity(0.6), in: RoundedRectangle(cornerRadius: 6))
+                .padding(12)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+        }
     }
 }
 #endif

@@ -19,8 +19,15 @@ actor FeatureIndex: FeatureIndexReading {
     }
 
     func indexed() -> [LibraryItem.ID: IndexedFeatures] {
-        Dictionary(
-            fetch(FetchDescriptor<AssetFeatureRecord>()).map { ($0.localIdentifier, IndexedFeatures(features: $0.features, stamp: $0.stamp)) },
+        var descriptor = FetchDescriptor<AssetFeatureRecord>()
+        // Everything but the feature print, which would add a few KB per record. See `featurePrints(for:)`.
+        descriptor.propertiesToFetch = [
+            \.localIdentifier, \.createdAt, \.bytes, \.isVideo, \.duration, \.isScreenshot, \.isFavorite, \.isInBurst,
+            \.isBurstPick, \.hasAdjustments, \.burstID, \.isUserBurstPick, \.sharpness, \.exposureMean, \.darkFraction,
+            \.brightFraction, \.aesthetic, \.isUtility, \.modifiedAt, \.featureVersion, \.indexedAt,
+        ]
+        return Dictionary(
+            fetch(descriptor).map { ($0.localIdentifier, IndexedFeatures(features: $0.features, stamp: $0.stamp)) },
             uniquingKeysWith: { first, _ in first }
         )
     }
@@ -30,6 +37,20 @@ actor FeatureIndex: FeatureIndexReading {
         var descriptor = FetchDescriptor<AssetFeatureRecord>()
         descriptor.propertiesToFetch = [\.localIdentifier, \.modifiedAt, \.featureVersion]
         return Dictionary(fetch(descriptor).map { ($0.localIdentifier, $0.stamp) }, uniquingKeysWith: { first, _ in first })
+    }
+
+    func featurePrints(for ids: [LibraryItem.ID]) -> [LibraryItem.ID: FeaturePrint] {
+        var prints: [LibraryItem.ID: FeaturePrint] = [:]
+        prints.reserveCapacity(ids.count)
+        for start in stride(from: 0, to: ids.count, by: Self.chunk) {
+            let list = Array(ids[start..<min(start + Self.chunk, ids.count)])
+            var descriptor = FetchDescriptor<AssetFeatureRecord>(predicate: #Predicate { list.contains($0.localIdentifier) })
+            descriptor.propertiesToFetch = [\.localIdentifier, \.featurePrint]
+            for record in fetch(descriptor) {
+                if let data = record.featurePrint, let print = FeaturePrint(data: data) { prints[record.localIdentifier] = print }
+            }
+        }
+        return prints
     }
 
     func count() -> Int {

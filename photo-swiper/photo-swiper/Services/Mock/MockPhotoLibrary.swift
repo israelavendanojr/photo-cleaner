@@ -1,5 +1,6 @@
 import Foundation
 
+#if DEBUG
 /// Pretends to be a ~17,800 item library that is a fifth of the way reviewed.
 struct MockPhotoLibrary: PhotoLibraryProviding {
     var totalItems = 17_820
@@ -36,3 +37,4 @@ struct MockPhotoLibrary: PhotoLibraryProviding {
         []
     }
 }
+#endif

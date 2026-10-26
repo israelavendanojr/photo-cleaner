@@ -261,6 +261,7 @@ private struct PendingTile: View {
     }
 }
 
+#if DEBUG
 #Preview("Sheet") {
     PendingPileView(showsDone: true)
         .environment(FeedViewModel.mock(startingAt: .end))
@@ -270,3 +271,4 @@ private struct PendingTile: View {
     PendingPileView(showsDone: true)
         .environment(FeedViewModel.mock())
 }
+#endif

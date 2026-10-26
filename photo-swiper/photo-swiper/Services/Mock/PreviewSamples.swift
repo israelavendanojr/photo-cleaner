@@ -1,5 +1,6 @@
 import Foundation
 
+#if DEBUG
 /// Ready-made mock content for SwiftUI previews.
 enum PreviewSamples {
     static let session = MockFeedBuilder().makeSessionNow(number: 1)
@@ -24,3 +25,4 @@ enum PreviewSamples {
         session.cards.lazy.compactMap { if case .batch(let batch) = $0 { batch } else { nil } }.first!
     }
 }
+#endif

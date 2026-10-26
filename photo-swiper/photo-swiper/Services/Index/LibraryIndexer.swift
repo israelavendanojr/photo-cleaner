@@ -69,6 +69,8 @@ actor LibraryIndexer {
             return true
         }
         progress = IndexProgress(indexed: assets.count - queue.count, total: assets.count)
+        let started = Date.now
+        var done = 0
         Self.log.info("Index run: \(queue.count) to do of \(assets.count) (\(queue.count - edited - outdated) new, \(edited) edited, \(outdated) outdated), \(gone.count) removed")
 
         for start in stride(from: 0, to: queue.count, by: batchSize) {
@@ -80,16 +82,22 @@ actor LibraryIndexer {
                 guard !Task.isCancelled else { break }
                 // Missing metadata means the item left the library mid-run.
                 guard var features = metadata[asset.id] else { continue }
+                var print: Data?
                 if asset.kind == .photo, let image = await source.image(for: asset.id) {
-                    features.apply(await analyzer.analyze(image.cgImage, orientation: image.orientation))
+                    let signals = await analyzer.analyze(image.cgImage, orientation: image.orientation)
+                    features.apply(signals)
+                    print = signals.featurePrint
                 }
-                entries.append(IndexEntry(id: asset.id, features: features, modifiedAt: asset.modifiedAt, version: version, indexedAt: now()))
+                entries.append(IndexEntry(id: asset.id, features: features, modifiedAt: asset.modifiedAt, version: version,
+                                          indexedAt: now(), featurePrint: print))
             }
             // Saved even when cancelled partway, so finished items aren't redone.
             await index.upsert(entries)
             progress.indexed += entries.count
+            done += entries.count
         }
-        Self.log.info("Index run \(Task.isCancelled ? "paused" : "finished") at \(self.progress.indexed)/\(self.progress.total)")
+        let elapsed = Date.now.timeIntervalSince(started)
+        Self.log.info("Index run \(Task.isCancelled ? "paused" : "finished") at \(self.progress.indexed)/\(self.progress.total): \(done) items in \(elapsed, format: .fixed(precision: 1))s, \(done == 0 ? 0 : elapsed / Double(done) * 1000, format: .fixed(precision: 1)) ms each")
     }
 
     /// Drops records for items removed from the library.

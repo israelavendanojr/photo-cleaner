@@ -31,6 +31,8 @@ enum AssetMapper {
             isInBurst: asset.burstIdentifier != nil,
             isBurstPick: asset.representsBurst
                 || !asset.burstSelectionTypes.isDisjoint(with: [.autoPick, .userPick]),
+            burstID: asset.burstIdentifier,
+            isUserBurstPick: asset.burstSelectionTypes.contains(.userPick),
             // An edit leaves a rendered copy and the adjustment recipe next to the original.
             hasAdjustments: resources.contains { [.adjustmentData, .fullSizePhoto, .fullSizeVideo].contains($0.type) }
         )

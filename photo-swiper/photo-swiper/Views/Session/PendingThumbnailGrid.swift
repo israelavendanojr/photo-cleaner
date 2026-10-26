@@ -40,8 +40,10 @@ struct PendingThumbnailGrid: View {
     }
 }
 
+#if DEBUG
 #Preview {
     PendingThumbnailGrid(items: Array(PreviewSamples.session.items.prefix(37)))
         .padding(26)
         .background(DS.Palette.paper)
 }
+#endif

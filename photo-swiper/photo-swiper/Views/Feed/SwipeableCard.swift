@@ -217,6 +217,7 @@ enum SwipeThresholds {
     }
 }
 
+#if DEBUG
 #Preview {
     @Previewable @State var request: SwipeDirection?
     @Previewable @State var progress = 0.0
@@ -245,3 +246,4 @@ enum SwipeThresholds {
     }
     .background(DS.Palette.paper)
 }
+#endif

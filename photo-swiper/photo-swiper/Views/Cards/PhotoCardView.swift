@@ -71,6 +71,7 @@ struct BottomScrim: View {
     }
 }
 
+#if DEBUG
 #Preview("Blurry") {
     PhotoCardView(item: PreviewSamples.blurryPhoto)
         .padding(14)
@@ -82,3 +83,4 @@ struct BottomScrim: View {
         .padding(14)
         .background(DS.Palette.paper)
 }
+#endif

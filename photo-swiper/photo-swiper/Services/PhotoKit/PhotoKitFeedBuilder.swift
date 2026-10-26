@@ -1,4 +1,5 @@
 import CoreLocation
+import CryptoKit
 import Foundation
 import OSLog
 import Photos
@@ -7,7 +8,8 @@ import Photos
 ///
 /// `CandidatePool` decides who competes: every undecided item the feature index has fresh features
 /// for, plus the newest `poolSize` undecided items it doesn't, whose metadata is read live.
-/// `FeedRanker` scores them and `SessionPlanner` takes the top `photosPerSession`, batching
+/// `SimilarGrouper` and `BestPick` turn near-identical indexed photos into similar groups.
+/// `FeedRanker` scores the rest and `SessionPlanner` takes the top `photosPerSession`, batching
 /// screenshots by week. Items in `FeedOptions.excluding`, such as ones already decided, are skipped.
 actor PhotoKitFeedBuilder: FeedBuilding {
     static let photosPerSession = 20
@@ -21,6 +23,7 @@ actor PhotoKitFeedBuilder: FeedBuilding {
 
     private let index: (any FeatureIndexReading)?
     private let places = PlaceNamer()
+    private let grouper = SimilarGrouper()
     private let planner = SessionPlanner(
         limit: PhotoKitFeedBuilder.photosPerSession,
         minBatch: PhotoKitFeedBuilder.minBatch,
@@ -35,7 +38,11 @@ actor PhotoKitFeedBuilder: FeedBuilding {
     func makeSession(number: Int, options: FeedOptions) async -> Session {
         let started = Date.now
         let pool = await candidatePool(options)
-        let slots = planner.plan(pool.candidates, now: .now)
+        let similar = await similarGroups(in: pool)
+        let slots = planner.plan(pool.candidates, groups: similar.planned, now: .now)
+        #if DEBUG
+        if UserDefaults.standard.bool(forKey: "logSimilarity") { logSimilarity(similar, session: number) }
+        #endif
 
         let chosenIDs = slots.flatMap(\.ids)
         var assets: [LibraryItem.ID: PHAsset] = [:]
@@ -56,6 +63,13 @@ actor PhotoKitFeedBuilder: FeedBuilding {
             switch slot {
             case .single(let id):
                 return item(id).map(FeedCard.init(item:))
+            case .similar(let ids, let bestID, let reason):
+                let shots = ids.compactMap(item)
+                guard shots.count > 1, shots.contains(where: { $0.id == bestID }) else { return nil }
+                return FeedCard.similar(SimilarGroup(
+                    id: Self.similarID(shots.map(\.id)), items: shots, bestID: bestID, reason: reason,
+                    maxDistance: similar.maxDistance[Self.similarID(ids)]
+                ))
             case .screenshots(let week, let ids):
                 let shots = ids.compactMap(item)
                 guard !shots.isEmpty else { return nil }
@@ -68,12 +82,14 @@ actor PhotoKitFeedBuilder: FeedBuilding {
                 ))
             }
         }
-        Self.log.info("Session \(number): \(pool.cachedCount) cached + \(pool.liveCount) live candidates, index \(pool.scanPercent.map { "\($0)%" } ?? "complete"), built in \(Date.now.timeIntervalSince(started), format: .fixed(precision: 2))s")
+        Self.log.info("Session \(number): \(pool.cachedCount) cached + \(pool.liveCount) live candidates, index \(pool.scanPercent.map { "\($0)%" } ?? "complete"), \(similar.planned.count) similar groups from \(similar.printCount) prints (\(similar.seconds, format: .fixed(precision: 2))s), built in \(Date.now.timeIntervalSince(started), format: .fixed(precision: 2))s")
         return Session(number: number, cards: cards, scanPercentAtStart: pool.scanPercent)
     }
 
     private struct Pool {
         var candidates: [RankCandidate]
+        /// The indexed part of `candidates`. Only these can be grouped: a stale record's print is out of date.
+        var cached: [RankCandidate]
         var features: [LibraryItem.ID: AssetFeatures]
         var cachedCount: Int
         var liveCount: Int
@@ -100,8 +116,64 @@ actor PhotoKitFeedBuilder: FeedBuilding {
         // Keep newest-first order for the live part.
         candidates += chosen.live.compactMap { id in live[id].map { RankCandidate(id: id, features: $0) } }
         let features = Dictionary(candidates.map { ($0.id, $0.features) }, uniquingKeysWith: { first, _ in first })
-        return Pool(candidates: candidates, features: features, cachedCount: chosen.cached.count,
+        return Pool(candidates: candidates, cached: chosen.cached, features: features, cachedCount: chosen.cached.count,
                     liveCount: live.count, scanPercent: index == nil ? nil : chosen.scanPercent)
+    }
+
+    private struct Similar {
+        var planned: [PlannedGroup] = []
+        /// By `SimilarGroup.id`.
+        var maxDistance: [SimilarGroup.ID: Double] = [:]
+        var result = SimilarGrouper.Result()
+        var printCount = 0
+        var seconds = 0.0
+    }
+
+    /// Groups indexed photos that have a neighbor in time or a burst. Groups with two or more
+    /// favorites are dropped, so those photos compete as singles.
+    private func similarGroups(in pool: Pool) async -> Similar {
+        guard let index else { return Similar() }
+        let started = Date.now
+        let neighbors = grouper.neighborIDs(pool.cached)
+        let prints = await index.featurePrints(for: Array(neighbors))
+        var similar = Similar(result: grouper.group(pool.cached.filter { neighbors.contains($0.id) }, prints: prints), printCount: prints.count)
+        for group in similar.result.groups {
+            let members = group.ids.compactMap { id in pool.features[id].map { RankCandidate(id: id, features: $0) } }
+            guard let choice = BestPick.choose(members) else { continue }
+            similar.planned.append(PlannedGroup(ids: group.ids, bestID: choice.bestID, reason: choice.reason.rawValue))
+            similar.maxDistance[Self.similarID(group.ids)] = Double(group.maxDistance)
+        }
+        similar.seconds = Date.now.timeIntervalSince(started)
+        return similar
+    }
+
+    #if DEBUG
+    private static let similarityLog = Logger(subsystem: "com.israelavendanojr.photo-swiper", category: "similar")
+
+    /// `-logSimilarity YES`: every group found and the near misses just past the threshold, for
+    /// tuning `SimilarGrouper.Tunables` on a real library.
+    private func logSimilarity(_ similar: Similar, session: Int) {
+        let log = Self.similarityLog
+        let t = grouper.tunables
+        let groups = similar.result.groups
+        let picks = Dictionary(similar.planned.map { (Self.similarID($0.ids), $0) }, uniquingKeysWith: { first, _ in first })
+        log.info("Session \(session): threshold \(t.maxDistance, format: .fixed(precision: 2)), gap \(Int(t.maxGap))s, span \(Int(t.maxSpan))s; \(similar.printCount) prints, \(groups.count) groups (\(groups.filter(\.isBurst).count) burst), \(groups.count - similar.planned.count) dropped for 2+ favorites")
+        for (n, group) in groups.enumerated() {
+            let pick = picks[Self.similarID(group.ids)]
+            log.info("  group \(n + 1): \(group.ids.count) shots, \(group.isBurst ? "burst" : "time", privacy: .public), span \(group.span, format: .fixed(precision: 1))s, max d \(group.maxDistance, format: .fixed(precision: 3)), best \(pick?.bestID ?? "none (favorites)", privacy: .public) (\(pick?.reason ?? "-", privacy: .public)) of \(group.ids.joined(separator: ", "), privacy: .public)")
+        }
+        let misses = similar.result.nearMisses.sorted { $0.distance < $1.distance }
+        log.info("  \(misses.count) near misses up to \(t.maxDistance + t.nearMissMargin, format: .fixed(precision: 2)); closest \(min(misses.count, 50)):")
+        for miss in misses.prefix(50) {
+            log.info("  near miss d \(miss.distance, format: .fixed(precision: 3)), gap \(miss.gap, format: .fixed(precision: 1))s: \(miss.seed, privacy: .public) ~ \(miss.other, privacy: .public)")
+        }
+    }
+    #endif
+
+    /// The same members always get the same id, whatever the session, so saved marks keep matching.
+    static func similarID(_ ids: [LibraryItem.ID]) -> SimilarGroup.ID {
+        let digest = SHA256.hash(data: Data(ids.sorted().joined(separator: "\n").utf8))
+        return "similar-" + digest.prefix(8).map { String(format: "%02x", $0) }.joined()
     }
 
     /// "this week", "last week", or "the week of Sep 22".

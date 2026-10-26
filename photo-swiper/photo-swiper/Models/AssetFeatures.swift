@@ -17,6 +17,11 @@ struct AssetFeatures: Hashable, Sendable, Codable {
     var isInBurst = false
     /// The burst frame the camera or the user chose.
     var isBurstPick = false
+    /// `PHAsset.burstIdentifier`: every frame of one burst shares it.
+    var burstID: String?
+    /// The user picked this frame in Photos, as opposed to the camera's automatic pick. Optional so
+    /// items saved before it existed still decode; nil reads as false.
+    var isUserBurstPick: Bool?
     /// Edited in Photos or another app.
     var hasAdjustments = false
 
