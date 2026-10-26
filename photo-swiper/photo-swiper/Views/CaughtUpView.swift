@@ -3,6 +3,7 @@ import SwiftUI
 /// Shown when the feed has nothing left: a calm stop, not a dead end.
 struct CaughtUpView: View {
     @Environment(FeedViewModel.self) private var vm
+    @State private var isChecking = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -26,15 +27,24 @@ struct CaughtUpView: View {
                     .padding(.top, DS.Spacing.l)
             }
             Spacer()
-            Button("Start another session") {
-                Task { await vm.requestNextSession() }
-            }
-            .buttonStyle(.pill(.ink))
+            Button(isChecking ? "Checking…" : "Check again", action: checkAgain)
+                .buttonStyle(.pill(.ink))
+                .disabled(isChecking)
+                .accessibilityIdentifier("caughtUp.checkAgain")
         }
         .multilineTextAlignment(.center)
         .padding(.horizontal, DS.Spacing.xxl)
         .padding(.bottom, DS.Spacing.m)
         .background(DS.Palette.paper)
+    }
+
+    /// Back to the feed if new photos turned up, or "later" ones are due again.
+    private func checkAgain() {
+        isChecking = true
+        Task {
+            await vm.checkAgain()
+            isChecking = false
+        }
     }
 }
 

@@ -1,12 +1,12 @@
 import Foundation
 
-/// Saved progress: per-item decisions, the active session, and preferences.
+/// Saved progress: per-item decisions, the current deck, and preferences.
 ///
 /// `SwiftDataProgressStore` keeps it on disk; `InMemoryProgressStore` backs mocks, previews, and tests.
 /// Every mutating call is durable when it returns, so force-quitting never loses work.
 @MainActor
 protocol ProgressStoring: AnyObject {
-    /// Saved decisions for `ids`, from any session.
+    /// Saved decisions for `ids`, from any page.
     func decisions(for ids: Set<LibraryItem.ID>) -> [LibraryItem.ID: StoredDecision]
     /// Writes or replaces decisions. Nil removes one, which undo uses.
     func save(_ changes: [LibraryItem.ID: StoredDecision?])
@@ -15,17 +15,18 @@ protocol ProgressStoring: AnyObject {
 
     /// Decided delete, not yet settled, oldest decision first.
     func pile() -> [LibraryItem]
-    /// Items a new session must not offer. See `StoredDecision.blocksNewSession(asOf:)`.
+    /// Items a new page must not offer. See `StoredDecision.blocksNewSession(asOf:)`.
     func excludedFromNewSession(asOf now: Date) -> Set<LibraryItem.ID>
     /// Items decided keep or delete. "Later" doesn't count.
     func reviewedCount() -> Int
     /// Bytes of items this app actually deleted.
     func freedBytes() -> Int64
-    /// The highest session number seen, or 0.
+    /// The highest page number seen, or 0.
     func lastSessionNumber() -> Int
 
+    /// The current deck.
     func loadSession() -> SavedSession?
-    /// Nil clears the saved session.
+    /// Nil clears the saved deck.
     func saveSession(_ saved: SavedSession?)
 
     var skipFavorites: Bool { get set }
@@ -46,11 +47,12 @@ enum Settlement: String, Codable, Sendable {
 
 /// One item's saved decision.
 struct StoredDecision: Equatable, Sendable {
-    /// How long a "later" item sits out before a new session may offer it again.
+    /// How long a "later" item sits out before a new page may offer it again.
     static let laterCooldown: TimeInterval = 24 * 60 * 60
 
     var decision: Decision
     var decidedAt: Date
+    /// The page the decision was made on.
     var sessionNumber: Int
     /// Metadata only, enough to show the item in the pile. No pixels.
     var item: LibraryItem
@@ -65,12 +67,12 @@ struct StoredDecision: Equatable, Sendable {
     var isPending: Bool { decision == .delete && settlement == nil }
 }
 
-/// The session in progress, exactly as the user left it.
+/// The deck, exactly as the user left it.
 struct SavedSession: Codable, Equatable, Sendable {
     var session: Session
     var index: Int
     var marks: [SimilarGroup.ID: Set<LibraryItem.ID>]
-    /// The user chose "Done for now" or confirmed; relaunching shows the caught-up screen.
+    /// No longer used: the deck always resumes. Kept so saved rows stay readable; always written false.
     var finished: Bool
     /// Partial one-by-one reviews of batch cards, by batch.
     var drafts: [ItemBatch.ID: [LibraryItem.ID: Decision]] = [:]

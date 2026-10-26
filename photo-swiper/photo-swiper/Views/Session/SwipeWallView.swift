@@ -1,11 +1,9 @@
 import SwiftUI
 
-/// Out of free swipes. A sheet over the deck: when the next refill lands, what's left in the user's
-/// own numbers, the unlock, a reminder, and the pile, which can always be deleted.
+/// Out of free swipes. A sheet over the deck, opened by a refused swipe: when the next refill
+/// lands, what's left in the user's own numbers, the unlock, and a reminder. Deleting lives in the pile.
 struct SwipeWallView: View {
     @Environment(FeedViewModel.self) private var vm
-    @State private var isConfirmingDelete = false
-    @State private var isDeleting = false
 
     private var status: FeedViewModel.PaywallStatus { vm.paywallStatus }
     private var isPurchasing: Bool { status == .purchasing }
@@ -32,8 +30,10 @@ struct SwipeWallView: View {
                     .padding(.top, DS.Spacing.m)
                 actions
                     .padding(.top, DS.Spacing.l)
-                secondary
-                    .padding(.top, DS.Spacing.m)
+                if vm.canRemind {
+                    reminder
+                        .padding(.top, DS.Spacing.m)
+                }
             }
             .padding(.horizontal, DS.Spacing.l)
             .padding(.top, DS.Spacing.xl)
@@ -42,12 +42,6 @@ struct SwipeWallView: View {
         .scrollBounceBehavior(.basedOnSize)
         .background(DS.Palette.paper)
         .interactiveDismissDisabled(isBusy)
-        .alert("Delete \(vm.pendingItems.count) \(vm.pendingItems.count == 1 ? "photo" : "photos")?", isPresented: $isConfirmingDelete) {
-            Button("Delete", role: .destructive, action: deletePile)
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("This frees \(Format.size(vm.pendingBytes)). They'll stay in Recently Deleted for 30 days.")
-        }
     }
 
     // MARK: Sections
@@ -184,25 +178,6 @@ struct SwipeWallView: View {
         .animation(DS.Motion.calm, value: status)
     }
 
-    /// The reminder and the pile: things to do while waiting.
-    private var secondary: some View {
-        VStack(spacing: DS.Spacing.s) {
-            if vm.canRemind {
-                reminder
-            }
-            if !vm.pendingItems.isEmpty {
-                Button {
-                    isConfirmingDelete = true
-                } label: {
-                    Text("Delete \(vm.pendingItems.count) marked \(vm.pendingItems.count == 1 ? "photo" : "photos") · \(Format.size(vm.pendingBytes))")
-                }
-                .buttonStyle(.pill(.outline))
-                .disabled(isDeleting || isBusy)
-                .accessibilityIdentifier("wall.deletePile")
-            }
-        }
-    }
-
     @ViewBuilder
     private var reminder: some View {
         if vm.isRemindersOptedIn {
@@ -273,15 +248,6 @@ struct SwipeWallView: View {
     private func restorePurchase() {
         Task {
             if await vm.restoreFromWall() { Haptics.unlocked() }
-        }
-    }
-
-    /// Deleting is never gated. The celebration replaces the feed, and the sheet with it.
-    private func deletePile() {
-        isDeleting = true
-        Task {
-            if await vm.confirmDelete() { Haptics.confirm() }
-            isDeleting = false
         }
     }
 }

@@ -102,13 +102,14 @@ struct OnboardingGatingTests {
         #expect(!vm.isPreparingFirstSession)
     }
 
-    @Test func theFirstSessionSkipsPlaceNamesAndLaterOnesDont() async {
+    @Test func theFirstPageSkipsPlaceNamesAndLaterOnesDont() async {
         library.needsPrompt = true
         let builder = GatedBuilder()
         let vm = FeedViewModel(library: library, builder: builder, entitlements: TestEntitlements(), defaults: defaults)
         await vm.start()
         await vm.start()
-        await vm.requestNextSession()
+        while vm.cards.count - vm.index > FeedViewModel.pageAhead { vm.decide(.right) }
+        await vm.waitForPage()
         #expect(builder.requests.map(\.placeBudget) == [.zero, FeedOptions().placeBudget])
     }
 

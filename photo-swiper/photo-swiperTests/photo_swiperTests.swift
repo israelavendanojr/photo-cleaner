@@ -142,10 +142,9 @@ struct FeedViewModelLibraryTests {
         let vm = await started()
         for _ in 0..<3 { vm.decide(.left) }
 
-        #expect(await vm.confirmDelete() == false)
+        #expect(await vm.deleteNow(vm.pendingItems) == nil)
         #expect(vm.pendingItems.count == 3)
         #expect(vm.freedBytes == 0)
-        #expect(vm.celebration == nil)
         #expect(vm.deleteNotice == nil)
     }
 
@@ -157,9 +156,8 @@ struct FeedViewModelLibraryTests {
             DeletionOutcome(deleted: [items[0].id], missing: [items[1].id], undeletable: [items[2].id])
         }
 
-        #expect(await vm.confirmDelete())
+        #expect(await vm.deleteNow(pending) == pending[0].bytes)
         #expect(vm.freedBytes == pending[0].bytes)
-        #expect(vm.celebration?.count == 1)
         #expect(vm.pendingItems.isEmpty)
         #expect(vm.deleteNotice != nil)
     }
@@ -169,12 +167,12 @@ struct FeedViewModelLibraryTests {
         let vm = await started()
         vm.decide(.left)
 
-        #expect(await vm.confirmDelete() == false)
+        #expect(await vm.deleteNow(vm.pendingItems) == nil)
         #expect(vm.pendingItems.count == 1)
         #expect(vm.deleteNotice != nil)
     }
 
-    @Test func deletingNowClearsOnlyThoseAndKeepsTheSessionGoing() async throws {
+    @Test func deletingNowClearsOnlyThoseAndKeepsTheDeckGoing() async throws {
         let vm = await started()
         for _ in 0..<3 { vm.decide(.left) }
         let deleted = try #require(vm.pendingItems.first)
@@ -184,19 +182,19 @@ struct FeedViewModelLibraryTests {
             return DeletionOutcome(deleted: items.map(\.id))
         }
 
-        #expect(await vm.deleteNow([deleted]))
+        #expect(await vm.deleteNow([deleted]) == deleted.bytes)
         #expect(asked == [deleted.id], "Only the chosen photos are deleted")
         #expect(vm.pendingItems.count == 2)
         #expect(!vm.pendingItems.contains { $0.id == deleted.id })
         #expect(vm.freedBytes == deleted.bytes)
         #expect(vm.phase == .feed)
-        #expect(vm.celebration == nil)
+        #expect(vm.index == 3)
         #expect(vm.canUndo == false, "A deleted photo can't be swiped back")
 
         let rest = vm.pendingItems
-        #expect(await vm.confirmDelete())
+        #expect(await vm.deleteNow(rest) == rest.reduce(0) { $0 + $1.bytes })
         #expect(asked == rest.map(\.id))
-        #expect(vm.celebration?.count == 2)
+        #expect(vm.pendingItems.isEmpty)
     }
 
     @Test func keepingTakesItemsOutOfThePileEvenAcrossUndo() async throws {
@@ -222,7 +220,7 @@ struct FeedViewModelLibraryTests {
         let vm = await started()
         vm.decide(.left)
 
-        #expect(await vm.deleteNow(vm.pendingItems) == false)
+        #expect(await vm.deleteNow(vm.pendingItems) == nil)
         #expect(vm.pendingItems.count == 1)
         #expect(vm.freedBytes == 0)
     }

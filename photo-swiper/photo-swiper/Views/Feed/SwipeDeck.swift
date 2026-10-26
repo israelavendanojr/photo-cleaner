@@ -24,6 +24,8 @@ struct SwipeDeck: View {
     /// False when the top card can't be swiped; it then springs back and calls `onRefused`.
     var canSwipe = true
     var onRefused: () -> Void = {}
+    /// Shown in place of the top card while the deck waits on more, e.g. "Finding more…".
+    var waitingText: String?
 
     /// How far the top card is toward committing, 0...1.
     @State private var progress = 0.0
@@ -49,6 +51,10 @@ struct SwipeDeck: View {
     var body: some View {
         VStack(spacing: 0) {
             ZStack {
+                if currentCard == nil, let waitingText {
+                    WaitingCard(text: waitingText)
+                        .transition(.opacity)
+                }
                 // One ForEach keyed by card ID so a card keeps its identity as it moves
                 // between "behind" and "on top" (promotion after a swipe, demotion on undo).
                 ForEach(visibleCards) { card in
@@ -191,6 +197,28 @@ struct SwipeDeck: View {
             progress = 0
             onDecide(direction, card)
         }
+    }
+}
+
+/// A quiet stand-in for the top card while more are on the way.
+private struct WaitingCard: View {
+    let text: String
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
+            .fill(DS.Palette.muted)
+            .overlay {
+                VStack(spacing: DS.Spacing.s) {
+                    ProgressView()
+                        .tint(DS.Palette.secondary)
+                    Text(text)
+                        .font(.callout)
+                        .foregroundStyle(DS.Palette.secondary)
+                }
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(text)
+            .accessibilityIdentifier("feed.findingMore")
     }
 }
 

@@ -26,11 +26,12 @@ struct photo_swiperApp: App {
 
 private extension FeedViewModel {
     /// The real library and saved progress by default. In debug builds, `-mockLibrary YES` uses mock
-    /// services, `-startAt similar|batch|video|end|celebrated|resting|welcomeBack|outOfSwipes|caughtUp|onboarding`
+    /// services, `-startAt similar|batch|video|pending|outOfSwipes|caughtUp|onboarding`
     /// jumps straight to a mock state, `-resetProgress YES` wipes saved progress first, and
     /// `-resetOnboarding YES` shows onboarding and the swipe hint again. `-unlocked YES|NO` sets the
-    /// stand-in purchase (mocks start locked). Mocks never read or write saved progress and never
-    /// start the feature index. `-logSimilarity YES` logs each session's similar groups and near misses
+    /// stand-in purchase (mocks start locked). Mocks never read or write the real saved progress and
+    /// never start the feature index; `-mockProgress YES` gives them their own on-disk store, so a
+    /// relaunch resumes the mock deck. `-logSimilarity YES` logs each session's similar groups and near misses
     /// (category "similar"). `-swipesLeft N` sets the free swipes left, and `-refillSoon YES` refills
     /// every minute instead of every six hours. Release builds always run on the real library.
     static func launch() -> FeedViewModel {
@@ -51,7 +52,7 @@ private extension FeedViewModel {
                              allowanceTunables: allowanceTunables, notifier: notifier)
             }
             return FeedViewModel(
-                library: MockPhotoLibrary(), builder: MockFeedBuilder(), entitlements: entitlements,
+                library: MockPhotoLibrary(), builder: MockFeedBuilder(), store: mockProgressStore(), entitlements: entitlements,
                 allowanceStore: SwipeAllowanceStore(initial: allowance), allowanceTunables: allowanceTunables, notifier: notifier
             )
         }
@@ -103,6 +104,17 @@ private extension FeedViewModel {
     }
 
     #if DEBUG
+    /// `-mockProgress YES`: saved mock progress in its own file, apart from the real one. Otherwise in memory.
+    static func mockProgressStore() -> any ProgressStoring {
+        guard UserDefaults.standard.bool(forKey: "mockProgress") else { return InMemoryProgressStore() }
+        let url = URL.applicationSupportDirectory.appending(path: "mock-progress.store")
+        try? FileManager.default.createDirectory(at: .applicationSupportDirectory, withIntermediateDirectories: true)
+        guard let container = try? SwiftDataProgressStore.makeContainer(url: url) else { return InMemoryProgressStore() }
+        let store = SwiftDataProgressStore(container: container, defaults: nil)
+        if UserDefaults.standard.bool(forKey: "resetProgress") { store.reset() }
+        return store
+    }
+
     /// `-swipesLeft N`.
     static var debugSwipesLeft: Int? {
         UserDefaults.standard.object(forKey: "swipesLeft") == nil ? nil : UserDefaults.standard.integer(forKey: "swipesLeft")
