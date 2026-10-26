@@ -40,6 +40,9 @@ actor PhotoKitFeedBuilder: FeedBuilding {
         let pool = await candidatePool(options)
         let similar = await similarGroups(in: pool)
         let slots = planner.plan(pool.candidates, groups: similar.planned, now: .now)
+        #if DEBUG
+        if UserDefaults.standard.bool(forKey: "logSimilarity") { logSimilarity(similar, session: number) }
+        #endif
 
         let chosenIDs = slots.flatMap(\.ids)
         var assets: [LibraryItem.ID: PHAsset] = [:]
@@ -143,6 +146,29 @@ actor PhotoKitFeedBuilder: FeedBuilding {
         similar.seconds = Date.now.timeIntervalSince(started)
         return similar
     }
+
+    #if DEBUG
+    private static let similarityLog = Logger(subsystem: "com.israelavendanojr.photo-swiper", category: "similar")
+
+    /// `-logSimilarity YES`: every group found and the near misses just past the threshold, for
+    /// tuning `SimilarGrouper.Tunables` on a real library.
+    private func logSimilarity(_ similar: Similar, session: Int) {
+        let log = Self.similarityLog
+        let t = grouper.tunables
+        let groups = similar.result.groups
+        let picks = Dictionary(similar.planned.map { (Self.similarID($0.ids), $0) }, uniquingKeysWith: { first, _ in first })
+        log.info("Session \(session): threshold \(t.maxDistance, format: .fixed(precision: 2)), gap \(Int(t.maxGap))s, span \(Int(t.maxSpan))s; \(similar.printCount) prints, \(groups.count) groups (\(groups.filter(\.isBurst).count) burst), \(groups.count - similar.planned.count) dropped for 2+ favorites")
+        for (n, group) in groups.enumerated() {
+            let pick = picks[Self.similarID(group.ids)]
+            log.info("  group \(n + 1): \(group.ids.count) shots, \(group.isBurst ? "burst" : "time", privacy: .public), span \(group.span, format: .fixed(precision: 1))s, max d \(group.maxDistance, format: .fixed(precision: 3)), best \(pick?.bestID ?? "none (favorites)", privacy: .public) (\(pick?.reason ?? "-", privacy: .public)) of \(group.ids.joined(separator: ", "), privacy: .public)")
+        }
+        let misses = similar.result.nearMisses.sorted { $0.distance < $1.distance }
+        log.info("  \(misses.count) near misses up to \(t.maxDistance + t.nearMissMargin, format: .fixed(precision: 2)); closest \(min(misses.count, 50)):")
+        for miss in misses.prefix(50) {
+            log.info("  near miss d \(miss.distance, format: .fixed(precision: 3)), gap \(miss.gap, format: .fixed(precision: 1))s: \(miss.seed, privacy: .public) ~ \(miss.other, privacy: .public)")
+        }
+    }
+    #endif
 
     /// The same members always get the same id, whatever the session, so saved marks keep matching.
     static func similarID(_ ids: [LibraryItem.ID]) -> SimilarGroup.ID {

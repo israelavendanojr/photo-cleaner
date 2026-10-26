@@ -29,7 +29,8 @@ private extension FeedViewModel {
     /// jumps straight to a mock state, `-resetProgress YES` wipes saved progress first, and
     /// `-resetOnboarding YES` shows onboarding and the swipe hint again. `-unlocked YES|NO` sets the
     /// stand-in purchase (mocks start locked). Mocks never read or write saved progress and never
-    /// start the feature index. Release builds always run on the real library.
+    /// start the feature index. `-logSimilarity YES` logs each session's similar groups and near misses
+    /// (category "similar"). Release builds always run on the real library.
     static func launch() -> FeedViewModel {
         #if DEBUG
         if UserDefaults.standard.bool(forKey: "resetOnboarding") {

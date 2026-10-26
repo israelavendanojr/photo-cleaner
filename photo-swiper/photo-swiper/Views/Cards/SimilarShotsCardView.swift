@@ -56,6 +56,7 @@ struct SimilarShotsCardView: View {
             }
             .accessibilityElement()
             .accessibilityLabel("Best pick. \(group.reason)")
+            .rankDebugBadge(for: group)
     }
 
     private var thumbnails: some View {
