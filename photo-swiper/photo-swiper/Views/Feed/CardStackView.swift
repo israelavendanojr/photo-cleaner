@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// The main feed's deck, wired to the session: swipes decide cards, and a batch card opens
+/// The main feed's deck, wired to the view model: swipes decide cards, and a batch card opens
 /// its one-by-one review on top.
 struct CardStackView: View {
     @Environment(FeedViewModel.self) private var vm
@@ -23,8 +23,12 @@ struct CardStackView: View {
             showsHint: !hasSeenSwipeHint,
             dealsIn: dealsIn,
             canSwipe: vm.canSwipe,
-            onRefused: refused
+            onRefused: refused,
+            waitingText: vm.isFindingMore ? "Finding more…" : nil
         )
+        #if DEBUG
+        .overlay(alignment: .top) { CurrentCardMarker() }
+        #endif
         .fullScreenCover(item: $reviewingBatch, onDismiss: flyOutReviewedBatch) { batch in
             BatchReviewView(batch: batch, draft: vm.draft(for: batch)) { outcome in
                 batchOutcome = outcome
@@ -63,6 +67,22 @@ struct CardStackView: View {
 }
 
 #if DEBUG
+/// Names the top card for UI tests, which can't see a position now that the deck has no end.
+/// Only with the mock library.
+private struct CurrentCardMarker: View {
+    @Environment(FeedViewModel.self) private var vm
+
+    var body: some View {
+        if LibraryServices.usesMock {
+            Color.clear
+                .frame(width: 1, height: 1)
+                .accessibilityElement()
+                .accessibilityLabel(vm.currentCard?.id ?? "none")
+                .accessibilityIdentifier("feed.currentCard")
+        }
+    }
+}
+
 #Preview {
     CardStackView()
         .environment(FeedViewModel.mock())

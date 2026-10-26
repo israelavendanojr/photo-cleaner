@@ -21,7 +21,7 @@ struct LibraryView: View {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Skip favorites")
                                 .foregroundStyle(DS.Palette.ink)
-                            Text("Favorites stay out of your feed, starting next session.")
+                            Text("Favorites stay out of your feed.")
                                 .font(.footnote)
                                 .foregroundStyle(DS.Palette.secondary)
                         }

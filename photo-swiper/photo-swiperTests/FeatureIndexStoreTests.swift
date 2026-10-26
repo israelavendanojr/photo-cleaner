@@ -58,9 +58,9 @@ struct FeatureIndexStoreTests {
         defer { try? FileManager.default.removeItem(at: folder) }
         let url = folder.appendingPathComponent("progress.store")
 
-        let session = MockFeedBuilder().makeSessionNow(number: 4)
+        let session = MockFeedBuilder().makeSessionNow(number: 3)
         let item = session.items[0]
-        let decision = StoredDecision(decision: .delete, decidedAt: date, sessionNumber: 4, item: item)
+        let decision = StoredDecision(decision: .delete, decidedAt: date, sessionNumber: 3, item: item)
         let saved = SavedSession(session: session, index: 2, marks: [:], finished: false)
         do {
             let oldSchema = Schema([ItemProgress.self, SessionProgress.self])

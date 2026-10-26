@@ -2,6 +2,7 @@ import SwiftUI
 
 /// Everything waiting to be cleared, all marked to delete. Tap the ones worth saving to unmark
 /// them, then Keep sends those back to the library and Delete clears the marked ones now.
+/// After a delete it says how much was freed, then closes.
 ///
 /// Opens as a sheet from the feed's "to clear" counter, or pushed from the overview's Pending row.
 struct PendingPileView: View {
@@ -15,6 +16,9 @@ struct PendingPileView: View {
     @State private var isDeleting = false
     /// Everything starts marked, once; after that the marks are the user's.
     @State private var didPreselect = false
+    /// Bytes the last delete freed, shown briefly before the pile closes.
+    @State private var freed: Int64?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var count: Int { vm.pendingItems.count }
     private var selectedItems: [LibraryItem] { vm.pendingItems.filter { selected.contains($0.id) } }
@@ -53,7 +57,10 @@ struct PendingPileView: View {
         }
         .scrollBounceBehavior(.basedOnSize)
         .safeAreaInset(edge: .bottom) {
-            if !vm.pendingItems.isEmpty {
+            if let freed {
+                FreedConfirmation(bytes: freed)
+                    .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
+            } else if !vm.pendingItems.isEmpty {
                 actions.transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
@@ -185,12 +192,41 @@ struct PendingPileView: View {
         let items = selectedItems
         isDeleting = true
         Task {
-            if await vm.deleteNow(items) {
-                Haptics.confirm()
-                withAnimation(DS.Motion.calm) { selected.removeAll() }
+            guard let bytes = await vm.deleteNow(items) else {
+                isDeleting = false
+                return
             }
+            Haptics.confirm()
+            withAnimation(DS.Motion.calm) {
+                selected.removeAll()
+                freed = bytes
+            }
+            try? await Task.sleep(for: .seconds(1.5))
             isDeleting = false
+            dismiss()
         }
+    }
+}
+
+/// "Freed 412 MB", and where the photos went.
+private struct FreedConfirmation: View {
+    let bytes: Int64
+
+    var body: some View {
+        Text("\(Text("Freed \(Format.size(bytes))").fontWeight(.semibold).foregroundStyle(DS.Palette.brick)) · they stay in Recently Deleted for 30 days")
+            .font(.callout)
+            .foregroundStyle(DS.Palette.ink)
+            .multilineTextAlignment(.center)
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, DS.Spacing.m)
+            .padding(.vertical, DS.Spacing.m)
+            .background(DS.Palette.brickTint, in: RoundedRectangle(cornerRadius: DS.Radius.inner, style: .continuous))
+            .padding(.horizontal, DS.Spacing.l)
+            .padding(.bottom, DS.Spacing.xs)
+            .accessibilityIdentifier("pile.freed")
+            .onAppear {
+                AccessibilityNotification.Announcement("Freed \(Format.size(bytes))").post()
+            }
     }
 }
 
@@ -264,7 +300,7 @@ private struct PendingTile: View {
 #if DEBUG
 #Preview("Sheet") {
     PendingPileView(showsDone: true)
-        .environment(FeedViewModel.mock(startingAt: .end))
+        .environment(FeedViewModel.mock(startingAt: .pending))
 }
 
 #Preview("Empty") {

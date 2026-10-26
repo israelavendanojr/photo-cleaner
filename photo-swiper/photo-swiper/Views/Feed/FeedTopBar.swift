@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Undo, session progress, and the running "to clear" total.
+/// Undo, the free swipes left or the scanning note, and the running "to clear" total.
 struct FeedTopBar: View {
     /// Free users see how many swipes are left from here down.
     static let lowSwipes = 5
@@ -13,7 +13,7 @@ struct FeedTopBar: View {
         HStack(alignment: .center, spacing: DS.Spacing.xs) {
             undoButton
                 .frame(maxWidth: .infinity, alignment: .leading)
-            progress
+            status
             Button(action: onOpenPile) {
                 ToClearCounter(bytes: vm.pendingBytes, addedBytes: vm.deleteChip?.bytes, addedID: vm.deleteChip?.id)
                     .animation(DS.Motion.calm, value: vm.deleteChip)
@@ -31,24 +31,26 @@ struct FeedTopBar: View {
             .disabled(!vm.canUndo)
     }
 
-    private var progress: some View {
-        DeckProgress(position: vm.photosReviewed, total: vm.photoTotal, value: vm.sessionProgress) {
-            if let left = vm.swipesLeft, left <= Self.lowSwipes {
-                SwipesLeftPill(left: left, nextRefillAt: vm.nextRefillAt, refillAmount: vm.allowanceTunables.refillAmount) {
-                    vm.presentWall()
-                }
-                .transition(.opacity)
-            } else if let percent = vm.scanningPercent {
-                HStack(spacing: 6) {
-                    Circle()
-                        .fill(DS.Palette.brick)
-                        .frame(width: 6, height: 6)
-                    Text("Still scanning · \(percent)%")
-                }
-                .font(.caption)
-                .foregroundStyle(DS.Palette.secondary)
-                .transition(.opacity)
+    /// The deck has no end, so the middle only speaks up when there's something to say.
+    @ViewBuilder
+    private var status: some View {
+        if let left = vm.swipesLeft, left <= Self.lowSwipes {
+            SwipesLeftPill(left: left, nextRefillAt: vm.nextRefillAt, refillAmount: vm.allowanceTunables.refillAmount) {
+                vm.presentWall()
             }
+            .fixedSize()
+            .transition(.opacity)
+        } else if let percent = vm.scanningPercent {
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(DS.Palette.brick)
+                    .frame(width: 6, height: 6)
+                Text("Still scanning · \(percent)%")
+            }
+            .font(.caption)
+            .foregroundStyle(DS.Palette.secondary)
+            .fixedSize()
+            .transition(.opacity)
         }
     }
 }
