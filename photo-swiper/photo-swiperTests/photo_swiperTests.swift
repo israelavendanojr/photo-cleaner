@@ -69,6 +69,50 @@ final class TestEntitlements: EntitlementStore {
     }
 }
 
+/// A notification center that records instead of scheduling. Grants permission unless told not to.
+@MainActor
+final class FakeNotificationCenter: NotificationScheduling {
+    var grants = true
+    private(set) var authorizationRequests = 0
+    /// What's scheduled and not yet cancelled, by identifier.
+    private(set) var pending: [String: RefillReminder] = [:]
+    private(set) var added: [RefillReminder] = []
+
+    func requestAuthorization() async -> Bool {
+        authorizationRequests += 1
+        return grants
+    }
+
+    func add(_ reminder: RefillReminder) async {
+        added.append(reminder)
+        pending[reminder.id] = reminder
+    }
+
+    func removePending(_ ids: [String]) {
+        for id in ids { pending[id] = nil }
+    }
+}
+
+/// A clock tests move by hand.
+final class TestClock: @unchecked Sendable {
+    var now: Date
+
+    init(_ now: Date = Date(timeIntervalSince1970: 1_800_000_000)) {
+        self.now = now
+    }
+
+    func advance(hours: Double) {
+        now = now.addingTimeInterval(hours * 3600)
+    }
+}
+
+/// A fresh, empty defaults suite per test.
+func freshDefaults(_ name: String = UUID().uuidString) -> UserDefaults {
+    let defaults = UserDefaults(suiteName: name)!
+    defaults.removePersistentDomain(forName: name)
+    return defaults
+}
+
 @MainActor
 struct FeedViewModelLibraryTests {
     private let library = FakeLibrary()

@@ -21,6 +21,10 @@ struct SwipeableCard<Content: View>: View {
     let onSwipe: (SwipeDirection) -> Void
     /// Plays the first-time swipe demo (`SwipeNudge`) while the card sits untouched.
     let nudges: Bool
+    /// False when a swipe can't go through (out of free swipes). The card then resists the drag,
+    /// springs back, and reports `onRefused` instead of committing.
+    let canCommit: Bool
+    let onRefused: () -> Void
     @ViewBuilder let content: Content
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -42,8 +46,12 @@ struct SwipeableCard<Content: View>: View {
         onRelease: @escaping (SwipeDirection) -> Void = { _ in },
         onSwipe: @escaping (SwipeDirection) -> Void,
         nudges: Bool = false,
+        canCommit: Bool = true,
+        onRefused: @escaping () -> Void = {},
         @ViewBuilder content: () -> Content
     ) {
+        self.canCommit = canCommit
+        self.onRefused = onRefused
         self.isEnabled = isEnabled
         self.entrance = entrance
         self.onRelease = onRelease
@@ -78,7 +86,7 @@ struct SwipeableCard<Content: View>: View {
             .onChange(of: request) { _, direction in
                 guard let direction else { return }
                 request = nil
-                fly(direction)
+                attempt(direction)
             }
             .task(id: nudges && isEnabled && !reduceMotion) {
                 guard nudges, isEnabled, !reduceMotion else { return }
@@ -87,7 +95,7 @@ struct SwipeableCard<Content: View>: View {
             .accessibilityActions {
                 if isEnabled {
                     ForEach(SwipeDirection.allCases, id: \.self) { direction in
-                        Button(label(direction)) { fly(direction) }
+                        Button(label(direction)) { attempt(direction) }
                     }
                 }
             }
@@ -106,6 +114,12 @@ struct SwipeableCard<Content: View>: View {
                 guard !isFlying else { return }
                 isDragging = true
                 lastTouch = .now
+                guard canCommit else {
+                    // Gives a little, then stops short of committing.
+                    offset = SwipeThresholds.resisted(value.translation)
+                    progress = Self.progress(for: offset)
+                    return
+                }
                 offset = value.translation
                 progress = Self.progress(for: value.translation)
                 let direction = SwipeThresholds.armed(value.translation)
@@ -119,7 +133,7 @@ struct SwipeableCard<Content: View>: View {
                 lastTouch = .now
                 guard !isFlying else { return }
                 if let direction = SwipeThresholds.commit(value.translation, predicted: value.predictedEndTranslation) {
-                    fly(direction)
+                    attempt(direction)
                 } else {
                     armed = nil
                     withAnimation(DS.Motion.snapBack) {
@@ -128,6 +142,37 @@ struct SwipeableCard<Content: View>: View {
                     }
                 }
             }
+    }
+
+    /// Flies off, or refuses when the swipe can't go through.
+    private func attempt(_ direction: SwipeDirection) {
+        guard isEnabled, !isFlying else { return }
+        guard canCommit else {
+            refuse(direction)
+            return
+        }
+        fly(direction)
+    }
+
+    /// Springs back from wherever the drag left it, or leans toward `direction` first when the
+    /// swipe came from a button, so the refusal reads either way.
+    private func refuse(_ direction: SwipeDirection) {
+        armed = nil
+        Haptics.refused()
+        if offset == .zero, !reduceMotion {
+            let lean = SwipeThresholds.resisted(SwipeThresholds.offscreen(direction, from: .zero))
+            withAnimation(.easeOut(duration: 0.12)) {
+                offset = CGSize(width: lean.width * 0.5, height: lean.height * 0.5)
+            } completion: {
+                withAnimation(DS.Motion.snapBack) { offset = .zero }
+            }
+        } else {
+            withAnimation(DS.Motion.snapBack) {
+                offset = .zero
+                progress = 0
+            }
+        }
+        onRefused()
     }
 
     private func fly(_ direction: SwipeDirection) {
@@ -205,6 +250,16 @@ enum SwipeThresholds {
             return .up
         }
         return nil
+    }
+
+    /// How far a card goes when it can't commit: rubber-banded so it never reaches a threshold.
+    static func resisted(_ t: CGSize) -> CGSize {
+        let limit: CGFloat = 60
+        func band(_ x: CGFloat) -> CGFloat {
+            let sign: CGFloat = x < 0 ? -1 : 1
+            return sign * limit * (1 - 1 / (abs(x) / (limit * 2) + 1))
+        }
+        return CGSize(width: band(t.width), height: band(t.height))
     }
 
     /// Where a swiped card flies to, starting from its current drag `offset`.

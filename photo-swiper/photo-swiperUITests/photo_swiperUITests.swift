@@ -329,10 +329,10 @@ final class photo_swiperUITests: XCTestCase {
         XCTAssertTrue(element(app, containing: "4 of 20").exists, "The pile doesn't move the feed")
     }
 
-    // MARK: Session exits and the paywall
+    // MARK: Session exits and the swipe wall
 
     @MainActor
-    func testDeleteKeepGoingHitsPaywallThenNotNowRests() throws {
+    func testDeleteKeepGoingDealsTheNextSessionWhenLocked() throws {
         let app = launch("-startAt", "end", "-unlocked", "NO")
         let deleteAll = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Delete ")).firstMatch
         XCTAssertTrue(deleteAll.waitForExistence(timeout: 5))
@@ -347,22 +347,8 @@ final class photo_swiperUITests: XCTestCase {
         attachScreenshot(app, "celebrated")
 
         app.buttons["Keep going"].tap()
-        XCTAssertTrue(element(app, containing: "That's your free cleanup, done.").waitForExistence(timeout: 5),
-                      "Session 2 needs the unlock")
-        XCTAssertTrue(app.buttons["paywall.unlock"].exists)
-        XCTAssertEqual(app.buttons["paywall.unlock"].label, "Unlock for $12.99, one-time purchase")
-        sleep(1)
-        attachScreenshot(app, "paywall")
-
-        app.buttons["paywall.notNow"].tap()
-        XCTAssertTrue(element(app, containing: "That's enough for today.").waitForExistence(timeout: 5))
-        XCTAssertFalse(app.buttons["rest.pending"].exists, "Everything was deleted, so nothing is pending")
-        sleep(1)
-        attachScreenshot(app, "resting")
-
-        app.buttons["Start another session"].tap()
-        XCTAssertTrue(element(app, containing: "That's your free cleanup, done.").waitForExistence(timeout: 5),
-                      "Starting again from rest asks again")
+        XCTAssertTrue(element(app, containing: "0 of ").waitForExistence(timeout: 8), "Sessions are never gated")
+        XCTAssertFalse(app.buttons["paywall.unlock"].exists)
     }
 
     @MainActor
@@ -380,33 +366,54 @@ final class photo_swiperUITests: XCTestCase {
     }
 
     @MainActor
-    func testUnlockFromPaywallDealsNextSession() throws {
-        let app = launch("-startAt", "paywall", "-unlocked", "NO")
+    func testOutOfSwipesRefusesThenNotNowKeepsTheDeck() throws {
+        let app = launch("-swipesLeft", "1", "-unlocked", "NO")
+        let keep = onScreen(app, "Keep")
+        XCTAssertTrue(keep.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["feed.swipesLeft"].waitForExistence(timeout: 3), "Few left shows the pill")
+        tapAndWait(keep)
+        XCTAssertTrue(element(app, containing: "1 of ").waitForExistence(timeout: 3))
+
+        tapCenter(onScreen(app, "Keep"))
         let unlock = app.buttons["paywall.unlock"]
-        XCTAssertTrue(unlock.waitForExistence(timeout: 5))
-        unlock.tap()
-        XCTAssertTrue(element(app, containing: "0 of ").waitForExistence(timeout: 8), "The next session deals in")
-        XCTAssertFalse(unlock.exists)
+        XCTAssertTrue(unlock.waitForExistence(timeout: 5), "The swipe is refused and the wall opens")
+        XCTAssertTrue(element(app, containing: "Out of swipes").exists)
+        XCTAssertTrue(element(app, containing: "+10 in").exists)
+        XCTAssertTrue(element(app, containing: "Unlimited swipes").exists)
+        XCTAssertEqual(unlock.label, "Unlock for $12.99, one-time purchase")
+        sleep(1)
+        attachScreenshot(app, "swipe wall")
+
+        app.buttons["paywall.notNow"].tap()
+        XCTAssertTrue(unlock.waitForNonExistence(timeout: 3))
+        XCTAssertTrue(element(app, containing: "1 of ").exists, "Nothing was committed; the deck stays")
+
+        tapCenter(onScreen(app, "Delete"))
+        XCTAssertTrue(unlock.waitForExistence(timeout: 5), "The next swipe asks again")
     }
 
     @MainActor
-    func testUnlockedKeepGoingSkipsPaywall() throws {
-        let app = launch("-startAt", "end", "-unlocked", "YES")
-        let keepGoing = app.buttons["Keep going"]
-        XCTAssertTrue(keepGoing.waitForExistence(timeout: 5))
-        keepGoing.tap()
-        XCTAssertTrue(element(app, containing: "0 of ").waitForExistence(timeout: 8), "A new session opens")
-        XCTAssertFalse(app.buttons["paywall.unlock"].exists)
+    func testUnlockFromTheWallLetsTheCardThrough() throws {
+        let app = launch("-startAt", "outOfSwipes", "-unlocked", "NO")
+        let unlock = app.buttons["paywall.unlock"]
+        XCTAssertTrue(unlock.waitForExistence(timeout: 5))
+        unlock.tap()
+        XCTAssertTrue(unlock.waitForNonExistence(timeout: 8), "The sheet closes")
+        let progress = app.descendants(matching: .any).matching(NSPredicate(format: "label MATCHES %@", "^[0-9]+ of [0-9]+.*")).firstMatch
+        XCTAssertTrue(progress.waitForExistence(timeout: 3))
+        let before = progress.label
+        tapAndWait(onScreen(app, "Keep"))
+        XCTAssertNotEqual(progress.label, before, "The card goes straight through")
     }
 
     @MainActor
     func testFailedRestoreShowsInlineMessage() throws {
-        let app = launch("-startAt", "paywall", "-unlocked", "NO", "-restoreFails", "YES")
+        let app = launch("-startAt", "outOfSwipes", "-unlocked", "NO", "-restoreFails", "YES")
         let restore = app.buttons["paywall.restore"]
         XCTAssertTrue(restore.waitForExistence(timeout: 5))
         restore.tap()
         XCTAssertTrue(app.staticTexts["paywall.message"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.buttons["paywall.unlock"].exists, "Still on the paywall, no alert")
+        XCTAssertTrue(app.buttons["paywall.unlock"].exists, "Still on the wall, no alert")
         attachScreenshot(app, "restore failed")
     }
 

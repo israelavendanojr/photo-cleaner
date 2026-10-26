@@ -13,6 +13,11 @@ struct MockFeedBuilder: FeedBuilding {
         makeSessionNow(number: number, options: options)
     }
 
+    /// A plausible mid-sized library.
+    func clutterEstimate(excluding: Set<LibraryItem.ID>, now: Date) async -> ClutterEstimate? {
+        ClutterEstimate(likelyClearCount: 1_240, likelyClearBytes: 8_400_000_000, screenshotCount: 312, similarGroupCount: 46)
+    }
+
     /// Synchronous variant for previews and launch-time setup.
     func makeSessionNow(number: Int, options: FeedOptions = FeedOptions()) -> Session {
         var factory = Factory(session: number, options: options)

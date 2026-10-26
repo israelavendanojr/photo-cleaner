@@ -23,6 +23,11 @@ enum Haptics {
         UIImpactFeedbackGenerator(style: .soft).impactOccurred(intensity: 0.8)
     }
 
+    /// A swipe was refused: out of free swipes.
+    static func refused() {
+        UINotificationFeedbackGenerator().notificationOccurred(.error)
+    }
+
     /// The final, confirmed delete.
     static func confirm() {
         UINotificationFeedbackGenerator().notificationOccurred(.success)

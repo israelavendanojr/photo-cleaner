@@ -21,6 +21,9 @@ struct SwipeDeck: View {
     var showsHint = false
     /// Deals the cards in from above when the deck first appears (straight after onboarding).
     var dealsIn = false
+    /// False when the top card can't be swiped; it then springs back and calls `onRefused`.
+    var canSwipe = true
+    var onRefused: () -> Void = {}
 
     /// How far the top card is toward committing, 0...1.
     @State private var progress = 0.0
@@ -60,7 +63,9 @@ struct SwipeDeck: View {
                         progress: isTop ? $progress : .constant(0),
                         onRelease: { release($0, card: card) },
                         onSwipe: { finish($0, card: card) },
-                        nudges: isTop && showsHint
+                        nudges: isTop && showsHint,
+                        canCommit: !isTop || canSwipe,
+                        onRefused: onRefused
                     ) {
                         CardContentView(
                             card: card,
