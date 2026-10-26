@@ -8,6 +8,8 @@ struct RootView: View {
     /// The feed is about to replace onboarding, so its first deck deals in.
     @State private var dealsInDeck = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.scenePhase) private var scenePhase
+    private let router = NotificationRouter.shared
     /// Carries the freed figure from the celebration to the rest screen.
     @Namespace private var freedFigure
 
@@ -27,10 +29,6 @@ struct RootView: View {
             case .feed, .resting, .caughtUp:
                 tabs
                     .transition(.opacity)
-            case .paywall:
-                PaywallView()
-                    .transition(paywallTransition)
-                    .onAppear { dealsInDeck = true }
             case .endOfSession, .celebrated:
                 EndOfSessionView()
                     .transition(.opacity)
@@ -40,11 +38,18 @@ struct RootView: View {
         .environment(\.freedFigureNamespace, reduceMotion ? nil : freedFigure)
         .animation(DS.Motion.gentle, value: vm.phase)
         .onChange(of: vm.phase) { old, new in
-            // Only the feed that replaces onboarding or the paywall deals in.
-            let dealers: [FeedViewModel.Phase] = [.onboarding, .paywall]
-            if !dealers.contains(old), !dealers.contains(new) { dealsInDeck = false }
-            // A session started from the end, rest, or paywall screen opens on the feed.
-            if new == .feed, [.endOfSession, .celebrated, .resting, .caughtUp, .paywall].contains(old) { tab = .feed }
+            // Only the feed that replaces onboarding deals in.
+            if old != .onboarding, new != .onboarding { dealsInDeck = false }
+            // A session started from the end or rest screen opens on the feed.
+            if new == .feed, [.endOfSession, .celebrated, .resting, .caughtUp].contains(old) { tab = .feed }
+        }
+        .onChange(of: scenePhase) { _, phase in
+            // Refills earned while away land on return.
+            if phase == .active { vm.refreshAllowance() }
+        }
+        .onChange(of: router.feedRequests) {
+            // A refill reminder was tapped.
+            tab = .feed
         }
         .sheet(isPresented: $isPilePresented) {
             PendingPileView(showsDone: true)
@@ -62,14 +67,6 @@ struct RootView: View {
             if UserDefaults.standard.bool(forKey: "showPile") { isPilePresented = true }
             #endif
         }
-    }
-
-    /// The card rises in on its own; once unlocked it lifts away as the next deck deals in.
-    private var paywallTransition: AnyTransition {
-        reduceMotion ? .opacity : .asymmetric(
-            insertion: .opacity,
-            removal: .offset(y: -60).combined(with: .scale(scale: 1.02)).combined(with: .opacity)
-        )
     }
 
     /// Both tabs stay mounted so the deck keeps its place while the library is up.

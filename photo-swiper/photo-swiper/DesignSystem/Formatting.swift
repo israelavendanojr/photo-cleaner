@@ -40,6 +40,23 @@ enum Format {
         return String(format: "%d:%02d", total / 60, total % 60)
     }
 
+    /// "2h 14m", "14m", or "45s" under a minute. Counts down to a refill.
+    static func countdown(_ seconds: TimeInterval) -> String {
+        let total = max(0, Int(seconds.rounded(.up)))
+        if total < 60 { return "\(total)s" }
+        let minutes = (total + 59) / 60
+        guard minutes >= 60 else { return "\(minutes)m" }
+        return "\(minutes / 60)h \(minutes % 60)m"
+    }
+
+    /// "about 3 weeks", "about 5 days", "about 2 months", for a long stretch of days.
+    static func roughDays(_ days: Double) -> String {
+        let d = Int(days.rounded(.up))
+        if d < 14 { return "about \(d) days" }
+        if d < 60 { return "about \(Int((days / 7).rounded())) weeks" }
+        return "about \(Int((days / 30).rounded())) months"
+    }
+
     /// "five", for small counts in copy.
     static func spelled(_ n: Int) -> String {
         n <= 10 ? (spellOut.string(from: n as NSNumber) ?? "\(n)") : "\(n)"

@@ -21,7 +21,9 @@ struct CardStackView: View {
             request: $request,
             onOpenBatch: { reviewingBatch = $0 },
             showsHint: !hasSeenSwipeHint,
-            dealsIn: dealsIn
+            dealsIn: dealsIn,
+            canSwipe: vm.canSwipe,
+            onRefused: refused
         )
         .fullScreenCover(item: $reviewingBatch, onDismiss: flyOutReviewedBatch) { batch in
             BatchReviewView(batch: batch, draft: vm.draft(for: batch)) { outcome in
@@ -35,6 +37,15 @@ struct CardStackView: View {
     private func flyOutReviewedBatch() {
         guard let outcome = batchOutcome else { return }
         request = outcome.values.contains(.delete) ? .left : .right
+    }
+
+    /// Out of swipes. A finished one-by-one review waits as a draft for the next swipe.
+    private func refused() {
+        if let outcome = batchOutcome, case .batch(let batch) = vm.currentCard {
+            vm.saveDraft(outcome, for: batch)
+        }
+        batchOutcome = nil
+        vm.presentWall()
     }
 
     private func decide(_ direction: SwipeDirection, card: FeedCard) {

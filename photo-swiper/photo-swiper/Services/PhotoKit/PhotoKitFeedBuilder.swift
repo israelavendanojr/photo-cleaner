@@ -31,8 +31,18 @@ actor PhotoKitFeedBuilder: FeedBuilding {
     )
 
     /// Without an index, every candidate is read live, as before the index existed.
+    /// Similar groups the last session found but didn't show, for the clutter estimate.
+    private var similarGroupsLeft = 0
+
     init(index: (any FeatureIndexReading)? = nil) {
         self.index = index
+    }
+
+    func clutterEstimate(excluding: Set<LibraryItem.ID>, now: Date) async -> ClutterEstimate? {
+        guard let index else { return nil }
+        var estimate = await index.clutterEstimate(excluding: excluding, now: now)
+        estimate.similarGroupCount = similarGroupsLeft
+        return estimate
     }
 
     func makeSession(number: Int, options: FeedOptions) async -> Session {
@@ -40,6 +50,7 @@ actor PhotoKitFeedBuilder: FeedBuilding {
         let pool = await candidatePool(options)
         let similar = await similarGroups(in: pool)
         let slots = planner.plan(pool.candidates, groups: similar.planned, now: .now)
+        similarGroupsLeft = similar.planned.count - slots.filter(\.isSimilar).count
         #if DEBUG
         if UserDefaults.standard.bool(forKey: "logSimilarity") { logSimilarity(similar, session: number) }
         #endif

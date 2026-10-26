@@ -22,16 +22,11 @@ final class FeedViewModel {
         case resting
         /// The feed is genuinely exhausted: a new session found nothing to show.
         case caughtUp
-        /// The free session is used up and another was asked for.
-        case paywall
     }
 
     enum PaywallStatus: Equatable {
         case idle, purchasing, restoring, purchaseFailed, restoreFailed
     }
-
-    /// Sessions anyone can start without unlocking.
-    static let freeSessions = 1
 
     /// The "+3.4 MB" chip shown briefly after a delete.
     struct DeleteChip: Equatable {
@@ -59,6 +54,8 @@ final class FeedViewModel {
         let direction: SwipeDirection
         /// Saved decisions for the card's items before the swipe; nil where there were none.
         var stored: [LibraryItem.ID: StoredDecision?]
+        /// The swipe spent one from the allowance, so undo gives it back.
+        let charged: Bool
     }
 
     // MARK: State
@@ -80,6 +77,16 @@ final class FeedViewModel {
     /// Resting was restored at launch, so the rest screen greets the user back.
     private(set) var isWelcomeBack = false
     private(set) var paywallStatus = PaywallStatus.idle
+    /// The free swipes. Never spent or checked while unlocked.
+    private(set) var allowance: SwipeAllowance
+    /// "Out of swipes": the wall sheet over the feed, offering the unlock.
+    var isWallPresented = false
+    /// What's left to clear, worked out when the wall opens.
+    private(set) var clutterEstimate: ClutterEstimate?
+    /// The user tapped "Remind me" and the system said yes.
+    private(set) var isRemindersOptedIn = false
+    /// The user tapped "Remind me" and notifications are turned off.
+    private(set) var areRemindersDenied = false
     /// Something about the last delete the user should know, e.g. items the system refused.
     var deleteNotice: String?
     /// Applies to the next session built.
@@ -102,6 +109,10 @@ final class FeedViewModel {
     private var libraryStats = LibraryStats(totalItems: 0, reviewedItems: 0, freedBytes: 0)
     private var chipTask: Task<Void, Never>?
     private var changesTask: Task<Void, Never>?
+    /// A refill landed while no session could take the strongest cards first; the next one dealt does.
+    private var refilledSinceDeal = false
+    /// Off while mocks play a session through, so their setup doesn't spend the allowance.
+    private var chargesSwipes = true
 
     private let library: any PhotoLibraryProviding
     private let builder: any FeedBuilding
@@ -114,7 +125,12 @@ final class FeedViewModel {
     /// Shortest time onboarding shows its "preparing" state, so the step change can be read.
     private let firstSessionMinimum: Duration
     private let now: () -> Date
+    private let allowanceStore: SwipeAllowanceStore
+    let allowanceTunables: SwipeAllowance.Tunables
+    /// Nil where reminders can't be offered (tests, previews).
+    private let notifier: RefillNotifier?
 
+    /// - Parameter allowanceStore: Where the free swipes are saved. Nil keeps them in memory, starting full.
     init(
         library: any PhotoLibraryProviding,
         builder: any FeedBuilding,
@@ -123,6 +139,9 @@ final class FeedViewModel {
         indexScheduler: IndexScheduler? = nil,
         defaults: UserDefaults = .standard,
         firstSessionMinimum: Duration = .zero,
+        allowanceStore: SwipeAllowanceStore? = nil,
+        allowanceTunables: SwipeAllowance.Tunables = .standard,
+        notifier: RefillNotifier? = nil,
         now: @escaping () -> Date = Date.init
     ) {
         self.library = library
@@ -133,6 +152,12 @@ final class FeedViewModel {
         self.defaults = defaults
         self.firstSessionMinimum = firstSessionMinimum
         self.now = now
+        let allowanceStore = allowanceStore ?? SwipeAllowanceStore()
+        self.allowanceStore = allowanceStore
+        self.allowanceTunables = allowanceTunables
+        self.notifier = notifier
+        allowance = allowanceStore.load() ?? SwipeAllowance(tunables: allowanceTunables, now: now())
+        isRemindersOptedIn = notifier?.isOptedIn ?? false
         skipFavorites = store.skipFavorites
     }
 
@@ -143,7 +168,10 @@ final class FeedViewModel {
         store: any ProgressStoring = InMemoryProgressStore(),
         entitlements: any EntitlementStore,
         session: Session,
-        stats: LibraryStats
+        stats: LibraryStats,
+        allowanceStore: SwipeAllowanceStore? = nil,
+        allowanceTunables: SwipeAllowance.Tunables = .standard,
+        notifier: RefillNotifier? = nil
     ) {
         self.library = library
         self.builder = builder
@@ -153,6 +181,12 @@ final class FeedViewModel {
         defaults = .standard
         firstSessionMinimum = .zero
         now = Date.init
+        let allowanceStore = allowanceStore ?? SwipeAllowanceStore()
+        self.allowanceStore = allowanceStore
+        self.allowanceTunables = allowanceTunables
+        self.notifier = notifier
+        allowance = allowanceStore.load() ?? SwipeAllowance(tunables: allowanceTunables, now: .now)
+        isRemindersOptedIn = notifier?.isOptedIn ?? false
         skipFavorites = store.skipFavorites
         libraryStats = stats
         apply(session)
@@ -196,16 +230,20 @@ final class FeedViewModel {
 
     var isUnlocked: Bool { entitlements.isUnlocked }
     var displayPrice: String { entitlements.displayPrice }
-    /// Library items not yet kept or deleted, for the paywall's "left to look through".
-    var photosLeftToReview: Int { max(0, stats.totalItems - libraryReviewedCount) }
+
+    /// A card decision would go through. Unlocked, always.
+    var canSwipe: Bool { isUnlocked || allowance.remaining > 0 }
+    /// Free swipes left; nil when unlocked, where nothing is counted.
+    var swipesLeft: Int? { isUnlocked ? nil : allowance.remaining }
+    /// When the next refill lands; nil when unlocked or full.
+    var nextRefillAt: Date? { isUnlocked ? nil : allowance.nextRefillAt(allowanceTunables) }
+    /// Days of free swipes it would take to get through the likely clears.
+    var daysToFinish: Double? { clutterEstimate?.daysToFinish(swipesPerDay: allowanceTunables.swipesPerDay) }
+    /// "Remind me when swipes are back" can be offered.
+    var canRemind: Bool { notifier != nil }
 
     /// The number the next new session gets.
     private var nextSessionNumber: Int { max(session?.number ?? 0, store.lastSessionNumber()) + 1 }
-
-    /// Past the free sessions, a new one needs the unlock. Nothing else is ever gated.
-    private func needsUnlock(forSession number: Int) -> Bool {
-        number > Self.freeSessions && !entitlements.isUnlocked
-    }
 
     // MARK: Card helpers
 
@@ -268,12 +306,9 @@ final class FeedViewModel {
         libraryStats = await library.stats()
         observeLibraryChanges()
         let saved = store.loadSession()
-        // A session in progress always resumes; only a brand new one can be gated.
-        let number = store.lastSessionNumber() + 1
-        let gated = saved == nil && needsUnlock(forSession: number)
         // Captions can do without place names for the first session; they arrive with the next.
-        let next = saved == nil && !gated
-            ? await makeSession(number: number, placeBudget: fromOnboarding ? .zero : nil)
+        let next = saved == nil
+            ? await makeSession(number: store.lastSessionNumber() + 1, placeBudget: fromOnboarding ? .zero : nil)
             : nil
         if fromOnboarding {
             let remaining = firstSessionMinimum - (clock.now - started)
@@ -283,22 +318,28 @@ final class FeedViewModel {
             await restore(saved)
         } else if let next {
             apply(next)
-        } else if gated {
-            paywallStatus = .idle
-            phase = .paywall
         }
         isPreparingFirstSession = false
         refreshTotals()
+        // Credits refills from time away, which also puts the strongest cards first.
+        refreshAllowance()
+        if isUnlocked { notifier?.cancelAll(now: now()) }
     }
 
+    /// Out of free swipes, nothing is committed and the wall opens instead.
     func decide(_ direction: SwipeDirection) {
-        guard phase == .feed, let card = currentCard else { return }
+        guard phase == .feed, let card = currentCard, admitSwipe() else { return }
         commit(itemDecisions(for: card, direction: direction), card: card, direction: direction)
     }
 
     /// Settles the current batch card from a one-by-one review. Items left out count as "later".
+    /// It costs one swipe like any card; out of swipes, the review is kept as a draft and the wall opens.
     func decideIndividually(_ outcome: [LibraryItem.ID: Decision]) {
-        guard phase == .feed, let card = currentCard, case .batch = card else { return }
+        guard phase == .feed, let card = currentCard, case .batch(let batch) = card else { return }
+        guard admitSwipe() else {
+            saveDraft(outcome, for: batch)
+            return
+        }
         let complete = Dictionary(uniqueKeysWithValues: card.items.map { ($0.id, outcome[$0.id] ?? .later) })
         commit(complete, card: card, direction: complete.values.contains(.delete) ? .left : .right)
     }
@@ -327,6 +368,10 @@ final class FeedViewModel {
         marks = last.marks
         drafts = last.drafts
         store.save(last.stored)
+        if last.charged {
+            allowance.refund(at: now(), allowanceTunables)
+            allowanceStore.save(allowance)
+        }
         returningCard = ReturningCard(cardID: last.cardID, direction: last.direction)
         dismissChip()
         phase = .feed
@@ -391,41 +436,57 @@ final class FeedViewModel {
         return true
     }
 
-    /// "Keep going" and "Start another session". Past the free session without the unlock, this
-    /// opens the paywall instead, and the current session counts as finished.
+    /// "Keep going" and "Start another session". Never gated: only swipes are.
     func requestNextSession() async {
-        let number = nextSessionNumber
-        guard !needsUnlock(forSession: number) else {
-            finished = true
-            isWelcomeBack = false
-            paywallStatus = .idle
-            phase = .paywall
-            saveProgress()
-            return
-        }
-        await loadSession(number: number)
+        await loadSession(number: nextSessionNumber)
     }
 
-    /// "Not now" on the paywall.
-    func dismissPaywall() {
-        guard phase == .paywall else { return }
-        finished = true
-        // The rest screen only carries the figure over straight from the celebration.
-        celebration = nil
-        phase = .resting
-        saveProgress()
+    // MARK: Swipe allowance
+
+    /// Opens the wall: the countdown, what's left, and the unlock. The deck stays underneath.
+    func presentWall() {
+        refreshAllowance()
+        if !isWallPresented { paywallStatus = .idle }
+        isWallPresented = true
+        Task { await refreshEstimate() }
     }
 
-    /// Buys the unlock from the paywall, then deals the next session. False if it didn't go through.
+    /// "Not now". The next refused swipe opens it again.
+    func dismissWall() {
+        guard paywallStatus != .purchasing, paywallStatus != .restoring else { return }
+        isWallPresented = false
+    }
+
+    /// Buys the unlock from the wall. The current card can be swiped straight away. False if it didn't go through.
     @discardableResult
-    func unlockFromPaywall() async -> Bool {
-        await settlePaywall(.purchasing, failure: .purchaseFailed) { await $0.unlock() }
+    func unlockFromWall() async -> Bool {
+        await settleWall(.purchasing, failure: .purchaseFailed) { await $0.unlock() }
     }
 
-    /// Restores an earlier purchase from the paywall, then deals the next session.
+    /// Restores an earlier purchase from the wall.
     @discardableResult
-    func restoreFromPaywall() async -> Bool {
-        await settlePaywall(.restoring, failure: .restoreFailed) { await $0.restore() }
+    func restoreFromWall() async -> Bool {
+        await settleWall(.restoring, failure: .restoreFailed) { await $0.restore() }
+    }
+
+    /// Credits any refills owed by now. Called on returning to the app and while a countdown shows.
+    /// When a refill lands, the strongest cards waiting move to the front.
+    func refreshAllowance() {
+        guard !isUnlocked else { return }
+        var settled = allowance
+        let refilled = settled.settle(at: now(), allowanceTunables)
+        guard settled != allowance else { return }
+        allowance = settled
+        allowanceStore.save(settled)
+        if refilled { frontLoad() }
+    }
+
+    /// "Remind me when swipes are back". Asks for notification permission, then schedules if already out.
+    func remindWhenSwipesAreBack() async {
+        guard let notifier else { return }
+        isRemindersOptedIn = await notifier.optIn()
+        areRemindersDenied = !isRemindersOptedIn
+        if isRemindersOptedIn, allowance.remaining == 0 { await scheduleReminders() }
     }
 
     func finishForNow() {
@@ -441,20 +502,76 @@ final class FeedViewModel {
 
     // MARK: Internals
 
-    private func settlePaywall(
+    private func settleWall(
         _ working: PaywallStatus,
         failure: PaywallStatus,
         _ attempt: (any EntitlementStore) async -> Bool
     ) async -> Bool {
-        guard phase == .paywall, paywallStatus != .purchasing, paywallStatus != .restoring else { return false }
+        guard isWallPresented, paywallStatus != .purchasing, paywallStatus != .restoring else { return false }
         paywallStatus = working
         guard await attempt(entitlements), entitlements.isUnlocked else {
             paywallStatus = failure
             return false
         }
-        await loadSession(number: nextSessionNumber)
+        notifier?.cancelAll(now: now())
         paywallStatus = .idle
+        isWallPresented = false
         return true
+    }
+
+    /// Lets a card decision through, or refuses it and opens the wall when no swipes are left.
+    private func admitSwipe() -> Bool {
+        refreshAllowance()
+        guard canSwipe || !chargesSwipes else {
+            presentWall()
+            return false
+        }
+        return true
+    }
+
+    /// Spends one swipe for a card decision. Unlocked, nothing is counted. True if one was spent.
+    private func spendSwipe() -> Bool {
+        guard chargesSwipes, !isUnlocked, allowance.spend(at: now(), allowanceTunables) else { return false }
+        allowanceStore.save(allowance)
+        // Back and swiping before a reminder fired: it's no longer needed.
+        notifier?.cancelAll(now: now())
+        if allowance.remaining == 0, isRemindersOptedIn {
+            Task { await scheduleReminders() }
+        }
+        return true
+    }
+
+    private func scheduleReminders() async {
+        guard let notifier, !isUnlocked, let next = allowance.nextRefillAt(allowanceTunables) else { return }
+        if clutterEstimate == nil { await refreshEstimate() }
+        await notifier.scheduleOnEmpty(
+            nextRefillAt: next,
+            fullAt: allowance.fullAt(allowanceTunables),
+            tunables: allowanceTunables,
+            estimate: clutterEstimate,
+            now: now()
+        )
+    }
+
+    private func refreshEstimate() async {
+        guard var estimate = await builder.clutterEstimate(excluding: store.excludedFromNewSession(asOf: now()), now: now()) else { return }
+        // Similar sets still ahead in this session count too.
+        estimate.similarGroupCount += cards.dropFirst(index).filter { if case .similar = $0 { true } else { false } }.count
+        clutterEstimate = estimate
+    }
+
+    /// Moves the strongest cards still to come to the front, or leaves it to the next session dealt.
+    private func frontLoad() {
+        guard phase == .feed, var current = session else {
+            refilledSinceDeal = true
+            return
+        }
+        refilledSinceDeal = false
+        let reordered = FrontLoad.reordered(current.cards, from: index)
+        guard reordered != current.cards else { return }
+        current.cards = reordered
+        session = current
+        saveProgress()
     }
 
     /// Records per-item decisions for the current card and moves on.
@@ -463,7 +580,8 @@ final class FeedViewModel {
         let ids = card.items.map(\.id)
         let before = store.decisions(for: Set(ids))
         let stored = Dictionary(uniqueKeysWithValues: ids.map { ($0, before[$0]) })
-        history.append(Snapshot(index: index, decisions: decisions, marks: marks, drafts: drafts, cardID: card.id, direction: direction, stored: stored))
+        let charged = spendSwipe()
+        history.append(Snapshot(index: index, decisions: decisions, marks: marks, drafts: drafts, cardID: card.id, direction: direction, stored: stored, charged: charged))
         decisions.merge(outcome) { _, new in new }
         drafts[card.id] = nil
         returningCard = nil
@@ -539,6 +657,7 @@ final class FeedViewModel {
         let bytes = items.reduce(0) { $0 + $1.bytes }
         settle(Set(items.map(\.id)), as: .deleted)
         celebration = Celebration(bytes: bytes, count: items.count)
+        isWallPresented = false
         carriedPending = []
         history.removeAll()
         finished = true
@@ -588,6 +707,11 @@ final class FeedViewModel {
     }
 
     private func apply(_ next: Session) {
+        var next = next
+        if refilledSinceDeal {
+            next.cards = FrontLoad.reordered(next.cards, from: 0)
+            refilledSinceDeal = false
+        }
         session = next
         index = 0
         decisions = [:]
@@ -713,15 +837,19 @@ extension FeedViewModel {
         case celebratedRest
         /// Resting, as restored on a later launch.
         case welcomeBack
-        /// The first session done and deleted, and another asked for while locked.
-        case paywall
+        /// Locked with no swipes left, the wall up over the deck.
+        case outOfSwipes
         case caughtUp
     }
 
-    /// Mocks start locked unless `entitlements` says otherwise (or `-unlocked YES` in debug builds).
+    /// Mocks start locked unless `entitlements` says otherwise (or `-unlocked YES` in debug builds),
+    /// with a full allowance unless `allowance` says otherwise.
     static func mock(
         startingAt start: MockStart = .first,
-        entitlements: (any EntitlementStore)? = nil
+        entitlements: (any EntitlementStore)? = nil,
+        allowance: SwipeAllowance? = nil,
+        allowanceTunables: SwipeAllowance.Tunables = .standard,
+        notifier: RefillNotifier? = nil
     ) -> FeedViewModel {
         let entitlements = entitlements ?? EntitlementServices.make(mock: true)
         if start == .onboarding {
@@ -744,7 +872,10 @@ extension FeedViewModel {
             builder: builder,
             entitlements: entitlements,
             session: builder.makeSessionNow(number: 1),
-            stats: LibraryStats(totalItems: library.totalItems, reviewedItems: library.reviewedItems, freedBytes: 0)
+            stats: LibraryStats(totalItems: library.totalItems, reviewedItems: library.reviewedItems, freedBytes: 0),
+            allowanceStore: SwipeAllowanceStore(initial: allowance),
+            allowanceTunables: allowanceTunables,
+            notifier: notifier
         )
         switch start {
         case .first:
@@ -764,13 +895,14 @@ extension FeedViewModel {
             vm.finishForNow()
             vm.isWelcomeBack = start == .welcomeBack
         case .endNothingToClear:
+            vm.chargesSwipes = false
             while vm.phase == .feed { vm.decide(.right) }
+            vm.chargesSwipes = true
             vm.dismissChip()
-        case .paywall:
-            vm.simulateSession()
-            vm.applyConfirmedDelete(vm.pendingItems)
-            vm.finished = true
-            vm.phase = .paywall
+        case .outOfSwipes:
+            vm.index = 4
+            vm.allowance = SwipeAllowance(balance: 0, tunables: allowanceTunables, now: .now)
+            vm.presentWall()
         case .caughtUp:
             vm.apply(Session(number: 2, cards: []))
         case .onboarding:
@@ -779,14 +911,16 @@ extension FeedViewModel {
         return vm
     }
 
-    /// Shows a paywall state without going through a purchase, for previews.
-    func previewPaywall(status: PaywallStatus) {
-        phase = .paywall
+    /// Shows a wall state without going through a purchase, for previews.
+    func previewWall(status: PaywallStatus) {
+        isWallPresented = true
         paywallStatus = status
     }
 
     /// Decides every card with a plausible mix of deletes, keeps, and laters.
     private func simulateSession() {
+        chargesSwipes = false
+        defer { chargesSwipes = true }
         while phase == .feed {
             let isVideo = if case .video = currentCard { true } else { false }
             let direction: SwipeDirection = switch index % 9 {
