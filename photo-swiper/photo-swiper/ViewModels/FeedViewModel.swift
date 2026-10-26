@@ -681,7 +681,7 @@ private extension FeedCard {
         case .similar(let group):
             let rest = group.items.filter { !ids.contains($0.id) }
             guard rest.count > 1, !ids.contains(group.bestID) else { return nil }
-            return .similar(SimilarGroup(id: group.id, items: rest, bestID: group.bestID, reason: group.reason))
+            return .similar(SimilarGroup(id: group.id, items: rest, bestID: group.bestID, reason: group.reason, maxDistance: group.maxDistance))
         case .batch(let batch):
             let rest = batch.items.filter { !ids.contains($0.id) }
             guard !rest.isEmpty else { return nil }

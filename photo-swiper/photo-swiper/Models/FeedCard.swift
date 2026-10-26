@@ -36,6 +36,8 @@ struct SimilarGroup: Identifiable, Hashable, Sendable, Codable {
     let bestID: LibraryItem.ID
     /// Why the best pick won, e.g. "Sharpest of the set".
     let reason: String
+    /// Largest feature-print distance between two members, for tuning. Nil for mock groups.
+    var maxDistance: Double? = nil
 
     var best: LibraryItem { items.first { $0.id == bestID } ?? items[0] }
     var others: [LibraryItem] { items.filter { $0.id != bestID } }
