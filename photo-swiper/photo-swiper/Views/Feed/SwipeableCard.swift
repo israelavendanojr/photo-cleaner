@@ -4,6 +4,7 @@ import SwiftUI
 ///
 /// The card commits once it is dragged far enough or flicked. A light haptic marks the
 /// moment it crosses a threshold, so the user feels the decision before letting go.
+/// A swipe that can't go through flies out all the same, then rewinds back into place.
 struct SwipeableCard<Content: View>: View {
     /// False while the card waits behind the top card.
     let isEnabled: Bool
@@ -22,7 +23,8 @@ struct SwipeableCard<Content: View>: View {
     /// Plays the first-time swipe demo (`SwipeNudge`) while the card sits untouched.
     let nudges: Bool
     /// False when a swipe that way can't go through (out of free swipes). Asked as the swipe
-    /// commits. The card then springs back and reports `onRefused` instead of committing.
+    /// commits. The card then flies out, comes back from the same side, and reports `onRefused`
+    /// once it's in place. Nothing is released or swiped.
     let canCommit: (SwipeDirection) -> Bool
     let onRefused: (SwipeDirection) -> Void
     @ViewBuilder let content: Content
@@ -30,7 +32,13 @@ struct SwipeableCard<Content: View>: View {
 
     @State private var offset: CGSize
     @State private var armed: SwipeDirection?
+    /// Flying out, or rewinding after a refused swipe. Drags and requests are ignored meanwhile.
     @State private var isFlying = false
+    /// Where a drag that began mid-flight started. That drag is ignored to the end, so it can't
+    /// jump the card once the rewind is over. Keyed by start point, since a cancelled drag never ends.
+    @State private var staleDragStart: CGPoint?
+    /// Reduce Motion's stand-in for the rewind: the card fades out and back in place.
+    @State private var opacity = 1.0
     /// Bumped per fly-out so a cancelled flight's completion is ignored.
     @State private var flight = 0
     @State private var isDragging = false
@@ -71,6 +79,7 @@ struct SwipeableCard<Content: View>: View {
             }
             .rotationEffect(.degrees(rotation), anchor: .center)
             .offset(offset)
+            .opacity(opacity)
             .gesture(drag, including: isEnabled ? .all : .subviews)
             .onAppear {
                 guard offset != .zero else { return }
@@ -81,7 +90,10 @@ struct SwipeableCard<Content: View>: View {
                 flight += 1
                 isFlying = false
                 armed = nil
-                withAnimation(DS.Motion.calm) { offset = .zero }
+                withAnimation(DS.Motion.calm) {
+                    offset = .zero
+                    opacity = 1
+                }
             }
             .onChange(of: request) { _, direction in
                 guard let direction else { return }
@@ -111,15 +123,11 @@ struct SwipeableCard<Content: View>: View {
     private var drag: some Gesture {
         DragGesture(minimumDistance: 8)
             .onChanged { value in
-                guard !isFlying else { return }
                 isDragging = true
                 lastTouch = .now
-                guard SwipeDirection.allCases.allSatisfy(canCommit) else {
-                    // Gives a little, then stops short of committing.
-                    offset = SwipeThresholds.resisted(value.translation)
-                    progress = Self.progress(for: offset)
-                    return
-                }
+                if isFlying { staleDragStart = value.startLocation }
+                guard value.startLocation != staleDragStart else { return }
+                // Follows the finger even when out of swipes; refusal waits for the release.
                 offset = value.translation
                 progress = Self.progress(for: value.translation)
                 let direction = SwipeThresholds.armed(value.translation)
@@ -131,6 +139,10 @@ struct SwipeableCard<Content: View>: View {
             .onEnded { value in
                 isDragging = false
                 lastTouch = .now
+                guard value.startLocation != staleDragStart else {
+                    staleDragStart = nil
+                    return
+                }
                 guard !isFlying else { return }
                 if let direction = SwipeThresholds.commit(value.translation, predicted: value.predictedEndTranslation) {
                     attempt(direction)
@@ -144,35 +156,63 @@ struct SwipeableCard<Content: View>: View {
             }
     }
 
-    /// Flies off, or refuses when the swipe can't go through.
+    /// Flies off, or rewinds when the swipe can't go through.
     private func attempt(_ direction: SwipeDirection) {
         guard isEnabled, !isFlying else { return }
         guard canCommit(direction) else {
-            refuse(direction)
+            rewind(direction)
             return
         }
         fly(direction)
     }
 
-    /// Springs back from wherever the drag left it, or leans toward `direction` first when the
-    /// swipe came from a button, so the refusal reads either way.
-    private func refuse(_ direction: SwipeDirection) {
+    /// A refused swipe: flies out like a real one, then comes back from the same side, with the
+    /// refused haptic as it turns. `onRefused` waits until the card is back, so the rewind is
+    /// seen before the wall's sheet covers it. Never releases or swipes, so nothing is decided.
+    private func rewind(_ direction: SwipeDirection) {
+        isFlying = true
+        flight += 1
+        let current = flight
         armed = nil
-        Haptics.refused()
-        if offset == .zero, !reduceMotion {
-            let lean = SwipeThresholds.resisted(SwipeThresholds.offscreen(direction, from: .zero))
-            withAnimation(.easeOut(duration: 0.12)) {
-                offset = CGSize(width: lean.width * 0.5, height: lean.height * 0.5)
-            } completion: {
-                withAnimation(DS.Motion.snapBack) { offset = .zero }
-            }
-        } else {
-            withAnimation(DS.Motion.snapBack) {
+        // The card behind settles back at once: it isn't coming up.
+        withAnimation(DS.Motion.calm) { progress = 0 }
+        guard !reduceMotion else {
+            fadeBack(direction, flight: current)
+            return
+        }
+        withAnimation(DS.Motion.flyOut) {
+            offset = SwipeThresholds.offscreen(direction, from: offset)
+        } completion: {
+            guard flight == current else { return }
+            Haptics.refused()
+            withAnimation(DS.Motion.calm, completionCriteria: .logicallyComplete) {
                 offset = .zero
-                progress = 0
+            } completion: {
+                guard flight == current else { return }
+                isFlying = false
+                onRefused(direction)
             }
         }
-        onRefused(direction)
+    }
+
+    /// Reduce Motion's rewind: a quick fade out and back in place, with no travel.
+    private func fadeBack(_ direction: SwipeDirection, flight current: Int) {
+        withAnimation(.easeIn(duration: 0.12)) {
+            opacity = 0
+        } completion: {
+            guard flight == current else { return }
+            var still = Transaction()
+            still.disablesAnimations = true
+            withTransaction(still) { offset = .zero }
+            Haptics.refused()
+            withAnimation(.easeOut(duration: 0.2)) {
+                opacity = 1
+            } completion: {
+                guard flight == current else { return }
+                isFlying = false
+                onRefused(direction)
+            }
+        }
     }
 
     private func fly(_ direction: SwipeDirection) {
@@ -250,16 +290,6 @@ enum SwipeThresholds {
             return .up
         }
         return nil
-    }
-
-    /// How far a card goes when it can't commit: rubber-banded so it never reaches a threshold.
-    static func resisted(_ t: CGSize) -> CGSize {
-        let limit: CGFloat = 60
-        func band(_ x: CGFloat) -> CGFloat {
-            let sign: CGFloat = x < 0 ? -1 : 1
-            return sign * limit * (1 - 1 / (abs(x) / (limit * 2) + 1))
-        }
-        return CGSize(width: band(t.width), height: band(t.height))
     }
 
     /// Where a swiped card flies to, starting from its current drag `offset`.

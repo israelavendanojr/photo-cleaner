@@ -24,7 +24,8 @@ struct SwipeDeck: View {
     var showsHint = false
     /// Deals the cards in from above when the deck first appears (straight after onboarding).
     var dealsIn = false
-    /// False when the top card can't be swiped that way; it then springs back and calls `onRefused`.
+    /// False when the top card can't be swiped that way. Asked as a swipe commits. The card then
+    /// flies out and rewinds into place, nothing is decided, and `onRefused` is called once it's back.
     var canSwipe: (SwipeDirection) -> Bool = { _ in true }
     var onRefused: (SwipeDirection) -> Void = { _ in }
     /// Shown in place of the top card while the deck waits on more, e.g. "Finding more…".
