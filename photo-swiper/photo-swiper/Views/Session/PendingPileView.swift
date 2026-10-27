@@ -115,6 +115,10 @@ struct PendingPileView: View {
                         .foregroundStyle(DS.Palette.ink)
                 }
             }
+            if let limit = vm.pileLimit {
+                PileLimit(count: count, limit: limit)
+                    .padding(.top, DS.Spacing.m)
+            }
         }
         .padding(.top, showsDone ? DS.Spacing.xl : DS.Spacing.xs)
     }
@@ -207,6 +211,36 @@ struct PendingPileView: View {
             // Only now, so a review prompt never covers the confirmation.
             vm.releaseReviewPrompt()
         }
+    }
+}
+
+/// A free user's pile fills up: "12/50 photos" on a thin line, and what to do once it's full.
+private struct PileLimit: View {
+    let count: Int
+    let limit: Int
+
+    private var isFull: Bool { count >= limit }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: DS.Spacing.xs) {
+            HStack(spacing: DS.Spacing.s) {
+                Text("\(count)/\(limit) photos")
+                    .font(.footnote.weight(.semibold))
+                    .monospacedDigit()
+                    .foregroundStyle(isFull ? DS.Palette.brick : DS.Palette.ink)
+                    .contentTransition(.numericText(value: Double(count)))
+                ProgressLine(value: Double(count) / Double(limit), tint: DS.Palette.brick, height: 4)
+            }
+            if isFull {
+                Text("Your pile is full. Delete these to keep clearing, or unlock for no limit.")
+                    .font(.footnote)
+                    .foregroundStyle(DS.Palette.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(count) of \(limit) photos in the free pile\(isFull ? ". Full." : "")")
+        .accessibilityIdentifier("pile.limit")
     }
 }
 

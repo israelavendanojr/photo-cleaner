@@ -15,7 +15,7 @@ struct FeedTopBar: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             status
             Button(action: onOpenPile) {
-                ToClearCounter(bytes: vm.pendingBytes, addedBytes: vm.deleteChip?.bytes, addedID: vm.deleteChip?.id)
+                counter
                     .animation(DS.Motion.calm, value: vm.deleteChip)
                     .contentShape(Rectangle())
             }
@@ -24,6 +24,20 @@ struct FeedTopBar: View {
             .accessibilityHint("Shows what's waiting to be cleared")
             .frame(maxWidth: .infinity, alignment: .trailing)
         }
+    }
+
+    /// Free users see how full the pile is, e.g. "12/50 photos", instead of "to clear".
+    private var counter: some View {
+        let count = vm.pendingItems.count
+        let limit = vm.pileLimit
+        return ToClearCounter(
+            bytes: vm.pendingBytes,
+            label: limit.map { "\(count)/\($0) photos" } ?? "to clear",
+            accessibilityText: limit.map { "to clear, \(count) of \($0) photos" },
+            isLabelEmphasized: vm.isPileFull,
+            addedBytes: vm.deleteChip?.bytes,
+            addedID: vm.deleteChip?.id
+        )
     }
 
     private var undoButton: some View {
