@@ -2,7 +2,8 @@ import Foundation
 
 /// Saved progress: per-item decisions, the current deck, and preferences.
 ///
-/// `SwiftDataProgressStore` keeps it on disk; `InMemoryProgressStore` backs mocks, previews, and tests.
+/// `SwiftDataProgressStore` keeps it on disk; `InMemoryProgressStore` backs mocks, previews, and tests,
+/// and is the release fallback when the on-disk store can't be opened.
 /// Every mutating call is durable when it returns, so force-quitting never loses work.
 @MainActor
 protocol ProgressStoring: AnyObject {

@@ -5,11 +5,6 @@ import SwiftUI
 struct SwipeWallView: View {
     @Environment(FeedViewModel.self) private var vm
 
-    private var status: FeedViewModel.PaywallStatus { vm.paywallStatus }
-    private var isPurchasing: Bool { status == .purchasing }
-    private var isRestoring: Bool { status == .restoring }
-    private var isBusy: Bool { isPurchasing || isRestoring }
-
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
@@ -24,11 +19,7 @@ struct SwipeWallView: View {
                         .foregroundStyle(DS.Palette.secondary)
                         .padding(.top, DS.Spacing.m)
                 }
-                oneTime
-                    .padding(.top, DS.Spacing.l)
-                bullets
-                    .padding(.top, DS.Spacing.m)
-                actions
+                UnlockOffer { vm.dismissWall() }
                     .padding(.top, DS.Spacing.l)
                 if vm.canRemind {
                     reminder
@@ -41,7 +32,7 @@ struct SwipeWallView: View {
         }
         .scrollBounceBehavior(.basedOnSize)
         .background(DS.Palette.paper)
-        .interactiveDismissDisabled(isBusy)
+        .interactiveDismissDisabled(vm.isPurchaseBusy)
     }
 
     // MARK: Sections
@@ -95,92 +86,9 @@ struct SwipeWallView: View {
             .foregroundStyle(DS.Palette.ink)
     }
 
-    private var oneTime: some View {
-        VStack(alignment: .leading, spacing: DS.Spacing.xxs) {
-            Text("One-time purchase.")
-                .dsSerif(22, relativeTo: .title3)
-            Text("No subscription, no trial, no renewals.")
-                .font(.footnote)
-        }
-        .foregroundStyle(DS.Palette.brick)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, DS.Spacing.l)
-        .padding(.vertical, DS.Spacing.m)
-        .background(DS.Palette.brickTint, in: RoundedRectangle(cornerRadius: DS.Radius.inner, style: .continuous))
-        .accessibilityElement(children: .combine)
-    }
-
-    private var bullets: some View {
-        VStack(alignment: .leading, spacing: DS.Spacing.s) {
-            ForEach(["Unlimited swipes",
-                     "Similar-shot picks and screenshot batches",
-                     "Future updates included"], id: \.self) { line in
-                HStack(alignment: .firstTextBaseline, spacing: DS.Spacing.s) {
-                    Circle()
-                        .fill(DS.Palette.brick)
-                        .frame(width: 6, height: 6)
-                        // Centers the dot on the first line's x-height.
-                        .alignmentGuide(.firstTextBaseline) { $0[.bottom] + 1 }
-                        .accessibilityHidden(true)
-                    Text(line)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-        }
-        .font(.callout)
-        .foregroundStyle(DS.Palette.ink)
-    }
-
-    private var actions: some View {
-        VStack(spacing: DS.Spacing.m) {
-            Button(action: unlock) {
-                ZStack {
-                    Text("Unlock for \(vm.displayPrice)")
-                        .opacity(isPurchasing ? 0 : 1)
-                    if isPurchasing {
-                        ProgressView()
-                            .tint(.white)
-                            .transition(.opacity)
-                    }
-                }
-                .animation(DS.Motion.calm, value: isPurchasing)
-            }
-            .buttonStyle(.pill(.brick))
-            .allowsHitTesting(!isBusy)
-            .accessibilityLabel("Unlock for \(vm.displayPrice), one-time purchase")
-            .accessibilityValue(isPurchasing ? "Purchasing" : "")
-            .accessibilityIdentifier("paywall.unlock")
-
-            ViewThatFits(in: .horizontal) {
-                HStack {
-                    notNow
-                    Spacer(minLength: DS.Spacing.m)
-                    restore
-                }
-                VStack(spacing: DS.Spacing.s) {
-                    notNow
-                    restore
-                }
-            }
-            .font(.callout)
-            .padding(.horizontal, DS.Spacing.xxs)
-
-            if let message {
-                Text(message)
-                    .font(.footnote)
-                    .foregroundStyle(DS.Palette.secondary)
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: .infinity)
-                    .transition(.opacity)
-                    .accessibilityIdentifier("paywall.message")
-            }
-        }
-        .animation(DS.Motion.calm, value: status)
-    }
-
     @ViewBuilder
     private var reminder: some View {
-        if vm.isRemindersOptedIn {
+        if vm.isRemindersOptedIn, !vm.areRemindersDenied {
             Label("We'll let you know when swipes are back", systemImage: "bell")
                 .font(.footnote)
                 .foregroundStyle(DS.Palette.secondary)
@@ -199,55 +107,6 @@ struct SwipeWallView: View {
             }
             .buttonStyle(.pill(.ghost))
             .accessibilityIdentifier("wall.remind")
-        }
-    }
-
-    private var notNow: some View {
-        Button("Not now") {
-            vm.dismissWall()
-        }
-        .foregroundStyle(DS.Palette.ink)
-        .disabled(isBusy)
-        .frame(minHeight: 44)
-        .accessibilityIdentifier("paywall.notNow")
-    }
-
-    private var restore: some View {
-        Button(action: restorePurchase) {
-            HStack(spacing: DS.Spacing.xs) {
-                if isRestoring {
-                    ProgressView()
-                        .controlSize(.small)
-                        .tint(DS.Palette.secondary)
-                }
-                Text(isRestoring ? "Restoring…" : "Restore purchase")
-            }
-        }
-        .foregroundStyle(DS.Palette.secondary)
-        .disabled(isBusy)
-        .frame(minHeight: 44)
-        .accessibilityIdentifier("paywall.restore")
-    }
-
-    // MARK: Helpers
-
-    private var message: String? {
-        switch status {
-        case .purchaseFailed: "The purchase didn't go through. You weren't charged."
-        case .restoreFailed: "We couldn't find an earlier purchase to restore."
-        default: nil
-        }
-    }
-
-    private func unlock() {
-        Task {
-            if await vm.unlockFromWall() { Haptics.unlocked() }
-        }
-    }
-
-    private func restorePurchase() {
-        Task {
-            if await vm.restoreFromWall() { Haptics.unlocked() }
         }
     }
 }
@@ -269,7 +128,7 @@ struct SwipeWallView: View {
 
 #Preview("Restore failed") {
     let vm = FeedViewModel.mock(startingAt: .outOfSwipes)
-    vm.previewWall(status: .restoreFailed)
+    vm.previewWall(status: .nothingToRestore)
     return SwipeWallView().environment(vm)
 }
 #endif

@@ -1,3 +1,4 @@
+import StoreKit
 import SwiftUI
 
 /// Switches between onboarding, the tabs (feed and library), and the access states.
@@ -8,6 +9,7 @@ struct RootView: View {
     /// The feed is about to replace onboarding, so its first deck deals in.
     @State private var dealsInDeck = false
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.requestReview) private var requestReview
     private let router = NotificationRouter.shared
 
     var body: some View {
@@ -48,6 +50,16 @@ struct RootView: View {
                 .presentationDragIndicator(.visible)
                 .presentationBackground(DS.Palette.paper)
                 .presentationCornerRadius(DS.Radius.card)
+        }
+        .task(id: vm.isReviewPromptDue) {
+            guard vm.isReviewPromptDue else { return }
+            // Let the pile finish closing first.
+            try? await Task.sleep(for: .seconds(0.6))
+            guard !Task.isCancelled, vm.isReviewPromptDue else { return }
+            // Never over the wall or right after a purchase.
+            let asks = !vm.isWallPresented && !vm.purchasedThisLaunch
+            if asks { requestReview() }
+            vm.finishReviewPrompt(asked: asks)
         }
         .task {
             await vm.start()

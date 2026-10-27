@@ -2,6 +2,9 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<!-- No encryption beyond what iOS provides (HTTPS), so no export compliance questions per build. -->
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<!-- Merged with the generated Info.plist. Build settings can't express this nested key. -->
 	<key>UILaunchScreen</key>
 	<dict>

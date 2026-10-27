@@ -4,7 +4,8 @@ import os
 
 // TODO(storekit): Replace this whole type with a StoreKit 2 store: load the product for
 // `displayPrice`, `Product.purchase()` in `unlock()`, `AppStore.sync()` plus
-// `Transaction.currentEntitlements` in `restore()`, and listen to `Transaction.updates`.
+// `Transaction.currentEntitlements` in `restore()` (a thrown sync is `.failed`, no entitlement is
+// `.nothingToRestore`), and listen to `Transaction.updates`.
 // Then pick it in `EntitlementServices.make(mock:)`.
 
 /// Stand-in purchases. Debug builds unlock after a short pause, so the loading states can be
@@ -22,7 +23,7 @@ final class DebugEntitlementStore: EntitlementStore {
 
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private let delay: Duration
-    /// Lets the restore failure message be seen in debug builds.
+    /// Lets "Nothing to restore" be seen in debug builds.
     @ObservationIgnored private let restoreSucceeds: Bool
 
     init(defaults: UserDefaults = .standard, delay: Duration = .seconds(1.2), restoreSucceeds: Bool = true) {
@@ -47,22 +48,27 @@ final class DebugEntitlementStore: EntitlementStore {
         #endif
     }
 
-    func restore() async -> Bool {
+    func restore() async -> RestoreOutcome {
         try? await Task.sleep(for: delay)
         #if DEBUG
-        guard restoreSucceeds else { return false }
+        guard restoreSucceeds else { return .nothingToRestore }
         grant()
-        return true
+        return .restored
         #else
         Self.log.error("Restore requested, but purchases aren't wired up yet. Nothing restored.")
-        return false
+        return .failed
         #endif
     }
 
     #if DEBUG
+    /// Settings' debug toggle.
+    func setUnlocked(_ unlocked: Bool) {
+        isUnlocked = unlocked
+        defaults.set(unlocked, forKey: DefaultsKey.debugUnlocked)
+    }
+
     private func grant() {
-        isUnlocked = true
-        defaults.set(true, forKey: DefaultsKey.debugUnlocked)
+        setUnlocked(true)
     }
     #endif
 }

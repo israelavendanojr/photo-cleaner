@@ -12,6 +12,16 @@ protocol EntitlementStore: AnyObject, Observable {
     var displayPrice: String { get }
     /// Runs the purchase. True once unlocked; false if cancelled or failed.
     func unlock() async -> Bool
-    /// Looks for an earlier purchase. True if one was found and the app is now unlocked.
-    func restore() async -> Bool
+    /// Looks for an earlier purchase.
+    func restore() async -> RestoreOutcome
+}
+
+/// What a restore found.
+enum RestoreOutcome: Equatable, Sendable {
+    /// An earlier purchase was found; the app is now unlocked.
+    case restored
+    /// The App Store answered, and this Apple Account never bought the unlock.
+    case nothingToRestore
+    /// The App Store couldn't be asked, e.g. offline.
+    case failed
 }

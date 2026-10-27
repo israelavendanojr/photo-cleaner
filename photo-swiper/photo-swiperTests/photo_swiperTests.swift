@@ -50,7 +50,8 @@ final class TestEntitlements: EntitlementStore {
     var isUnlocked: Bool
     let displayPrice = "$12.99"
     var unlockResult = true
-    var restoreResult = true
+    var restoreResult = RestoreOutcome.restored
+    private(set) var restoreCount = 0
     private(set) var unlockCount = 0
 
     init(isUnlocked: Bool = true) {
@@ -63,8 +64,9 @@ final class TestEntitlements: EntitlementStore {
         return unlockResult
     }
 
-    func restore() async -> Bool {
-        if restoreResult { isUnlocked = true }
+    func restore() async -> RestoreOutcome {
+        restoreCount += 1
+        if restoreResult == .restored { isUnlocked = true }
         return restoreResult
     }
 }
@@ -73,6 +75,8 @@ final class TestEntitlements: EntitlementStore {
 @MainActor
 final class FakeNotificationCenter: NotificationScheduling {
     var grants = true
+    /// Notifications turned off in the Settings app.
+    var denied = false
     private(set) var authorizationRequests = 0
     /// What's scheduled and not yet cancelled, by identifier.
     private(set) var pending: [String: RefillReminder] = [:]
@@ -81,6 +85,10 @@ final class FakeNotificationCenter: NotificationScheduling {
     func requestAuthorization() async -> Bool {
         authorizationRequests += 1
         return grants
+    }
+
+    func isDenied() async -> Bool {
+        denied
     }
 
     func add(_ reminder: RefillReminder) async {
