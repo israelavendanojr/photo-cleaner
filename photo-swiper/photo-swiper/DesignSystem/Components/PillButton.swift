@@ -51,10 +51,10 @@ extension ButtonStyle where Self == PillButtonStyle {
 #Preview {
     VStack(spacing: 12) {
         Button("Delete 37 Photos") {}.buttonStyle(.pill(.brick))
-        Button("Start another session") {}.buttonStyle(.pill(.ink))
+        Button("Check again") {}.buttonStyle(.pill(.ink))
         HStack(spacing: 12) {
-            Button("Keep going") {}.buttonStyle(.pill(.outline))
-            Button("Done for now") {}.buttonStyle(.pill(.ghost))
+            Button("Keep 3") {}.buttonStyle(.pill(.outline))
+            Button("Not now") {}.buttonStyle(.pill(.ghost))
         }
         Button("Disabled") {}.buttonStyle(.pill(.brick)).disabled(true)
     }

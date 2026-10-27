@@ -1,13 +1,13 @@
 import SwiftUI
 
-/// The main feed's deck, wired to the session: swipes decide cards, and a batch card opens
-/// its one-by-one review on top.
+/// The main feed's deck, wired to the view model: swipes decide cards, and a batch or
+/// similar-shots card opens its one-by-one review on top.
 struct CardStackView: View {
     @Environment(FeedViewModel.self) private var vm
     @State private var request: SwipeDirection?
-    /// The batch being gone through one by one, and its outcome once finished.
-    @State private var reviewingBatch: ItemBatch?
-    @State private var batchOutcome: [LibraryItem.ID: Decision]?
+    /// The card being gone through one by one, and its outcome once finished.
+    @State private var reviewing: ReviewSet?
+    @State private var reviewOutcome: [LibraryItem.ID: Decision]?
     @AppStorage(DefaultsKey.hasSeenSwipeHint) private var hasSeenSwipeHint = false
     @Environment(\.dealsInFirstDeck) private var dealsIn
 
@@ -19,28 +19,43 @@ struct CardStackView: View {
             label: vm.swipeLabel,
             onDecide: decide,
             request: $request,
-            onOpenBatch: { reviewingBatch = $0 },
+            onOpenReview: { reviewing = $0 },
             showsHint: !hasSeenSwipeHint,
-            dealsIn: dealsIn
+            dealsIn: dealsIn,
+            canSwipe: vm.canSwipe,
+            onRefused: refused,
+            waitingText: vm.isFindingMore ? "Finding more…" : nil
         )
-        .fullScreenCover(item: $reviewingBatch, onDismiss: flyOutReviewedBatch) { batch in
-            BatchReviewView(batch: batch, draft: vm.draft(for: batch)) { outcome in
-                batchOutcome = outcome
-                reviewingBatch = nil
+        #if DEBUG
+        .overlay(alignment: .top) { CurrentCardMarker() }
+        #endif
+        .fullScreenCover(item: $reviewing, onDismiss: flyOutReviewedCard) { set in
+            ItemReviewView(set: set, draft: vm.draft(for: set.id)) { outcome in
+                reviewOutcome = outcome
+                reviewing = nil
             }
         }
     }
 
-    /// Once the review cover is gone, the batch card leaves like a normal swipe.
-    private func flyOutReviewedBatch() {
-        guard let outcome = batchOutcome else { return }
+    /// Once the review cover is gone, the card leaves like a normal swipe.
+    private func flyOutReviewedCard() {
+        guard let outcome = reviewOutcome else { return }
         request = outcome.values.contains(.delete) ? .left : .right
+    }
+
+    /// Out of swipes. A finished one-by-one review waits as a draft for the next swipe.
+    private func refused() {
+        if let outcome = reviewOutcome, let card = vm.currentCard {
+            vm.saveDraft(outcome, for: card.id)
+        }
+        reviewOutcome = nil
+        vm.presentWall()
     }
 
     private func decide(_ direction: SwipeDirection, card: FeedCard) {
         hasSeenSwipeHint = true
-        if let outcome = batchOutcome {
-            batchOutcome = nil
+        if let outcome = reviewOutcome {
+            reviewOutcome = nil
             vm.decideIndividually(outcome)
             return
         }
@@ -52,6 +67,22 @@ struct CardStackView: View {
 }
 
 #if DEBUG
+/// Names the top card for UI tests, which can't see a position now that the deck has no end.
+/// Only with the mock library.
+private struct CurrentCardMarker: View {
+    @Environment(FeedViewModel.self) private var vm
+
+    var body: some View {
+        if LibraryServices.usesMock {
+            Color.clear
+                .frame(width: 1, height: 1)
+                .accessibilityElement()
+                .accessibilityLabel(vm.currentCard?.id ?? "none")
+                .accessibilityIdentifier("feed.currentCard")
+        }
+    }
+}
+
 #Preview {
     CardStackView()
         .environment(FeedViewModel.mock())

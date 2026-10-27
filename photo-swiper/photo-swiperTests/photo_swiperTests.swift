@@ -69,6 +69,50 @@ final class TestEntitlements: EntitlementStore {
     }
 }
 
+/// A notification center that records instead of scheduling. Grants permission unless told not to.
+@MainActor
+final class FakeNotificationCenter: NotificationScheduling {
+    var grants = true
+    private(set) var authorizationRequests = 0
+    /// What's scheduled and not yet cancelled, by identifier.
+    private(set) var pending: [String: RefillReminder] = [:]
+    private(set) var added: [RefillReminder] = []
+
+    func requestAuthorization() async -> Bool {
+        authorizationRequests += 1
+        return grants
+    }
+
+    func add(_ reminder: RefillReminder) async {
+        added.append(reminder)
+        pending[reminder.id] = reminder
+    }
+
+    func removePending(_ ids: [String]) {
+        for id in ids { pending[id] = nil }
+    }
+}
+
+/// A clock tests move by hand.
+final class TestClock: @unchecked Sendable {
+    var now: Date
+
+    init(_ now: Date = Date(timeIntervalSince1970: 1_800_000_000)) {
+        self.now = now
+    }
+
+    func advance(hours: Double) {
+        now = now.addingTimeInterval(hours * 3600)
+    }
+}
+
+/// A fresh, empty defaults suite per test.
+func freshDefaults(_ name: String = UUID().uuidString) -> UserDefaults {
+    let defaults = UserDefaults(suiteName: name)!
+    defaults.removePersistentDomain(forName: name)
+    return defaults
+}
+
 @MainActor
 struct FeedViewModelLibraryTests {
     private let library = FakeLibrary()
@@ -98,10 +142,9 @@ struct FeedViewModelLibraryTests {
         let vm = await started()
         for _ in 0..<3 { vm.decide(.left) }
 
-        #expect(await vm.confirmDelete() == false)
+        #expect(await vm.deleteNow(vm.pendingItems) == nil)
         #expect(vm.pendingItems.count == 3)
         #expect(vm.freedBytes == 0)
-        #expect(vm.celebration == nil)
         #expect(vm.deleteNotice == nil)
     }
 
@@ -113,9 +156,8 @@ struct FeedViewModelLibraryTests {
             DeletionOutcome(deleted: [items[0].id], missing: [items[1].id], undeletable: [items[2].id])
         }
 
-        #expect(await vm.confirmDelete())
+        #expect(await vm.deleteNow(pending) == pending[0].bytes)
         #expect(vm.freedBytes == pending[0].bytes)
-        #expect(vm.celebration?.count == 1)
         #expect(vm.pendingItems.isEmpty)
         #expect(vm.deleteNotice != nil)
     }
@@ -125,12 +167,12 @@ struct FeedViewModelLibraryTests {
         let vm = await started()
         vm.decide(.left)
 
-        #expect(await vm.confirmDelete() == false)
+        #expect(await vm.deleteNow(vm.pendingItems) == nil)
         #expect(vm.pendingItems.count == 1)
         #expect(vm.deleteNotice != nil)
     }
 
-    @Test func deletingNowClearsOnlyThoseAndKeepsTheSessionGoing() async throws {
+    @Test func deletingNowClearsOnlyThoseAndKeepsTheDeckGoing() async throws {
         let vm = await started()
         for _ in 0..<3 { vm.decide(.left) }
         let deleted = try #require(vm.pendingItems.first)
@@ -140,19 +182,19 @@ struct FeedViewModelLibraryTests {
             return DeletionOutcome(deleted: items.map(\.id))
         }
 
-        #expect(await vm.deleteNow([deleted]))
+        #expect(await vm.deleteNow([deleted]) == deleted.bytes)
         #expect(asked == [deleted.id], "Only the chosen photos are deleted")
         #expect(vm.pendingItems.count == 2)
         #expect(!vm.pendingItems.contains { $0.id == deleted.id })
         #expect(vm.freedBytes == deleted.bytes)
         #expect(vm.phase == .feed)
-        #expect(vm.celebration == nil)
+        #expect(vm.index == 3)
         #expect(vm.canUndo == false, "A deleted photo can't be swiped back")
 
         let rest = vm.pendingItems
-        #expect(await vm.confirmDelete())
+        #expect(await vm.deleteNow(rest) == rest.reduce(0) { $0 + $1.bytes })
         #expect(asked == rest.map(\.id))
-        #expect(vm.celebration?.count == 2)
+        #expect(vm.pendingItems.isEmpty)
     }
 
     @Test func keepingTakesItemsOutOfThePileEvenAcrossUndo() async throws {
@@ -178,7 +220,7 @@ struct FeedViewModelLibraryTests {
         let vm = await started()
         vm.decide(.left)
 
-        #expect(await vm.deleteNow(vm.pendingItems) == false)
+        #expect(await vm.deleteNow(vm.pendingItems) == nil)
         #expect(vm.pendingItems.count == 1)
         #expect(vm.freedBytes == 0)
     }
@@ -261,12 +303,12 @@ struct BatchReviewTests {
         let batch = try batchCard(vm)
         let kept = batch.items[0], deleted = batch.items[1]
 
-        vm.saveDraft([kept.id: .keep, deleted.id: .delete], for: batch)
+        vm.saveDraft([kept.id: .keep, deleted.id: .delete], for: batch.id)
         vm.decide(.left)
 
         #expect(Set(vm.pendingItems.map(\.id)) == Set(batch.items.dropFirst().map(\.id)))
         #expect(vm.decisions[kept.id] == .keep)
-        #expect(vm.draft(for: batch).isEmpty)
+        #expect(vm.draft(for: batch.id).isEmpty)
     }
 
     @Test func swipingRightAfterAPartialReviewStillClearsDraftedDeletes() throws {
@@ -274,7 +316,7 @@ struct BatchReviewTests {
         let batch = try batchCard(vm)
         let deleted = batch.items[0]
 
-        vm.saveDraft([deleted.id: .delete], for: batch)
+        vm.saveDraft([deleted.id: .delete], for: batch.id)
         #expect(vm.bytesToClear(for: .batch(batch)) == batch.items.reduce(0) { $0 + $1.bytes })
         vm.decide(.right)
 
@@ -287,11 +329,11 @@ struct BatchReviewTests {
         let batch = try batchCard(vm)
         let draft = [batch.items[0].id: Decision.delete]
 
-        vm.saveDraft(draft, for: batch)
+        vm.saveDraft(draft, for: batch.id)
         vm.decide(.up)
         vm.undo()
 
-        #expect(vm.draft(for: batch) == draft)
+        #expect(vm.draft(for: batch.id) == draft)
         #expect(vm.decisions.isEmpty)
     }
 
@@ -299,10 +341,10 @@ struct BatchReviewTests {
         let vm = FeedViewModel.mock(startingAt: .batch)
         let batch = try batchCard(vm)
 
-        vm.saveDraft([batch.items[0].id: .delete], for: batch)
+        vm.saveDraft([batch.items[0].id: .delete], for: batch.id)
         vm.decideIndividually(Dictionary(uniqueKeysWithValues: batch.items.map { ($0.id, Decision.keep) }))
 
-        #expect(vm.draft(for: batch).isEmpty)
+        #expect(vm.draft(for: batch.id).isEmpty)
         #expect(vm.pendingItems.isEmpty)
     }
 
@@ -314,6 +356,181 @@ struct BatchReviewTests {
 
         #expect(vm.index == 0)
         #expect(vm.decisions.isEmpty)
+    }
+}
+
+@MainActor
+struct SimilarReviewTests {
+    private func similarCard(_ vm: FeedViewModel) throws -> SimilarGroup {
+        guard case .similar(let group) = try #require(vm.currentCard) else {
+            Issue.record("Expected a similar card on top")
+            throw CancellationError()
+        }
+        try #require(group.others.count >= 2)
+        return group
+    }
+
+    private func lockedMock(swipes: Int) -> FeedViewModel {
+        FeedViewModel.mock(
+            startingAt: .similar,
+            entitlements: TestEntitlements(isUnlocked: false),
+            allowance: SwipeAllowance(balance: swipes, tunables: .standard, now: .now)
+        )
+    }
+
+    @Test func theReviewSetPutsTheBestPickFirstAndStartsOnTheTappedShot() throws {
+        let vm = FeedViewModel.mock(startingAt: .similar)
+        let group = try similarCard(vm)
+        let tapped = group.others[1]
+
+        let set = ReviewSet(group: group, startingAt: tapped.id)
+
+        #expect(set.id == FeedCard.similar(group).id)
+        #expect(set.title == "Similar shots")
+        #expect(set.items.map(\.id) == [group.bestID] + group.others.map(\.id))
+        #expect(set.items[set.start].id == tapped.id)
+        #expect(set.bestID == group.bestID)
+        #expect(set.reason == group.reason)
+        #expect(set.visitOrder(draft: [:]).first?.id == tapped.id, "The deck opens on the tapped shot")
+        #expect(set.visitOrder(draft: [:]).count == group.items.count)
+    }
+
+    @Test func reopeningResumesAfterTheDraftedShots() throws {
+        let vm = FeedViewModel.mock(startingAt: .similar)
+        let group = try similarCard(vm)
+        let set = ReviewSet(group: group, startingAt: group.bestID)
+        let draft = [group.bestID: Decision.keep]
+
+        let order = set.visitOrder(draft: draft)
+
+        #expect(order.first?.id == group.bestID, "Drafted shots come first so undo reaches them")
+        #expect(order.dropFirst().map(\.id) == group.others.map(\.id))
+    }
+
+    @Test func aDraftIsKeptByCardID() throws {
+        let vm = FeedViewModel.mock(startingAt: .similar)
+        let group = try similarCard(vm)
+        let draft = [group.bestID: Decision.keep]
+
+        vm.saveDraft(draft, for: FeedCard.similar(group).id)
+
+        #expect(vm.draft(for: group.id) == draft)
+    }
+
+    @Test func aBatchCardIDIsItsBatchID() throws {
+        let vm = FeedViewModel.mock(startingAt: .batch)
+        guard case .batch(let batch) = try #require(vm.currentCard) else { return }
+        // Drafts saved before similar reviews existed are keyed by batch ID.
+        #expect(FeedCard.batch(batch).id == batch.id)
+    }
+
+    @Test func decidingOneByOneAppliesTheReviewAndUnreachedShotsFollowTheirMarks() throws {
+        let vm = FeedViewModel.mock(startingAt: .similar)
+        let start = vm.index
+        let group = try similarCard(vm)
+        let deletedBest = group.best, keptOther = group.others[0], unreached = group.others[1]
+
+        vm.decideIndividually([deletedBest.id: .delete, keptOther.id: .keep])
+
+        #expect(vm.index == start + 1)
+        #expect(vm.decisions[deletedBest.id] == .delete, "Deleting the best pick is the user's call")
+        #expect(vm.decisions[keptOther.id] == .keep)
+        #expect(vm.decisions[unreached.id] == .delete, "Unreached shots are still marked by default")
+        #expect(vm.draft(for: group.id).isEmpty)
+    }
+
+    @Test func theCardFaceShowsTheDraft() throws {
+        let vm = FeedViewModel.mock(startingAt: .similar)
+        let group = try similarCard(vm)
+        let kept = group.others[0]
+
+        vm.saveDraft([group.bestID: .delete, kept.id: .keep], for: group.id)
+
+        let marked = vm.markedForClearing(in: group)
+        #expect(marked.contains(group.bestID))
+        #expect(!marked.contains(kept.id))
+        #expect(marked.contains(group.others[1].id), "Shots the review didn't reach keep their mark")
+        #expect(vm.swipeLabel(.left, for: .similar(group)) == "Clear \(group.items.count - 1)")
+    }
+
+    @Test func togglingAMarkUpdatesTheDraft() throws {
+        let vm = FeedViewModel.mock(startingAt: .similar)
+        let group = try similarCard(vm)
+        let shot = group.others[0], other = group.others[1]
+        vm.saveDraft([shot.id: .delete], for: group.id)
+
+        vm.toggleMark(shot.id, in: group)
+        #expect(vm.draft(for: group.id)[shot.id] == .keep)
+        #expect(!vm.markedForClearing(in: group).contains(shot.id))
+
+        vm.toggleMark(other.id, in: group)
+        #expect(vm.draft(for: group.id)[other.id] == .keep)
+        vm.toggleMark(other.id, in: group)
+        #expect(vm.draft(for: group.id)[other.id] == .delete)
+        #expect(vm.markedForClearing(in: group).contains(other.id))
+    }
+
+    @Test func togglingWithoutADraftLeavesNoDraft() throws {
+        let vm = FeedViewModel.mock(startingAt: .similar)
+        let group = try similarCard(vm)
+
+        vm.toggleMark(group.others[0].id, in: group)
+
+        #expect(vm.draft(for: group.id).isEmpty)
+    }
+
+    @Test func swipingLeftAfterClosingEarlyCommitsTheDraft() throws {
+        let vm = FeedViewModel.mock(startingAt: .similar)
+        let group = try similarCard(vm)
+        let kept = group.others[0]
+
+        vm.saveDraft([group.bestID: .keep, kept.id: .keep], for: group.id)
+        vm.decide(.left)
+
+        #expect(vm.decisions[group.bestID] == .keep)
+        #expect(vm.decisions[kept.id] == .keep)
+        #expect(Set(vm.pendingItems.map(\.id)) == Set(group.others.dropFirst().map(\.id)))
+    }
+
+    @Test func aFinishedReviewCostsOneSwipeAndDraftsCostNone() throws {
+        let vm = lockedMock(swipes: 5)
+        let group = try similarCard(vm)
+
+        vm.saveDraft([group.bestID: .keep], for: group.id)
+        vm.toggleMark(group.others[0].id, in: group)
+        #expect(vm.swipesLeft == 5)
+
+        vm.decideIndividually(Dictionary(uniqueKeysWithValues: group.items.map { ($0.id, Decision.keep) }))
+
+        #expect(vm.swipesLeft == 4)
+    }
+
+    @Test func outOfSwipesKeepsTheReviewAsADraftAndOpensTheWall() throws {
+        let vm = lockedMock(swipes: 0)
+        let start = vm.index
+        let group = try similarCard(vm)
+        let outcome = Dictionary(uniqueKeysWithValues: group.items.map { ($0.id, Decision.keep) })
+
+        vm.decideIndividually(outcome)
+
+        #expect(vm.index == start)
+        #expect(vm.draft(for: group.id) == outcome)
+        #expect(vm.isWallPresented)
+    }
+
+    @Test func undoBringsBackTheDraftAndMarks() throws {
+        let vm = FeedViewModel.mock(startingAt: .similar)
+        let group = try similarCard(vm)
+        let draft = [group.others[0].id: Decision.keep]
+        vm.saveDraft(draft, for: group.id)
+        let marked = vm.markedForClearing(in: group)
+
+        vm.decideIndividually(Dictionary(uniqueKeysWithValues: group.items.map { ($0.id, Decision.delete) }))
+        vm.undo()
+
+        #expect(vm.draft(for: group.id) == draft)
+        #expect(vm.markedForClearing(in: group) == marked)
+        #expect(vm.returningCard?.direction == .left)
     }
 }
 

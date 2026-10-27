@@ -1,11 +1,12 @@
 import Foundation
 
-/// A bounded run of cards the user works through before confirming.
+/// The deck: the cards the user swipes through, in order. It grows a page at a time.
 struct Session: Identifiable, Hashable, Sendable, Codable {
-    let number: Int
+    /// The newest page in the deck. Pages are numbered across decks; decisions record the page they were made on.
+    var number: Int
     /// Upcoming cards can be pruned when items vanish from the library.
     var cards: [FeedCard]
-    /// Library analysis still in progress when the session starts, 0...100. Nil once done.
+    /// Library analysis still in progress when the deck starts, 0...100. Nil once done.
     var scanPercentAtStart: Int?
 
     var id: Int { number }
@@ -16,7 +17,7 @@ struct Session: Identifiable, Hashable, Sendable, Codable {
     var photoCount: Int { cards.reduce(0) { $0 + $1.items.count } }
 }
 
-/// Library-wide numbers that live outside any one session.
+/// Library-wide numbers that live outside the deck.
 struct LibraryStats: Sendable {
     var totalItems: Int
     var reviewedItems: Int
@@ -26,7 +27,7 @@ struct LibraryStats: Sendable {
 /// User preferences that shape how feeds are built.
 struct FeedOptions: Sendable {
     var skipFavorites = true
-    /// Items a session must not offer, e.g. ones already decided.
+    /// Items a page must not offer, e.g. ones already decided or already in the deck.
     var excluding: Set<LibraryItem.ID> = []
     /// How long to wait on place names for captions. Zero skips the lookup.
     var placeBudget: Duration = .milliseconds(1500)

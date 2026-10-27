@@ -1,20 +1,29 @@
 import Foundation
 
 #if DEBUG
-/// Builds a 20-card session from the bundled mock images.
+/// Builds 20-card pages from the bundled mock images: three pages with fresh ids each, then
+/// nothing, so the endless deck and caught up can both be reached.
 ///
 /// Card positions mirror the reference demo: videos at 3 and 11, similar shots
 /// at 6 and 15, a screenshot batch at 8, single photos everywhere else. That's 43 photos,
-/// more than a real session's target, so the demo shows off every card kind. 
+/// more than a real page's target, so the demo shows off every card kind. 
 struct MockFeedBuilder: FeedBuilding {
     static let cardsPerSession = 20
+    /// Pages after this come back empty.
+    static let pageCount = 3
 
     func makeSession(number: Int, options: FeedOptions) async -> Session {
         makeSessionNow(number: number, options: options)
     }
 
+    /// A plausible mid-sized library.
+    func clutterEstimate(excluding: Set<LibraryItem.ID>, now: Date) async -> ClutterEstimate? {
+        ClutterEstimate(likelyClearCount: 1_240, likelyClearBytes: 8_400_000_000, screenshotCount: 312, similarGroupCount: 46)
+    }
+
     /// Synchronous variant for previews and launch-time setup.
     func makeSessionNow(number: Int, options: FeedOptions = FeedOptions()) -> Session {
+        guard number <= Self.pageCount else { return Session(number: number, cards: []) }
         var factory = Factory(session: number, options: options)
         let cards = (0..<Self.cardsPerSession).map { factory.card(at: $0) }
         return Session(number: number, cards: cards, scanPercentAtStart: number == 1 ? 38 : nil)

@@ -13,4 +13,10 @@ enum DefaultsKey {
     static let hasSeenSwipeHint = "hasSeenSwipeHint"
     /// Debug builds only: the stand-in unlock was bought. Release builds never read it.
     static let debugUnlocked = "debugUnlocked"
+    /// The free swipe allowance (`SwipeAllowance`), as JSON.
+    static let swipeAllowance = "swipeAllowance"
+    /// The user asked to be told when swipes are back. Settings can turn it off.
+    static let refillRemindersOptIn = "refillRemindersOptIn"
+    /// Fire dates of recently scheduled refill reminders, for the two-a-day cap.
+    static let refillReminderLog = "refillReminderLog"
 }

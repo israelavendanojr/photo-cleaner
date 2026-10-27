@@ -7,7 +7,8 @@
 
 import XCTest
 
-/// Drives the real swipe gesture and buttons against the mock session.
+/// Drives the real swipe gesture and buttons against the mock deck. The deck has no position to
+/// read, so tests follow the top card through the debug `feed.currentCard` marker instead.
 final class photo_swiperUITests: XCTestCase {
 
     override func setUpWithError() throws {
@@ -19,17 +20,17 @@ final class photo_swiperUITests: XCTestCase {
     @MainActor
     func testSwipeLeftAddsToPileAndUndoRestores() throws {
         let app = launch()
-        XCTAssertTrue(element(app, containing: "1 of 50").waitForExistence(timeout: 5))
+        let first = topCard(app)
         XCTAssertTrue(emptyPile(app).exists)
 
         drag(app, to: CGVector(dx: 0.02, dy: 0.5))
 
-        XCTAssertTrue(element(app, containing: "2 of 50").waitForExistence(timeout: 3))
+        XCTAssertTrue(waitForTopCard(app, not: first))
         XCTAssertFalse(emptyPile(app).exists, "Delete should add to the pile")
 
         app.buttons["Undo"].tap()
 
-        XCTAssertTrue(element(app, containing: "1 of 50").waitForExistence(timeout: 3))
+        XCTAssertTrue(waitForTopCard(app, is: first))
         XCTAssertTrue(emptyPile(app).waitForExistence(timeout: 3))
     }
 
@@ -48,31 +49,32 @@ final class photo_swiperUITests: XCTestCase {
         attachScreenshot(app, "photo access")
 
         allow.tap()
-        XCTAssertTrue(element(app, containing: " of ").waitForExistence(timeout: 8), "Continuing opens the feed")
+        XCTAssertTrue(waitForTopCard(app, not: "none", timeout: 8), "Continuing opens the feed")
         XCTAssertFalse(allow.exists)
     }
 
     @MainActor
     func testShortDragSnapsBack() throws {
         let app = launch()
-        XCTAssertTrue(element(app, containing: "1 of 50").waitForExistence(timeout: 5))
+        let first = topCard(app)
 
         drag(app, to: CGVector(dx: 0.4, dy: 0.5), hold: 0.4)
 
         sleep(1)
-        XCTAssertTrue(element(app, containing: "1 of 50").exists, "A short drag must not commit")
+        XCTAssertEqual(cardMarker(app).label, first, "A short drag must not commit")
     }
 
     @MainActor
     func testSwipeUpIsLaterAndRightIsKeep() throws {
         let app = launch()
-        XCTAssertTrue(element(app, containing: "1 of 50").waitForExistence(timeout: 5))
+        let first = topCard(app)
 
         drag(app, to: CGVector(dx: 0.5, dy: 0.1))
-        XCTAssertTrue(element(app, containing: "2 of 50").waitForExistence(timeout: 3))
+        XCTAssertTrue(waitForTopCard(app, not: first))
+        let second = cardMarker(app).label
 
         drag(app, to: CGVector(dx: 0.98, dy: 0.5))
-        XCTAssertTrue(element(app, containing: "3 of 50").waitForExistence(timeout: 3))
+        XCTAssertTrue(waitForTopCard(app, not: second))
 
         XCTAssertTrue(emptyPile(app).exists, "Later and Keep never add to the pile")
     }
@@ -80,24 +82,139 @@ final class photo_swiperUITests: XCTestCase {
     @MainActor
     func testSimilarToggleThenDeleteButton() throws {
         let app = launch("-startAt", "similar")
+        // The corner mark is its own button; the rest of the thumbnail opens the review.
         let shot = app.buttons["Shot 2"]
         XCTAssertTrue(shot.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["Open shot 2"].exists)
         XCTAssertEqual(shot.value as? String, "Marked to clear")
+        let similar = topCard(app)
 
-        shot.tap()
+        tapCenter(shot)
         XCTAssertEqual(shot.value as? String, "Keeping")
+        XCTAssertFalse(element(app, containing: "of 6").exists, "Toggling doesn't open the review")
 
         app.buttons["Delete"].tap()
 
-        XCTAssertTrue(element(app, containing: "14 of 50").waitForExistence(timeout: 3))
+        XCTAssertTrue(waitForTopCard(app, not: similar))
         XCTAssertFalse(emptyPile(app).exists)
+    }
+
+    @MainActor
+    func testSimilarHeroOpensReviewOnTheBestPick() throws {
+        let app = launch("-startAt", "similar")
+        let hero = similarHero(app)
+        XCTAssertTrue(hero.waitForExistence(timeout: 5))
+        attachScreenshot(app, "similar card")
+
+        tapCenter(hero)
+
+        XCTAssertTrue(element(app, containing: "Similar shots").waitForExistence(timeout: 3))
+        XCTAssertTrue(element(app, containing: "1 of 6").exists)
+        XCTAssertTrue(element(app, containing: "Photo, Best pick. Sharpest of the set").exists, "The best pick shows its chip")
+        attachScreenshot(app, "similar review on best pick")
+    }
+
+    @MainActor
+    func testSimilarThumbnailOpensReviewOnThatShot() throws {
+        let app = launch("-startAt", "similar")
+        let open = app.buttons["Open shot 3"]
+        XCTAssertTrue(open.waitForExistence(timeout: 5))
+
+        tapCenter(open)
+
+        XCTAssertTrue(element(app, containing: "1 of 6").waitForExistence(timeout: 3))
+        sleep(1)
+        XCTAssertFalse(element(app, containing: "Photo, Best pick").exists, "It opens on shot 3, not the best pick")
+        // Shots 3 to 6, then it wraps to the best pick and shot 2.
+        for _ in 0..<4 { tapAndWait(onScreen(app, "Keep")) }
+        XCTAssertTrue(element(app, containing: "5 of 6").waitForExistence(timeout: 3))
+        XCTAssertTrue(element(app, containing: "Photo, Best pick").exists, "It wraps around to the best pick")
+    }
+
+    @MainActor
+    func testFinishingSimilarReviewClearsOnlyDeletedShots() throws {
+        let app = launch("-startAt", "similar")
+        let position = topCard(app)
+        let hero = similarHero(app)
+        XCTAssertTrue(hero.waitForExistence(timeout: 5))
+        tapCenter(hero)
+        XCTAssertTrue(element(app, containing: "1 of 6").waitForExistence(timeout: 3))
+
+        tapAndWait(onScreen(app, "Keep"))
+        tapAndWait(onScreen(app, "Delete"))
+        XCTAssertTrue(element(app, containing: "3 of 6").waitForExistence(timeout: 3))
+        for _ in 0..<4 { tapAndWait(onScreen(app, "Keep")) }
+
+        XCTAssertTrue(element(app, containing: "of 6").waitForNonExistence(timeout: 5), "The review closes")
+        XCTAssertTrue(waitForTopCard(app, not: position), "The similar card leaves the feed")
+        XCTAssertTrue(element(app, containing: "MB to clear").exists)
+        XCTAssertFalse(emptyPile(app).exists, "The deleted shot joins the pile")
+        attachScreenshot(app, "after similar review")
+
+        tapCenter(onScreen(app, "Undo"))
+        XCTAssertTrue(waitForTopCard(app, is: position))
+        XCTAssertTrue(emptyPile(app).waitForExistence(timeout: 3), "Undo restores the whole set")
+    }
+
+    @MainActor
+    func testClosingSimilarReviewEarlyKeepsADraft() throws {
+        let app = launch("-startAt", "similar")
+        let position = topCard(app)
+        let hero = similarHero(app)
+        XCTAssertTrue(hero.waitForExistence(timeout: 5))
+        tapCenter(hero)
+        XCTAssertTrue(element(app, containing: "1 of 6").waitForExistence(timeout: 3))
+
+        tapAndWait(onScreen(app, "Delete"))
+        tapAndWait(onScreen(app, "Keep"))
+        XCTAssertTrue(element(app, containing: "3 of 6").waitForExistence(timeout: 3))
+        tapCenter(onScreen(app, "Close"))
+
+        XCTAssertTrue(element(app, containing: "of 6").waitForNonExistence(timeout: 3), "The review closes")
+        XCTAssertTrue(waitForTopCard(app, is: position), "Closing early decides nothing")
+        XCTAssertTrue(emptyPile(app).exists)
+        XCTAssertEqual(hero.value as? String, "Marked to clear", "The card shows the draft's delete")
+        XCTAssertEqual(app.buttons["Shot 2"].value as? String, "Keeping", "The card shows the draft's keep")
+        XCTAssertEqual(app.buttons["Shot 3"].value as? String, "Marked to clear", "Unreached shots keep their mark")
+        attachScreenshot(app, "card with draft")
+
+        tapCenter(hero)
+        XCTAssertTrue(element(app, containing: "3 of 6").waitForExistence(timeout: 3), "Reopening resumes")
+    }
+
+    @MainActor
+    func testSimilarReviewPhotoOpensFullScreen() throws {
+        let app = launch("-startAt", "similar")
+        let hero = similarHero(app)
+        XCTAssertTrue(hero.waitForExistence(timeout: 5))
+        tapCenter(hero)
+        XCTAssertTrue(element(app, containing: "1 of 6").waitForExistence(timeout: 3))
+        sleep(1)
+
+        let preview = app.descendants(matching: .any)["photoPreview"]
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        XCTAssertTrue(preview.waitForExistence(timeout: 3), "Shots open full screen like the feed")
+        attachScreenshot(app, "similar shot full screen")
+        swipeDown(app)
+        XCTAssertTrue(preview.waitForNonExistence(timeout: 3), "Swiping down closes the preview")
+        XCTAssertTrue(element(app, containing: "1 of 6").exists, "Looking doesn't move the review")
+        sleep(1)
+
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        XCTAssertTrue(preview.waitForExistence(timeout: 3))
+        drag(app, to: CGVector(dx: 0.02, dy: 0.5))
+        XCTAssertTrue(preview.waitForNonExistence(timeout: 3), "A decision closes the preview")
+        XCTAssertTrue(element(app, containing: "2 of 6").waitForExistence(timeout: 3), "A full-screen swipe decides the shot")
+        // The feed's counter is still at zero under the review; the review's own one counts the delete.
+        let reviewCounter = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label ENDSWITH %@ AND NOT label BEGINSWITH %@", "MB to clear", "0 MB "))
+        XCTAssertTrue(reviewCounter.firstMatch.waitForExistence(timeout: 2), "Delete in full screen counts toward clearing")
     }
 
     @MainActor
     func testBatchOneByOneClearsOnlyDeletedItems() throws {
         let app = launch("-startAt", "batch")
-        XCTAssertTrue(element(app, containing: " of ").waitForExistence(timeout: 5))
-        let position = element(app, containing: " of ").label
+        let position = topCard(app)
         attachScreenshot(app, "batch card")
 
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
@@ -114,20 +231,19 @@ final class photo_swiperUITests: XCTestCase {
         for _ in 0..<11 { tapAndWait(onScreen(app, "Keep")) }
 
         XCTAssertTrue(element(app, containing: "of 14").waitForNonExistence(timeout: 5), "The review closes")
-        XCTAssertFalse(element(app, containing: position).exists, "The batch card is decided")
+        XCTAssertTrue(waitForTopCard(app, not: position), "The batch card is decided")
         XCTAssertFalse(emptyPile(app).exists, "Deleted items join the pile")
         attachScreenshot(app, "back in feed")
 
         tapCenter(onScreen(app, "Undo"))
-        XCTAssertTrue(element(app, containing: position).waitForExistence(timeout: 3))
+        XCTAssertTrue(waitForTopCard(app, is: position))
         XCTAssertTrue(emptyPile(app).waitForExistence(timeout: 3), "Undo restores the whole batch")
     }
 
     @MainActor
     func testClosingBatchReviewEarlyChangesNothing() throws {
         let app = launch("-startAt", "batch")
-        XCTAssertTrue(element(app, containing: " of ").waitForExistence(timeout: 5))
-        let position = element(app, containing: " of ").label
+        let position = topCard(app)
 
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         XCTAssertTrue(element(app, containing: "1 of 14").waitForExistence(timeout: 3))
@@ -136,14 +252,14 @@ final class photo_swiperUITests: XCTestCase {
         tapCenter(onScreen(app, "Close"))
 
         XCTAssertTrue(element(app, containing: "of 14").waitForNonExistence(timeout: 3), "The review closes")
-        XCTAssertTrue(element(app, containing: position).exists)
+        XCTAssertTrue(waitForTopCard(app, is: position))
         XCTAssertTrue(emptyPile(app).exists)
     }
 
     @MainActor
     func testBatchReviewPhotoOpensFullScreen() throws {
         let app = launch("-startAt", "batch")
-        XCTAssertTrue(element(app, containing: " of ").waitForExistence(timeout: 5))
+        _ = topCard(app)
 
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         XCTAssertTrue(element(app, containing: "1 of 14").waitForExistence(timeout: 3))
@@ -164,7 +280,7 @@ final class photo_swiperUITests: XCTestCase {
     func testVideoPreviewPlaysScrubsAndClosesWithoutDeciding() throws {
         let app = launch("-startAt", "video")
         XCTAssertTrue(element(app, containing: "Video ·").waitForExistence(timeout: 5))
-        let position = element(app, containing: " of ").label
+        let position = topCard(app)
 
         // The play button sits in the middle of the card.
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
@@ -186,22 +302,21 @@ final class photo_swiperUITests: XCTestCase {
 
         tapCenter(onScreen(app, "Close"))
         XCTAssertTrue(scrubber.waitForNonExistence(timeout: 3), "The preview closes")
-        XCTAssertTrue(element(app, containing: position).exists, "Watching doesn't move the feed")
+        XCTAssertTrue(waitForTopCard(app, is: position), "Watching doesn't move the feed")
         XCTAssertTrue(emptyPile(app).exists, "Watching decides nothing")
 
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         XCTAssertTrue(scrubber.waitForExistence(timeout: 3))
         swipeDown(app)
         XCTAssertTrue(scrubber.waitForNonExistence(timeout: 3), "Swiping down closes the preview")
-        XCTAssertTrue(element(app, containing: position).exists, "Swiping out doesn't move the feed")
+        XCTAssertTrue(waitForTopCard(app, is: position), "Swiping out doesn't move the feed")
         XCTAssertTrue(emptyPile(app).exists, "Swiping out decides nothing")
     }
 
     @MainActor
     func testPhotoPreviewOpensZoomsAndClosesWithoutDeciding() throws {
         let app = launch()
-        XCTAssertTrue(element(app, containing: " of ").waitForExistence(timeout: 5))
-        let position = element(app, containing: " of ").label
+        let position = topCard(app)
 
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         let preview = app.descendants(matching: .any)["photoPreview"]
@@ -214,33 +329,32 @@ final class photo_swiperUITests: XCTestCase {
 
         tapCenter(onScreen(app, "Close"))
         XCTAssertTrue(preview.waitForNonExistence(timeout: 3), "The preview closes")
-        XCTAssertTrue(element(app, containing: position).exists, "Looking doesn't move the feed")
+        XCTAssertTrue(waitForTopCard(app, is: position), "Looking doesn't move the feed")
         XCTAssertTrue(emptyPile(app).exists, "Looking decides nothing")
 
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         XCTAssertTrue(preview.waitForExistence(timeout: 3))
         swipeDown(app)
         XCTAssertTrue(preview.waitForNonExistence(timeout: 3), "Swiping down closes the preview")
-        XCTAssertTrue(element(app, containing: position).exists, "Swiping out doesn't move the feed")
+        XCTAssertTrue(waitForTopCard(app, is: position), "Swiping out doesn't move the feed")
         XCTAssertTrue(emptyPile(app).exists, "Swiping out decides nothing")
     }
 
     @MainActor
     func testPhotoPreviewSwipesDecide() throws {
         let app = launch()
-        XCTAssertTrue(element(app, containing: " of ").waitForExistence(timeout: 5))
-        let position = element(app, containing: " of ").label
+        let position = topCard(app)
         let preview = app.descendants(matching: .any)["photoPreview"]
 
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         XCTAssertTrue(preview.waitForExistence(timeout: 3))
         drag(app, to: CGVector(dx: 0.02, dy: 0.5))
         XCTAssertTrue(preview.waitForNonExistence(timeout: 3), "A decision closes the preview")
-        XCTAssertTrue(element(app, containing: position).waitForNonExistence(timeout: 3), "The card leaves the deck")
+        XCTAssertTrue(waitForTopCard(app, not: position), "The card leaves the deck")
         XCTAssertFalse(emptyPile(app).exists, "Delete in full screen adds to the pile")
 
         app.buttons["Undo"].tap()
-        XCTAssertTrue(element(app, containing: position).waitForExistence(timeout: 3))
+        XCTAssertTrue(waitForTopCard(app, is: position))
         XCTAssertTrue(emptyPile(app).waitForExistence(timeout: 3), "Undo restores a full-screen decision")
         sleep(1)
 
@@ -248,7 +362,7 @@ final class photo_swiperUITests: XCTestCase {
         XCTAssertTrue(preview.waitForExistence(timeout: 3))
         drag(app, to: CGVector(dx: 0.5, dy: 0.1))
         XCTAssertTrue(preview.waitForNonExistence(timeout: 3))
-        XCTAssertTrue(element(app, containing: position).waitForNonExistence(timeout: 3), "Swiping up is Later, not close")
+        XCTAssertTrue(waitForTopCard(app, not: position), "Swiping up is Later, not close")
         XCTAssertTrue(emptyPile(app).exists, "Later never adds to the pile")
     }
 
@@ -257,8 +371,7 @@ final class photo_swiperUITests: XCTestCase {
     @MainActor
     func testPhotoPreviewSlowSwipeTracksFinger() throws {
         let app = launch()
-        XCTAssertTrue(element(app, containing: " of ").waitForExistence(timeout: 5))
-        let position = element(app, containing: " of ").label
+        let position = topCard(app)
         let preview = app.descendants(matching: .any)["photoPreview"]
 
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
@@ -266,7 +379,7 @@ final class photo_swiperUITests: XCTestCase {
         slowDrag(app, to: CGVector(dx: 0.4, dy: 0.5))
         sleep(1)
         XCTAssertTrue(preview.exists, "A short drag springs back")
-        XCTAssertTrue(element(app, containing: position).exists)
+        XCTAssertTrue(waitForTopCard(app, is: position))
 
         slowDrag(app, to: CGVector(dx: 0.12, dy: 0.5))
         XCTAssertTrue(preview.waitForNonExistence(timeout: 3), "Held past the threshold, it decides")
@@ -277,25 +390,26 @@ final class photo_swiperUITests: XCTestCase {
     func testVideoPreviewSwipeRightKeeps() throws {
         let app = launch("-startAt", "video")
         XCTAssertTrue(element(app, containing: "Video ·").waitForExistence(timeout: 5))
-        let position = element(app, containing: " of ").label
+        let position = topCard(app)
 
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         let scrubber = app.descendants(matching: .any)["videoScrubber"]
         XCTAssertTrue(scrubber.waitForExistence(timeout: 3))
         slowDrag(app, to: CGVector(dx: 0.88, dy: 0.5))
         XCTAssertTrue(scrubber.waitForNonExistence(timeout: 3), "A decision closes the preview")
-        XCTAssertTrue(element(app, containing: position).waitForNonExistence(timeout: 3), "The card leaves the deck")
+        XCTAssertTrue(waitForTopCard(app, not: position), "The card leaves the deck")
         XCTAssertTrue(emptyPile(app).exists, "Keep never adds to the pile")
     }
 
     @MainActor
     func testPendingPileDeletesByDefaultAndKeepsUnmarked() throws {
         let app = launch()
-        XCTAssertTrue(element(app, containing: "1 of 20").waitForExistence(timeout: 5))
-        for next in 2...4 {
+        for _ in 1...3 {
+            let card = topCard(app)
             drag(app, to: CGVector(dx: 0.02, dy: 0.5))
-            XCTAssertTrue(element(app, containing: "\(next) of 20").waitForExistence(timeout: 3))
+            XCTAssertTrue(waitForTopCard(app, not: card))
         }
+        let fourth = cardMarker(app).label
 
         tapCenter(element(app, containing: "to clear"))
         let tiles = app.descendants(matching: .any).matching(identifier: "pendingTile")
@@ -322,102 +436,150 @@ final class photo_swiperUITests: XCTestCase {
         XCTAssertTrue(confirm.waitForExistence(timeout: 3))
         confirm.tap()
 
-        XCTAssertTrue(element(app, containing: "Nothing marked to clear").waitForExistence(timeout: 3))
-        app.buttons["Done"].tap()
+        let freed = element(app, containing: "they stay in Recently Deleted for 30 days")
+        XCTAssertTrue(freed.waitForExistence(timeout: 3), "The pile says what was freed")
+        XCTAssertTrue(freed.label.hasPrefix("Freed "))
+        attachScreenshot(app, "freed")
+        XCTAssertTrue(bin.waitForNonExistence(timeout: 4), "Then it closes by itself")
 
         XCTAssertTrue(emptyPile(app).waitForExistence(timeout: 3))
-        XCTAssertTrue(element(app, containing: "4 of 20").exists, "The pile doesn't move the feed")
+        XCTAssertEqual(cardMarker(app).label, fourth, "The pile doesn't move the feed")
     }
 
-    // MARK: Session exits and the paywall
+    // MARK: The endless deck
 
     @MainActor
-    func testDeleteKeepGoingHitsPaywallThenNotNowRests() throws {
-        let app = launch("-startAt", "end", "-unlocked", "NO")
-        let deleteAll = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Delete ")).firstMatch
-        XCTAssertTrue(deleteAll.waitForExistence(timeout: 5))
-        attachScreenshot(app, "end of session")
+    func testSwipingPastTheFirstPageKeepsGoing() throws {
+        let app = launch("-unlocked", "YES")
+        let first = topCard(app)
+        XCTAssertTrue(first.contains("s1-"), "The deck opens on the first page")
 
-        deleteAll.tap()
-        let confirm = app.alerts.buttons["Delete"]
-        XCTAssertTrue(confirm.waitForExistence(timeout: 3))
-        confirm.tap()
-        XCTAssertTrue(element(app, containing: "Lighter already.").waitForExistence(timeout: 5))
-        sleep(1)
-        attachScreenshot(app, "celebrated")
+        // Past the first page's last card, with time for each fly-out.
+        for _ in 0..<22 { tapAndWait(onScreen(app, "Keep")) }
 
-        app.buttons["Keep going"].tap()
-        XCTAssertTrue(element(app, containing: "That's your free cleanup, done.").waitForExistence(timeout: 5),
-                      "Session 2 needs the unlock")
-        XCTAssertTrue(app.buttons["paywall.unlock"].exists)
-        XCTAssertEqual(app.buttons["paywall.unlock"].label, "Unlock for $12.99, one-time purchase")
+        XCTAssertTrue(waitForTopCard(app, containing: "s2-"), "The next page carries straight on")
+        XCTAssertFalse(element(app, containing: "All caught up").exists)
+        XCTAssertTrue(app.buttons["Undo"].isEnabled, "Still the same feed: the last swipe can be undone")
+        attachScreenshot(app, "second page")
+    }
+
+    @MainActor
+    func testRelaunchResumesOnTheSameCard() throws {
+        var app = launch("-mockProgress", "YES", "-resetProgress", "YES")
+        _ = topCard(app)
+        for direction in [CGVector(dx: 0.02, dy: 0.5), CGVector(dx: 0.98, dy: 0.5), CGVector(dx: 0.02, dy: 0.5)] {
+            let card = cardMarker(app).label
+            drag(app, to: direction)
+            XCTAssertTrue(waitForTopCard(app, not: card))
+        }
+        // Lets the last save land before quitting.
         sleep(1)
-        attachScreenshot(app, "paywall")
+        let resumed = cardMarker(app).label
+        let pile = element(app, containing: "to clear").label
+        app.terminate()
+
+        app = launch("-mockProgress", "YES")
+        XCTAssertTrue(waitForTopCard(app, is: resumed, timeout: 8), "Relaunching lands on the card left off at")
+        XCTAssertEqual(element(app, containing: "to clear").label, pile, "The pile comes back too")
+    }
+
+    // MARK: The swipe wall
+
+    @MainActor
+    func testOutOfSwipesRefusesThenNotNowKeepsTheDeck() throws {
+        let app = launch("-swipesLeft", "1", "-unlocked", "NO")
+        let keep = onScreen(app, "Keep")
+        XCTAssertTrue(keep.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["feed.swipesLeft"].waitForExistence(timeout: 3), "Few left shows the pill")
+        let first = topCard(app)
+        tapAndWait(keep)
+        XCTAssertTrue(waitForTopCard(app, not: first))
+        let second = cardMarker(app).label
+
+        tapCenter(onScreen(app, "Keep"))
+        let unlock = app.buttons["paywall.unlock"]
+        XCTAssertTrue(unlock.waitForExistence(timeout: 5), "The swipe is refused and the wall opens")
+        XCTAssertTrue(element(app, containing: "Out of swipes").exists)
+        XCTAssertTrue(element(app, containing: "+10 in").exists)
+        XCTAssertTrue(element(app, containing: "Unlimited swipes").exists)
+        XCTAssertEqual(unlock.label, "Unlock for $12.99, one-time purchase")
+        sleep(1)
+        attachScreenshot(app, "swipe wall")
 
         app.buttons["paywall.notNow"].tap()
-        XCTAssertTrue(element(app, containing: "That's enough for today.").waitForExistence(timeout: 5))
-        XCTAssertFalse(app.buttons["rest.pending"].exists, "Everything was deleted, so nothing is pending")
-        sleep(1)
-        attachScreenshot(app, "resting")
+        XCTAssertTrue(unlock.waitForNonExistence(timeout: 3))
+        XCTAssertEqual(cardMarker(app).label, second, "Nothing was committed; the deck stays")
 
-        app.buttons["Start another session"].tap()
-        XCTAssertTrue(element(app, containing: "That's your free cleanup, done.").waitForExistence(timeout: 5),
-                      "Starting again from rest asks again")
+        tapCenter(onScreen(app, "Delete"))
+        XCTAssertTrue(unlock.waitForExistence(timeout: 5), "The next swipe asks again")
     }
 
     @MainActor
-    func testDoneForNowWithPendingOpensThePileFromRest() throws {
-        let app = launch("-startAt", "end", "-unlocked", "NO")
-        let doneForNow = app.buttons["Done for now"]
-        XCTAssertTrue(doneForNow.waitForExistence(timeout: 5))
-        doneForNow.tap()
-
-        let pending = app.buttons["rest.pending"]
-        XCTAssertTrue(pending.waitForExistence(timeout: 5))
-        XCTAssertTrue(pending.label.contains("still marked to delete"))
-        pending.tap()
-        XCTAssertTrue(app.buttons["binButton"].waitForExistence(timeout: 5), "The pile opens, locked or not")
-    }
-
-    @MainActor
-    func testUnlockFromPaywallDealsNextSession() throws {
-        let app = launch("-startAt", "paywall", "-unlocked", "NO")
+    func testUnlockFromTheWallLetsTheCardThrough() throws {
+        let app = launch("-startAt", "outOfSwipes", "-unlocked", "NO")
         let unlock = app.buttons["paywall.unlock"]
         XCTAssertTrue(unlock.waitForExistence(timeout: 5))
         unlock.tap()
-        XCTAssertTrue(element(app, containing: "0 of ").waitForExistence(timeout: 8), "The next session deals in")
-        XCTAssertFalse(unlock.exists)
-    }
-
-    @MainActor
-    func testUnlockedKeepGoingSkipsPaywall() throws {
-        let app = launch("-startAt", "end", "-unlocked", "YES")
-        let keepGoing = app.buttons["Keep going"]
-        XCTAssertTrue(keepGoing.waitForExistence(timeout: 5))
-        keepGoing.tap()
-        XCTAssertTrue(element(app, containing: "0 of ").waitForExistence(timeout: 8), "A new session opens")
-        XCTAssertFalse(app.buttons["paywall.unlock"].exists)
+        XCTAssertTrue(unlock.waitForNonExistence(timeout: 8), "The sheet closes")
+        let before = topCard(app)
+        tapAndWait(onScreen(app, "Keep"))
+        XCTAssertTrue(waitForTopCard(app, not: before), "The card goes straight through")
     }
 
     @MainActor
     func testFailedRestoreShowsInlineMessage() throws {
-        let app = launch("-startAt", "paywall", "-unlocked", "NO", "-restoreFails", "YES")
+        let app = launch("-startAt", "outOfSwipes", "-unlocked", "NO", "-restoreFails", "YES")
         let restore = app.buttons["paywall.restore"]
         XCTAssertTrue(restore.waitForExistence(timeout: 5))
         restore.tap()
         XCTAssertTrue(app.staticTexts["paywall.message"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.buttons["paywall.unlock"].exists, "Still on the paywall, no alert")
+        XCTAssertTrue(app.buttons["paywall.unlock"].exists, "Still on the wall, no alert")
         attachScreenshot(app, "restore failed")
     }
 
     // MARK: Helpers
+
+    /// The debug marker naming the top card by id, "none" while the deck waits on more.
+    private func similarHero(_ app: XCUIApplication) -> XCUIElement {
+        app.descendants(matching: .any)["similar.hero"]
+    }
+
+    private func cardMarker(_ app: XCUIApplication) -> XCUIElement {
+        app.descendants(matching: .any)["feed.currentCard"]
+    }
+
+    /// Waits for the feed, then names its top card.
+    private func topCard(_ app: XCUIApplication) -> String {
+        let marker = cardMarker(app)
+        XCTAssertTrue(marker.waitForExistence(timeout: 5), "The feed shows")
+        XCTAssertTrue(waitForTopCard(app, not: "none", timeout: 5))
+        return marker.label
+    }
+
+    private func waitForTopCard(_ app: XCUIApplication, is id: String, timeout: TimeInterval = 3) -> Bool {
+        waitForMarker(app, NSPredicate(format: "label == %@", id), timeout: timeout)
+    }
+
+    private func waitForTopCard(_ app: XCUIApplication, not id: String, timeout: TimeInterval = 3) -> Bool {
+        waitForMarker(app, NSPredicate(format: "exists == true AND label != %@", id), timeout: timeout)
+    }
+
+    private func waitForTopCard(_ app: XCUIApplication, containing text: String, timeout: TimeInterval = 5) -> Bool {
+        waitForMarker(app, NSPredicate(format: "label CONTAINS %@", text), timeout: timeout)
+    }
+
+    private func waitForMarker(_ app: XCUIApplication, _ predicate: NSPredicate, timeout: TimeInterval) -> Bool {
+        let expectation = XCTNSPredicateExpectation(predicate: predicate, object: cardMarker(app))
+        return XCTWaiter().wait(for: [expectation], timeout: timeout) == .completed
+    }
 
     /// The full-screen batch review leaves the feed's buttons in the tree underneath it.
     /// Prefer an enabled match (the feed's Undo is disabled behind the review); tapping its
     /// center skips the scroll-to-visible step that fails on covered elements.
     private func onScreen(_ app: XCUIApplication, _ label: String) -> XCUIElement {
         let matches = app.buttons.matching(NSPredicate(format: "label == %@", label)).allElementsBoundByIndex
-        return matches.last { $0.isEnabled } ?? matches.last ?? app.buttons[label]
+        // A full-screen cover leaves the feed's buttons in the tree underneath, in no fixed order.
+        return matches.last { $0.isEnabled && $0.isHittable } ?? matches.last { $0.isEnabled } ?? matches.last ?? app.buttons[label]
     }
 
     private func tapAndWait(_ button: XCUIElement) {

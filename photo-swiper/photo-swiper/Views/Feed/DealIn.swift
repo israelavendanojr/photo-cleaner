@@ -1,11 +1,11 @@
 import SwiftUI
 
 extension EnvironmentValues {
-    /// The feed is appearing straight from onboarding or the paywall, so its deck deals in.
+    /// The feed is appearing straight from onboarding, so its deck deals in.
     @Entry var dealsInFirstDeck = false
 }
 
-/// Drops a card into place from above, for the deck after onboarding or unlocking. Fades only with Reduce Motion.
+/// Drops a card into place from above, for the deck after onboarding. Fades only with Reduce Motion.
 struct DealIn: ViewModifier {
     let isDealt: Bool
     /// Back card first, then the top card, then the buttons.

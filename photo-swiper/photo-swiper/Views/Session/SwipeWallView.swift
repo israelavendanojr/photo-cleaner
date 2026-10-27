@@ -1,11 +1,9 @@
 import SwiftUI
 
-/// The free session is used up. A large card on paper, like a feed card but not swipeable:
-/// unlock once, restore, or step away to the rest screen.
-struct PaywallView: View {
+/// Out of free swipes. A sheet over the deck, opened by a refused swipe: when the next refill
+/// lands, what's left in the user's own numbers, the unlock, and a reminder. Deleting lives in the pile.
+struct SwipeWallView: View {
     @Environment(FeedViewModel.self) private var vm
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var hasRisen = false
 
     private var status: FeedViewModel.PaywallStatus { vm.paywallStatus }
     private var isPurchasing: Bool { status == .purchasing }
@@ -13,74 +11,89 @@ struct PaywallView: View {
     private var isBusy: Bool { isPurchasing || isRestoring }
 
     var body: some View {
-        GeometryReader { proxy in
-            ScrollView {
-                // Fills the screen at normal sizes; grows and scrolls with large text.
-                card(minHeight: max(0, proxy.size.height - DS.Spacing.s - DS.Spacing.m))
-                    .padding(.horizontal, DS.Spacing.cardInset)
-                    .padding(.top, DS.Spacing.s)
-                    .padding(.bottom, DS.Spacing.m)
-            }
-            .scrollBounceBehavior(.basedOnSize)
-        }
-        .background(DS.Palette.paper)
-        .onAppear {
-            guard !reduceMotion else { return }
-            withAnimation(DS.Motion.gentle) { hasRisen = true }
-        }
-    }
-
-    private func card(minHeight: CGFloat) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text("You've reached the free limit")
-                .font(.subheadline)
-                .foregroundStyle(DS.Palette.secondary)
-                .accessibilityAddTraits(.isHeader)
-                .onboardingEntrance(order: 0)
-            Text("That's your free cleanup, done.")
-                .dsSerif(34, relativeTo: .largeTitle, weight: .medium)
-                .foregroundStyle(DS.Palette.ink)
-                .fixedSize(horizontal: false, vertical: true)
-                .accessibilityAddTraits(.isHeader)
-                .padding(.top, DS.Spacing.xs)
-                .onboardingEntrance(order: 1)
-            Text("To keep going, unlock \(AppInfo.name) once and it's yours for good.")
-                .font(.callout)
-                .foregroundStyle(DS.Palette.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.top, DS.Spacing.s)
-                .onboardingEntrance(order: 2)
-            oneTime
-                .padding(.top, DS.Spacing.m)
-                .onboardingEntrance(order: 3)
-            if let personalLine {
-                Text(personalLine)
-                    .font(.callout.weight(.medium))
-                    .foregroundStyle(DS.Palette.ink)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                header
+                if let estimate = vm.clutterEstimate {
+                    whatsLeft(estimate)
+                        .padding(.top, DS.Spacing.l)
+                }
+                if vm.freedBytes > 0 {
+                    Text("Freed so far: \(Format.size(vm.freedBytes))")
+                        .font(.callout)
+                        .foregroundStyle(DS.Palette.secondary)
+                        .padding(.top, DS.Spacing.m)
+                }
+                oneTime
                     .padding(.top, DS.Spacing.l)
-                    .onboardingEntrance(order: 4)
+                bullets
+                    .padding(.top, DS.Spacing.m)
+                actions
+                    .padding(.top, DS.Spacing.l)
+                if vm.canRemind {
+                    reminder
+                        .padding(.top, DS.Spacing.m)
+                }
             }
-            bullets
-                .padding(.top, personalLine == nil ? DS.Spacing.l : DS.Spacing.s)
-                .onboardingEntrance(order: 5)
-            Spacer(minLength: DS.Spacing.xl)
-            actions
-                .onboardingEntrance(order: 6)
+            .padding(.horizontal, DS.Spacing.l)
+            .padding(.top, DS.Spacing.xl)
+            .padding(.bottom, DS.Spacing.l)
         }
-        .padding(DS.Spacing.l)
-        .padding(.top, DS.Spacing.xs)
-        .frame(maxWidth: .infinity, minHeight: minHeight, alignment: .topLeading)
-        .background {
-            // Shadowing only the surface keeps the lift off the callout and the button.
-            RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous)
-                .fill(DS.Palette.card)
-                .cardShadow()
-        }
-        .opacity(hasRisen || reduceMotion ? 1 : 0)
-        .offset(y: hasRisen || reduceMotion ? 0 : 40)
+        .scrollBounceBehavior(.basedOnSize)
+        .background(DS.Palette.paper)
+        .interactiveDismissDisabled(isBusy)
     }
 
     // MARK: Sections
+
+    private var header: some View {
+        VStack(alignment: .leading, spacing: DS.Spacing.xs) {
+            Text("Out of swipes")
+                .font(.subheadline)
+                .foregroundStyle(DS.Palette.secondary)
+                .accessibilityAddTraits(.isHeader)
+            if let next = vm.nextRefillAt {
+                TimelineView(.periodic(from: .now, by: 1)) { context in
+                    Text("+\(vm.allowanceTunables.refillAmount) in \(Format.countdown(next.timeIntervalSince(context.date)))")
+                        .dsSerif(34, relativeTo: .largeTitle, weight: .medium)
+                        .foregroundStyle(DS.Palette.ink)
+                        .monospacedDigit()
+                }
+                .accessibilityIdentifier("wall.countdown")
+            }
+        }
+    }
+
+    private func whatsLeft(_ estimate: ClutterEstimate) -> some View {
+        VStack(alignment: .leading, spacing: DS.Spacing.xs) {
+            Text("Still to go, about")
+                .font(.footnote)
+                .foregroundStyle(DS.Palette.secondary)
+            if estimate.likelyClearBytes > 0 {
+                line("\(Format.size(estimate.likelyClearBytes)) of likely clutter")
+            }
+            if estimate.similarGroupCount > 0 {
+                line("\(Format.count(estimate.similarGroupCount)) \(estimate.similarGroupCount == 1 ? "set" : "sets") of similar shots")
+            }
+            if estimate.screenshotCount > 0 {
+                line("\(Format.count(estimate.screenshotCount)) \(estimate.screenshotCount == 1 ? "screenshot" : "screenshots")")
+            }
+            if let days = vm.daysToFinish, days >= 2 {
+                Text("At this pace, \(Format.roughDays(days)). Unlock to finish today.")
+                    .font(.callout.weight(.medium))
+                    .foregroundStyle(DS.Palette.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, DS.Spacing.xs)
+            }
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private func line(_ text: String) -> some View {
+        Text(text)
+            .font(.callout)
+            .foregroundStyle(DS.Palette.ink)
+    }
 
     private var oneTime: some View {
         VStack(alignment: .leading, spacing: DS.Spacing.xxs) {
@@ -99,7 +112,7 @@ struct PaywallView: View {
 
     private var bullets: some View {
         VStack(alignment: .leading, spacing: DS.Spacing.s) {
-            ForEach(["Unlimited swiping, every month of your library",
+            ForEach(["Unlimited swipes",
                      "Similar-shot picks and screenshot batches",
                      "Future updates included"], id: \.self) { line in
                 HStack(alignment: .firstTextBaseline, spacing: DS.Spacing.s) {
@@ -165,9 +178,33 @@ struct PaywallView: View {
         .animation(DS.Motion.calm, value: status)
     }
 
+    @ViewBuilder
+    private var reminder: some View {
+        if vm.isRemindersOptedIn {
+            Label("We'll let you know when swipes are back", systemImage: "bell")
+                .font(.footnote)
+                .foregroundStyle(DS.Palette.secondary)
+                .frame(maxWidth: .infinity, minHeight: 44)
+        } else if vm.areRemindersDenied {
+            Text("Notifications are off for \(AppInfo.name). You can turn them on in Settings.")
+                .font(.footnote)
+                .foregroundStyle(DS.Palette.secondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: .infinity)
+        } else {
+            Button {
+                Task { await vm.remindWhenSwipesAreBack() }
+            } label: {
+                Label("Remind me when swipes are back", systemImage: "bell")
+            }
+            .buttonStyle(.pill(.ghost))
+            .accessibilityIdentifier("wall.remind")
+        }
+    }
+
     private var notNow: some View {
         Button("Not now") {
-            vm.dismissPaywall()
+            vm.dismissWall()
         }
         .foregroundStyle(DS.Palette.ink)
         .disabled(isBusy)
@@ -194,15 +231,6 @@ struct PaywallView: View {
 
     // MARK: Helpers
 
-    /// One honest line from the user's own library. Nothing estimated.
-    private var personalLine: String? {
-        guard vm.stats.totalItems > 0 else { return nil }
-        let percent = Int((vm.libraryReviewedFraction * 100).rounded())
-        if percent >= 1 { return "You've reviewed \(percent)% of your library." }
-        let left = vm.photosLeftToReview
-        return "\(left.formatted()) \(left == 1 ? "photo" : "photos") left to look through."
-    }
-
     private var message: String? {
         switch status {
         case .purchaseFailed: "The purchase didn't go through. You weren't charged."
@@ -213,32 +241,35 @@ struct PaywallView: View {
 
     private func unlock() {
         Task {
-            if await vm.unlockFromPaywall() { Haptics.unlocked() }
+            if await vm.unlockFromWall() { Haptics.unlocked() }
         }
     }
 
     private func restorePurchase() {
         Task {
-            if await vm.restoreFromPaywall() { Haptics.unlocked() }
+            if await vm.restoreFromWall() { Haptics.unlocked() }
         }
     }
 }
 
 #if DEBUG
-#Preview("Idle") {
-    PaywallView()
-        .environment(FeedViewModel.mock(startingAt: .paywall))
+#Preview("Out of swipes") {
+    Color.clear
+        .sheet(isPresented: .constant(true)) {
+            SwipeWallView()
+        }
+        .environment(FeedViewModel.mock(startingAt: .outOfSwipes))
 }
 
 #Preview("Purchasing") {
-    let vm = FeedViewModel.mock(startingAt: .paywall)
-    vm.previewPaywall(status: .purchasing)
-    return PaywallView().environment(vm)
+    let vm = FeedViewModel.mock(startingAt: .outOfSwipes)
+    vm.previewWall(status: .purchasing)
+    return SwipeWallView().environment(vm)
 }
 
 #Preview("Restore failed") {
-    let vm = FeedViewModel.mock(startingAt: .paywall)
-    vm.previewPaywall(status: .restoreFailed)
-    return PaywallView().environment(vm)
+    let vm = FeedViewModel.mock(startingAt: .outOfSwipes)
+    vm.previewWall(status: .restoreFailed)
+    return SwipeWallView().environment(vm)
 }
 #endif

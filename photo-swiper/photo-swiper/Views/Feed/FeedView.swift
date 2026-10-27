@@ -16,6 +16,19 @@ struct FeedView: View {
             CardStackView()
         }
         .background(DS.Palette.paper)
+        .sheet(isPresented: Bindable(vm).isWallPresented) {
+            SwipeWallView()
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+                .presentationBackground(DS.Palette.paper)
+                .presentationCornerRadius(DS.Radius.card)
+        }
+        .task(id: vm.nextRefillAt) {
+            // Credits the refill the moment it's due, so the countdown and the deck move on by themselves.
+            guard let next = vm.nextRefillAt else { return }
+            try? await Task.sleep(for: .seconds(max(0.5, next.timeIntervalSinceNow)))
+            vm.refreshAllowance()
+        }
     }
 }
 

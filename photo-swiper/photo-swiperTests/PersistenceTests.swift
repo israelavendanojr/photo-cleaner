@@ -3,13 +3,24 @@ import SwiftData
 import Testing
 @testable import photo_swiper
 
-/// A mock builder that remembers the options each session was built with.
+/// A mock builder that remembers the options each page was built with.
 private final class RecordingBuilder: FeedBuilding, @unchecked Sendable {
     private(set) var requests: [FeedOptions] = []
 
     func makeSession(number: Int, options: FeedOptions) async -> Session {
         requests.append(options)
         return MockFeedBuilder().makeSessionNow(number: number, options: options)
+    }
+}
+
+/// Builds mock pages, or nothing while `isExhausted`, to stand for a fully reviewed library.
+private final class ExhaustingBuilder: FeedBuilding, @unchecked Sendable {
+    private(set) var requests: [FeedOptions] = []
+    var isExhausted = false
+
+    func makeSession(number: Int, options: FeedOptions) async -> Session {
+        requests.append(options)
+        return isExhausted ? Session(number: number, cards: []) : MockFeedBuilder().makeSessionNow(number: number, options: options)
     }
 }
 
@@ -27,11 +38,20 @@ struct FeedViewModelPersistenceTests {
         }
     }
 
-    private func launch(_ store: any ProgressStoring, at date: Date? = nil) async -> FeedViewModel {
-        let now = date ?? clock
-        let vm = FeedViewModel(library: library, builder: builder, store: store, entitlements: TestEntitlements(), now: { now })
+    private func launch(_ store: any ProgressStoring) async -> FeedViewModel {
+        let vm = FeedViewModel(library: library, builder: builder, store: store, entitlements: TestEntitlements(), now: { [clock] in clock })
         await vm.start()
         return vm
+    }
+
+    /// Keeps swiping right, letting each page land, until `done`.
+    private func swipe(_ vm: FeedViewModel, until done: (FeedViewModel) -> Bool) async throws {
+        for _ in 0..<500 {
+            if done(vm) { return }
+            vm.decide(.right)
+            await vm.waitForPage()
+        }
+        Issue.record("Never got there")
     }
 
     @Test(arguments: ProgressStoreTests.Kind.allCases)
@@ -55,7 +75,7 @@ struct FeedViewModelPersistenceTests {
         #expect(relaunched.pendingItems.map(\.id) == vm.pendingItems.map(\.id))
         #expect(relaunched.libraryReviewedCount == 5)
         #expect(!relaunched.canUndo)
-        #expect(builder.requests.count == 1, "Relaunching resumes instead of building a new session")
+        #expect(builder.requests.count == 1, "Relaunching resumes instead of building a new page")
     }
 
     @Test(arguments: ProgressStoreTests.Kind.allCases)
@@ -68,12 +88,48 @@ struct FeedViewModelPersistenceTests {
             return
         }
         let draft = [batch.items[0].id: Decision.delete, batch.items[1].id: .keep]
-        vm.saveDraft(draft, for: batch)
+        vm.saveDraft(draft, for: batch.id)
 
         let relaunched = await launch(store)
 
         #expect(relaunched.currentCard?.id == batch.id)
-        #expect(relaunched.draft(for: batch) == draft)
+        #expect(relaunched.draft(for: batch.id) == draft)
+    }
+
+    @Test(arguments: ProgressStoreTests.Kind.allCases)
+    func aBatchDraftSavedByBatchIDStillLoads(_ kind: ProgressStoreTests.Kind) async throws {
+        let store = try makeStore(kind)
+        let vm = await launch(store)
+        while vm.phase == .feed, !{ if case .batch = vm.currentCard { true } else { false } }() { vm.decide(.right) }
+        guard case .batch(let batch) = try #require(vm.currentCard), let session = vm.session else {
+            Issue.record("Expected a batch card on top")
+            return
+        }
+        // As saved before drafts were keyed by card: by the batch's own ID.
+        let draft = [batch.items[0].id: Decision.delete]
+        store.saveSession(SavedSession(session: session, index: vm.index, marks: [:], finished: false, drafts: [batch.id: draft]))
+
+        let relaunched = await launch(store)
+
+        #expect(relaunched.draft(for: FeedCard.batch(batch).id) == draft)
+    }
+
+    @Test(arguments: ProgressStoreTests.Kind.allCases)
+    func aPartialSimilarReviewSurvivesARelaunch(_ kind: ProgressStoreTests.Kind) async throws {
+        let store = try makeStore(kind)
+        let vm = await launch(store)
+        while vm.phase == .feed, !{ if case .similar = vm.currentCard { true } else { false } }() { vm.decide(.right) }
+        guard case .similar(let group) = try #require(vm.currentCard) else {
+            Issue.record("Expected a similar card on top")
+            return
+        }
+        let draft = [group.bestID: Decision.delete]
+        vm.saveDraft(draft, for: group.id)
+
+        let relaunched = await launch(store)
+
+        #expect(relaunched.draft(for: group.id) == draft)
+        #expect(relaunched.markedForClearing(in: group).contains(group.bestID))
     }
 
     @Test(arguments: ProgressStoreTests.Kind.allCases)
@@ -82,7 +138,7 @@ struct FeedViewModelPersistenceTests {
         library.onDelete = { _ in throw DeletionError.cancelled }
         let vm = await launch(store)
         for _ in 0..<3 { vm.decide(.left) }
-        #expect(await vm.confirmDelete() == false)
+        #expect(await vm.deleteNow(vm.pendingItems) == nil)
 
         let relaunched = await launch(store)
 
@@ -92,27 +148,25 @@ struct FeedViewModelPersistenceTests {
     }
 
     @Test(arguments: ProgressStoreTests.Kind.allCases)
-    func confirmedDeletesAddToFreedAndLeaveThePileForGood(_ kind: ProgressStoreTests.Kind) async throws {
+    func deletesAddToFreedAndLeaveThePileForGood(_ kind: ProgressStoreTests.Kind) async throws {
         let store = try makeStore(kind)
         let vm = await launch(store)
         for _ in 0..<3 { vm.decide(.left) }
         let freed = vm.pendingBytes
-        #expect(await vm.confirmDelete())
+        #expect(await vm.deleteNow(vm.pendingItems) == freed)
         #expect(vm.freedBytes == freed)
+        #expect(vm.phase == .feed, "Deleting never moves the deck")
+        #expect(vm.index == 3)
 
         let relaunched = await launch(store)
-        #expect(relaunched.phase == .resting)
+        #expect(relaunched.phase == .feed)
+        #expect(relaunched.index == 3)
         #expect(relaunched.freedBytes == freed)
         #expect(relaunched.pendingItems.isEmpty)
-
-        await relaunched.requestNextSession()
-        #expect(relaunched.pendingItems.isEmpty)
-        #expect(relaunched.freedBytes == freed)
-        #expect(relaunched.session?.number == 2)
     }
 
     @Test(arguments: ProgressStoreTests.Kind.allCases)
-    func itemsDeletedWhileClosedLeaveTheSessionAndThePile(_ kind: ProgressStoreTests.Kind) async throws {
+    func itemsDeletedWhileClosedLeaveTheDeckAndThePile(_ kind: ProgressStoreTests.Kind) async throws {
         let store = try makeStore(kind)
         let vm = await launch(store)
         vm.decide(.left)
@@ -133,30 +187,56 @@ struct FeedViewModelPersistenceTests {
         let pruned = relaunched.cards.lazy.compactMap { if case .batch(let b) = $0, b.id == batch.id { b } else { nil } }.first
         #expect(pruned?.items.count == batch.items.count - 1)
 
-        // The pruned session itself is saved.
+        // The pruned deck itself is saved.
         library.gone = []
         let again = await launch(store)
         #expect(again.cards.map(\.id) == relaunched.cards.map(\.id))
     }
 
     @Test(arguments: ProgressStoreTests.Kind.allCases)
-    func decidedItemsStayOutAndLaterOnesReturnAfterADay(_ kind: ProgressStoreTests.Kind) async throws {
+    func pagesLeaveOutEverythingInTheDeckAndEverythingDecided(_ kind: ProgressStoreTests.Kind) async throws {
         let store = try makeStore(kind)
+        // From a page this deck won't reach.
+        let earlier = MockFeedBuilder().makeSessionNow(number: MockFeedBuilder.pageCount).items[0]
+        store.save([earlier.id: StoredDecision(decision: .keep, decidedAt: clock, sessionNumber: 0, item: earlier)])
         let vm = await launch(store)
+        let firstPage = Set(vm.cards.flatMap(\.items).map(\.id))
+        try await swipe(vm, until: { $0.cards.count > MockFeedBuilder.cardsPerSession })
+
+        let excluded = try #require(builder.requests.last).excluding
+        #expect(excluded.isSuperset(of: firstPage))
+        #expect(excluded.contains(earlier.id))
+        let ids = vm.cards.flatMap(\.items).map(\.id)
+        #expect(Set(ids).count == ids.count, "No item is dealt twice")
+    }
+
+    @Test(arguments: ProgressStoreTests.Kind.allCases)
+    func laterItemsReturnAfterADayWhenCheckingAgain(_ kind: ProgressStoreTests.Kind) async throws {
+        let store = try makeStore(kind)
+        let clock = TestClock(self.clock)
+        let exhausting = ExhaustingBuilder()
+        let vm = FeedViewModel(library: library, builder: exhausting, store: store, entitlements: TestEntitlements(), now: { clock.now })
+        await vm.start()
         let kept = vm.cards[0].items[0].id, later = vm.cards[1].items[0].id, deleted = vm.cards[2].items[0].id
         vm.decide(.right)
         vm.decide(.up)
         vm.decide(.left)
-        vm.finishForNow()
+        exhausting.isExhausted = true
+        while vm.currentCard != nil { vm.decide(.right) }
+        await vm.waitForPage()
+        #expect(vm.phase == .caughtUp)
 
-        let soon = await launch(store, at: clock.addingTimeInterval(3600))
-        await soon.requestNextSession()
-        let early = try #require(builder.requests.last).excluding
+        clock.advance(hours: 1)
+        await vm.checkAgain()
+        #expect(vm.phase == .caughtUp, "Nothing turned up")
+        let early = try #require(exhausting.requests.last).excluding
         #expect(early.isSuperset(of: [kept, later, deleted]))
 
-        let nextDay = await launch(store, at: clock.addingTimeInterval(25 * 3600))
-        await nextDay.requestNextSession()
-        let late = try #require(builder.requests.last).excluding
+        exhausting.isExhausted = false
+        clock.advance(hours: 24)
+        await vm.checkAgain()
+        #expect(vm.phase == .feed)
+        let late = try #require(exhausting.requests.last).excluding
         #expect(late.isSuperset(of: [kept, deleted]))
         #expect(!late.contains(later))
     }
@@ -168,7 +248,7 @@ struct FeedViewModelPersistenceTests {
         let earlier = StoredDecision(decision: .later, decidedAt: clock.addingTimeInterval(-2 * 86_400), sessionNumber: 0, item: item)
         store.save([item.id: earlier])
         let vm = await launch(store)
-        #expect(vm.decisions.isEmpty, "A later from an earlier session isn't decided in this one")
+        #expect(vm.decisions.isEmpty, "A later from an earlier deck isn't decided in this one")
 
         vm.decide(.left)
         #expect(store.decisions(for: [item.id])[item.id]?.decision == .delete)
@@ -179,73 +259,56 @@ struct FeedViewModelPersistenceTests {
     }
 
     @Test(arguments: ProgressStoreTests.Kind.allCases)
-    func doneForNowResumesCaughtUp(_ kind: ProgressStoreTests.Kind) async throws {
+    func aDeckSavedWithEveryCardDecidedDealsTheNextPageOnLaunch(_ kind: ProgressStoreTests.Kind) async throws {
         let store = try makeStore(kind)
         let vm = await launch(store)
-        while vm.phase == .feed { vm.decide(.right) }
-        vm.finishForNow()
+        // Synchronous swipes outrun paging, so the deck is saved with nothing ahead.
+        while vm.currentCard != nil { vm.decide(.right) }
+        #expect(vm.isFindingMore)
 
         let relaunched = await launch(store)
 
-        #expect(relaunched.phase == .resting)
-        await relaunched.requestNextSession()
-        #expect(relaunched.session?.number == 2)
         #expect(relaunched.phase == .feed)
+        #expect(relaunched.index == MockFeedBuilder.cardsPerSession)
+        let firstPage = Set(vm.cards.map(\.id))
+        #expect(relaunched.currentCard.map { !firstPage.contains($0.id) } == true, "A new page, not the old one again")
+        #expect(relaunched.cards.count == 2 * MockFeedBuilder.cardsPerSession)
     }
 
     @Test(arguments: ProgressStoreTests.Kind.allCases)
-    func unconfirmedDeletesResumeAtTheEndOfTheSession(_ kind: ProgressStoreTests.Kind) async throws {
+    func theLastPageRunningOutIsCaughtUpAndStaysThatWay(_ kind: ProgressStoreTests.Kind) async throws {
         let store = try makeStore(kind)
         let vm = await launch(store)
-        while vm.phase == .feed { vm.decide(.left) }
+        try await swipe(vm, until: { $0.phase == .caughtUp })
+        #expect(vm.session?.number == MockFeedBuilder.pageCount, "Every mock page was dealt, then nothing")
 
         let relaunched = await launch(store)
-
-        #expect(relaunched.phase == .endOfSession)
-        #expect(relaunched.pendingItems.map(\.id) == vm.pendingItems.map(\.id))
-        #expect(relaunched.pendingBytes == vm.pendingBytes)
-
-        // Moving on carries the unconfirmed pile into the next session.
-        await relaunched.requestNextSession()
-        #expect(Set(relaunched.pendingItems.map(\.id)) == Set(vm.pendingItems.map(\.id)))
+        #expect(relaunched.phase == .caughtUp)
     }
 
     @Test(arguments: ProgressStoreTests.Kind.allCases)
-    func deletedNowStaysOutOfThePileAfterARelaunch(_ kind: ProgressStoreTests.Kind) async throws {
+    func pendingDeletesTrimmedFromBehindTheDeckStayInThePile(_ kind: ProgressStoreTests.Kind) async throws {
         let store = try makeStore(kind)
         let vm = await launch(store)
         for _ in 0..<3 { vm.decide(.left) }
-        await vm.requestNextSession()
+        let early = vm.pendingItems.map(\.id)
+        // Once deep enough into the deck, the first cards are let go.
+        try await swipe(vm, until: { vm in !vm.cards.contains { $0.items.contains { $0.id == early[0] } } })
         vm.decide(.left)
-        // One carried from the first session, one from this one.
-        let carried = try #require(vm.pendingItems.first)
         let current = try #require(vm.pendingItems.last)
-        #expect(await vm.deleteNow([carried, current]))
+        #expect(Array(vm.pendingItems.map(\.id).prefix(3)) == early, "Trimmed deletes are still pending")
 
+        let carried = try #require(vm.pendingItems.first)
+        #expect(await vm.deleteNow([carried, current]) == carried.bytes + current.bytes)
+        let stillPending = Set(vm.pendingItems.map(\.id))
+        #expect(stillPending.isSuperset(of: early.dropFirst()))
         let relaunched = await launch(store)
-
-        #expect(relaunched.pendingItems.count == 2)
-        #expect(!relaunched.pendingItems.contains { $0.id == carried.id || $0.id == current.id })
+        #expect(Set(relaunched.pendingItems.map(\.id)) == stillPending)
         #expect(relaunched.freedBytes == carried.bytes + current.bytes)
-    }
 
-    @Test(arguments: ProgressStoreTests.Kind.allCases)
-    func keptStaysOutOfThePileAfterARelaunch(_ kind: ProgressStoreTests.Kind) async throws {
-        let store = try makeStore(kind)
-        let vm = await launch(store)
-        for _ in 0..<3 { vm.decide(.left) }
-        await vm.requestNextSession()
-        vm.decide(.left)
-        // One carried from the first session, one from this one.
-        let carried = try #require(vm.pendingItems.first)
-        let current = try #require(vm.pendingItems.last)
-        vm.keep([carried, current])
-
-        let relaunched = await launch(store)
-
-        #expect(relaunched.pendingItems.count == 2)
-        #expect(!relaunched.pendingItems.contains { $0.id == carried.id || $0.id == current.id })
-        #expect(relaunched.decisions[current.id] == .keep)
+        relaunched.keep(relaunched.pendingItems)
+        let again = await launch(store)
+        #expect(again.pendingItems.isEmpty)
     }
 
     @Test(arguments: ProgressStoreTests.Kind.allCases)
@@ -258,8 +321,8 @@ struct FeedViewModelPersistenceTests {
         #expect(relaunched.skipFavorites == false)
     }
 
-    /// A session saved while the Forwarded batch existed can't be decoded. It's dropped, not a crash,
-    /// and the next launch deals a fresh session while saved decisions stay put.
+    /// A deck saved while the Forwarded batch existed can't be decoded. It's dropped, not a crash,
+    /// and the next launch deals a fresh deck while saved decisions stay put.
     @Test func aSavedSessionWithARemovedCardKindStartsFresh() async throws {
         let container = try SwiftDataProgressStore.makeContainer(inMemory: true)
         let store = SwiftDataProgressStore(container: container, defaults: nil)
@@ -276,7 +339,7 @@ struct FeedViewModelPersistenceTests {
         #expect(store.loadSession() == nil)
         let relaunched = await launch(store)
         #expect(relaunched.phase == .feed)
-        #expect(builder.requests.count == 2, "A new session was built")
+        #expect(builder.requests.count == 2, "A new deck was built")
         #expect(store.decisions(for: [decided.id])[decided.id]?.decision == .delete)
     }
 }

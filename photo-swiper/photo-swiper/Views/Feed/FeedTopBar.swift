@@ -1,7 +1,10 @@
 import SwiftUI
 
-/// Undo, session progress, and the running "to clear" total.
+/// Undo, the free swipes left or the scanning note, and the running "to clear" total.
 struct FeedTopBar: View {
+    /// Free users see how many swipes are left from here down.
+    static let lowSwipes = 5
+
     @Environment(FeedViewModel.self) private var vm
     let onUndo: () -> Void
     var onOpenPile: () -> Void = {}
@@ -10,7 +13,7 @@ struct FeedTopBar: View {
         HStack(alignment: .center, spacing: DS.Spacing.xs) {
             undoButton
                 .frame(maxWidth: .infinity, alignment: .leading)
-            progress
+            status
             Button(action: onOpenPile) {
                 ToClearCounter(bytes: vm.pendingBytes, addedBytes: vm.deleteChip?.bytes, addedID: vm.deleteChip?.id)
                     .animation(DS.Motion.calm, value: vm.deleteChip)
@@ -28,20 +31,52 @@ struct FeedTopBar: View {
             .disabled(!vm.canUndo)
     }
 
-    private var progress: some View {
-        DeckProgress(position: vm.photosReviewed, total: vm.photoTotal, value: vm.sessionProgress) {
-            if let percent = vm.scanningPercent {
-                HStack(spacing: 6) {
-                    Circle()
-                        .fill(DS.Palette.brick)
-                        .frame(width: 6, height: 6)
-                    Text("Still scanning · \(percent)%")
+    /// The deck has no end, so the middle only speaks up when there's something to say.
+    @ViewBuilder
+    private var status: some View {
+        if let left = vm.swipesLeft, left <= Self.lowSwipes {
+            SwipesLeftPill(left: left, nextRefillAt: vm.nextRefillAt, refillAmount: vm.allowanceTunables.refillAmount) {
+                vm.presentWall()
+            }
+            .fixedSize()
+            .transition(.opacity)
+        } else if let percent = vm.scanningPercent {
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(DS.Palette.brick)
+                    .frame(width: 6, height: 6)
+                Text("Still scanning · \(percent)%")
+            }
+            .font(.caption)
+            .foregroundStyle(DS.Palette.secondary)
+            .fixedSize()
+            .transition(.opacity)
+        }
+    }
+}
+
+/// "3 left", or the countdown to the next refill at zero. Opens the wall.
+private struct SwipesLeftPill: View {
+    let left: Int
+    let nextRefillAt: Date?
+    let refillAmount: Int
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            if left == 0, let nextRefillAt {
+                TimelineView(.periodic(from: .now, by: 1)) { context in
+                    Chip(text: "+\(refillAmount) in \(Format.countdown(nextRefillAt.timeIntervalSince(context.date)))", size: .caption)
+                        .monospacedDigit()
                 }
-                .font(.caption)
-                .foregroundStyle(DS.Palette.secondary)
-                .transition(.opacity)
+            } else {
+                Chip(text: "\(left) left", size: .caption)
             }
         }
+        .buttonStyle(PressScaleStyle())
+        .accessibilityLabel(left == 0 ? "Out of swipes" : "\(left) swipes left")
+        .accessibilityHint("Shows when more swipes arrive")
+        .accessibilityIdentifier("feed.swipesLeft")
     }
 }
 
