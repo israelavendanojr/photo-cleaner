@@ -204,6 +204,8 @@ struct PendingPileView: View {
             try? await Task.sleep(for: .seconds(1.5))
             isDeleting = false
             dismiss()
+            // Only now, so a review prompt never covers the confirmation.
+            vm.releaseReviewPrompt()
         }
     }
 }

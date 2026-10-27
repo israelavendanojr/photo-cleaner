@@ -80,6 +80,10 @@ final class FeedViewModel {
     private(set) var areRemindersDenied = false
     /// Bought or restored since launch. The review prompt never follows a purchase.
     private(set) var purchasedThisLaunch = false
+    /// RootView should ask for a review now. Set once the freed confirmation has closed.
+    private(set) var isReviewPromptDue = false
+    /// The last delete earned a review prompt; it waits for the pile to close.
+    private var isReviewPromptQueued = false
     /// Something about the last delete the user should know, e.g. items the system refused.
     var deleteNotice: String?
     /// Applies to the next page built.
@@ -443,7 +447,22 @@ final class FeedViewModel {
         history.removeAll()
         saveProgress()
         refreshTotals()
-        return deletedItems.reduce(0) { $0 + $1.bytes }
+        let freed = deletedItems.reduce(0) { $0 + $1.bytes }
+        queueReviewPromptIfEarned(freed: freed)
+        return freed
+    }
+
+    /// The pile's freed confirmation has closed: a review prompt the delete earned may show now.
+    func releaseReviewPrompt() {
+        guard isReviewPromptQueued else { return }
+        isReviewPromptQueued = false
+        isReviewPromptDue = true
+    }
+
+    /// RootView handled the due prompt. `asked` records this version, so it won't ask again until the next.
+    func finishReviewPrompt(asked: Bool) {
+        isReviewPromptDue = false
+        if asked { defaults.set(AppInfo.version, forKey: DefaultsKey.reviewPromptVersion) }
     }
 
     /// "Check again" from caught up: deals a fresh deck if anything turned up, e.g. new photos
@@ -556,6 +575,19 @@ final class FeedViewModel {
     }
 
     // MARK: Internals
+
+    /// Counts the delete, and queues a review prompt if it earned one. See `ReviewPrompt`.
+    private func queueReviewPromptIfEarned(freed: Int64) {
+        let prior = defaults.integer(forKey: DefaultsKey.deleteCount)
+        defaults.set(prior + 1, forKey: DefaultsKey.deleteCount)
+        guard !purchasedThisLaunch, !isWallPresented else { return }
+        isReviewPromptQueued = ReviewPrompt.isEligible(
+            freedBytes: freed,
+            priorDeletes: prior,
+            lastAskedVersion: defaults.string(forKey: DefaultsKey.reviewPromptVersion),
+            currentVersion: AppInfo.version
+        )
+    }
 
     /// Bought or restored: reminders are moot and the wall, if up, closes.
     private func didUnlock() {
