@@ -1,14 +1,13 @@
 import SwiftUI
 import UIKit
 
-/// The Library tab: library-wide progress, what's pending, and feed preferences.
+/// The Library tab: library-wide progress and what's pending. The gear opens Settings.
 struct LibraryView: View {
     @Environment(FeedViewModel.self) private var vm
     @Environment(\.openURL) private var openURL
+    @State private var isSettingsPresented = false
 
     var body: some View {
-        @Bindable var vm = vm
-
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
@@ -17,20 +16,6 @@ struct LibraryView: View {
                         .padding(.top, DS.Spacing.l)
                     pile
                         .padding(.top, DS.Spacing.xl)
-                    Toggle(isOn: $vm.skipFavorites) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Skip favorites")
-                                .foregroundStyle(DS.Palette.ink)
-                            Text("Favorites stay out of your feed.")
-                                .font(.footnote)
-                                .foregroundStyle(DS.Palette.secondary)
-                        }
-                    }
-                    .tint(DS.Palette.ink)
-                    .padding(DS.Spacing.m)
-                    .background(DS.Palette.card, in: RoundedRectangle(cornerRadius: DS.Radius.inner, style: .continuous))
-                    .softShadow()
-                    .padding(.top, DS.Spacing.m)
                 }
                 .padding(.horizontal, DS.Spacing.l)
                 .padding(.bottom, DS.Spacing.xxl)
@@ -44,13 +29,31 @@ struct LibraryView: View {
             }
         }
         .tint(DS.Palette.ink)
+        .sheet(isPresented: $isSettingsPresented) {
+            SettingsView()
+                .presentationDragIndicator(.visible)
+                .presentationBackground(DS.Palette.paper)
+                .presentationCornerRadius(DS.Radius.card)
+        }
+        #if DEBUG
+        // `-showSettings YES` opens Settings at launch, for screenshots.
+        .task { if UserDefaults.standard.bool(forKey: "showSettings") { isSettingsPresented = true } }
+        #endif
     }
 
     private var header: some View {
-        Text("Your library")
-            .dsSerif(34, relativeTo: .largeTitle, weight: .medium)
-            .foregroundStyle(DS.Palette.ink)
-            .padding(.top, DS.Spacing.l)
+        HStack(alignment: .center, spacing: DS.Spacing.s) {
+            Text("Your library")
+                .dsSerif(34, relativeTo: .largeTitle, weight: .medium)
+                .foregroundStyle(DS.Palette.ink)
+                .accessibilityAddTraits(.isHeader)
+            Spacer(minLength: 0)
+            CircleIconButton(systemImage: "gearshape", accessibilityLabel: "Settings") {
+                isSettingsPresented = true
+            }
+            .accessibilityIdentifier("library.settings")
+        }
+        .padding(.top, DS.Spacing.l)
     }
 
     private var stats: some View {

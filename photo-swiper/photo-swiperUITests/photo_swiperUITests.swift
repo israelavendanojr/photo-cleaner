@@ -537,7 +537,92 @@ final class photo_swiperUITests: XCTestCase {
         attachScreenshot(app, "restore failed")
     }
 
+    // MARK: Settings
+
+    @MainActor
+    func testGearOpensSettings() throws {
+        let app = launch()
+        openSettings(app)
+        XCTAssertTrue(app.descendants(matching: .any)["settings.version"].exists, "About shows the version")
+        attachScreenshot(app, "settings")
+        app.buttons["settings.done"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["settings.title"].waitForNonExistence(timeout: 3))
+    }
+
+    @MainActor
+    func testSkipFavoritesMovedToSettings() throws {
+        let app = launch()
+        app.buttons["Library"].tap()
+        XCTAssertTrue(app.buttons["library.settings"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.switches.matching(NSPredicate(format: "label CONTAINS %@", "Skip favorites")).firstMatch.exists,
+                       "No longer on the Library tab")
+
+        openSettings(app)
+        let toggle = app.switches["settings.skipFavorites"]
+        XCTAssertTrue(toggle.waitForExistence(timeout: 3))
+        XCTAssertEqual(toggle.value as? String, "1", "On by default")
+        flip(toggle)
+        XCTAssertTrue(waitForValue(toggle, "0"))
+
+        app.buttons["settings.done"].tap()
+        openSettings(app)
+        XCTAssertEqual(app.switches["settings.skipFavorites"].value as? String, "0", "The choice sticks")
+    }
+
+    @MainActor
+    func testLegalRowsAndStubsInDebug() throws {
+        let app = launch()
+        openSettings(app)
+        XCTAssertTrue(app.buttons["settings.terms"].exists, "Terms is always set")
+        for id in ["settings.privacy", "settings.support", "settings.rate"] {
+            let row = app.descendants(matching: .any)[id]
+            XCTAssertTrue(row.exists, "\(id) shows in debug builds")
+            XCTAssertTrue(row.label.contains("Not set yet"), "\(id) reads \(row.label)")
+            XCTAssertFalse(app.buttons[id].exists, "\(id) isn't tappable while unset")
+        }
+    }
+
+    @MainActor
+    func testDebugResetSwipes() throws {
+        let app = launch("-swipesLeft", "0", "-unlocked", "NO")
+        openSettings(app)
+        let left = app.descendants(matching: .any)["settings.debug.swipesLeft"]
+        scrollTo(left, in: app)
+        XCTAssertEqual(left.label, "Swipes left, 0")
+        app.buttons["settings.debug.resetSwipes"].tap()
+        XCTAssertEqual(left.label, "Swipes left, 20", "Back to the cap")
+        app.buttons["settings.debug.zeroSwipes"].tap()
+        XCTAssertEqual(left.label, "Swipes left, 0")
+    }
+
     // MARK: Helpers
+
+    /// Library tab, then the gear.
+    private func openSettings(_ app: XCUIApplication) {
+        let library = app.buttons["Library"]
+        if library.waitForExistence(timeout: 5), library.isHittable { library.tap() }
+        let gear = app.buttons["library.settings"]
+        XCTAssertTrue(gear.waitForExistence(timeout: 5))
+        gear.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["settings.title"].waitForExistence(timeout: 3), "Settings opens")
+    }
+
+    /// Taps a SwiftUI switch on its knob; a tap on the label doesn't always flip it.
+    private func flip(_ toggle: XCUIElement) {
+        toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.93, dy: 0.5)).tap()
+    }
+
+    private func waitForValue(_ element: XCUIElement, _ value: String, timeout: TimeInterval = 3) -> Bool {
+        let predicate = NSPredicate(format: "value == %@", value)
+        return XCTWaiter().wait(for: [XCTNSPredicateExpectation(predicate: predicate, object: element)], timeout: timeout) == .completed
+    }
+
+    private func scrollTo(_ element: XCUIElement, in app: XCUIApplication) {
+        for _ in 0..<6 where !(element.exists && element.isHittable) {
+            app.swipeUp()
+        }
+        XCTAssertTrue(element.exists)
+    }
 
     /// The debug marker naming the top card by id, "none" while the deck waits on more.
     private func similarHero(_ app: XCUIApplication) -> XCUIElement {

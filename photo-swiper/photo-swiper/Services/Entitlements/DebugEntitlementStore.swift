@@ -60,9 +60,14 @@ final class DebugEntitlementStore: EntitlementStore {
     }
 
     #if DEBUG
+    /// Settings' debug toggle.
+    func setUnlocked(_ unlocked: Bool) {
+        isUnlocked = unlocked
+        defaults.set(unlocked, forKey: DefaultsKey.debugUnlocked)
+    }
+
     private func grant() {
-        isUnlocked = true
-        defaults.set(true, forKey: DefaultsKey.debugUnlocked)
+        setUnlocked(true)
     }
     #endif
 }

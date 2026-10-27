@@ -961,6 +961,36 @@ extension FeedViewModel {
         return vm
     }
 
+    // MARK: Settings' debug section
+
+    /// Replaces the free swipes left. Nil fills them to the cap.
+    func debugSetSwipes(_ balance: Int?) {
+        allowance = balance.map { SwipeAllowance(balance: $0, tunables: allowanceTunables, now: now()) }
+            ?? SwipeAllowance(tunables: allowanceTunables, now: now())
+        allowanceStore.save(allowance)
+    }
+
+    /// Flips the stand-in purchase. Only the debug store can.
+    func debugSetUnlocked(_ unlocked: Bool) {
+        (entitlements as? DebugEntitlementStore)?.setUnlocked(unlocked)
+        if unlocked { notifier?.cancelAll(now: now()) }
+    }
+
+    /// Onboarding and the swipe hint show again on the next launch.
+    func debugResetOnboarding() {
+        defaults.removeObject(forKey: DefaultsKey.hasOnboarded)
+        defaults.removeObject(forKey: DefaultsKey.hasSeenSwipeHint)
+    }
+
+    /// Forgets every saved decision, the pile, and preferences, then deals a fresh first deck.
+    func debugClearAllDecisions() async {
+        store.reset()
+        settledIDs = []
+        skipFavorites = store.skipFavorites
+        apply(await makeSession(number: 1))
+        refreshTotals()
+    }
+
     /// Shows a wall state without going through a purchase, for previews.
     func previewWall(status: PaywallStatus) {
         isWallPresented = true
