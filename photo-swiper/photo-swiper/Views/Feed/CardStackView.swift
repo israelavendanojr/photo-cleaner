@@ -22,8 +22,8 @@ struct CardStackView: View {
             onOpenReview: { reviewing = $0 },
             showsHint: !hasSeenSwipeHint,
             dealsIn: dealsIn,
-            canSwipe: { _ in vm.canSwipe },
-            onRefused: { _ in refused() },
+            canSwipe: canDecide,
+            onRefused: refused,
             waitingText: vm.isFindingMore ? "Finding more…" : nil
         )
         #if DEBUG
@@ -43,13 +43,18 @@ struct CardStackView: View {
         request = outcome.values.contains(.delete) ? .left : .right
     }
 
-    /// Out of swipes. A finished one-by-one review waits as a draft for the next swipe.
-    private func refused() {
+    /// A finished one-by-one review is judged by its own outcome, which isn't a draft yet.
+    private func canDecide(_ direction: SwipeDirection) -> Bool {
+        reviewOutcome.map(vm.canDecideIndividually) ?? vm.canDecide(direction)
+    }
+
+    /// Out of swipes or a full pile. A finished one-by-one review waits as a draft for the next swipe.
+    private func refused(_ direction: SwipeDirection) {
         if let outcome = reviewOutcome, let card = vm.currentCard {
             vm.saveDraft(outcome, for: card.id)
         }
         reviewOutcome = nil
-        vm.presentWall()
+        vm.refuse(direction)
     }
 
     private func decide(_ direction: SwipeDirection, card: FeedCard) {
