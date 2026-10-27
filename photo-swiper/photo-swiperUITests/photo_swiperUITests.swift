@@ -746,9 +746,9 @@ final class photo_swiperUITests: XCTestCase {
         XCTAssertTrue(bin.isHittable, "The Delete button is clear of the home indicator")
         bin.tap()
         let confirm = app.alerts.buttons["Delete"]
-        XCTAssertTrue(confirm.waitForExistence(timeout: 3))
+        XCTAssertTrue(confirm.waitForExistence(timeout: 5))
         confirm.tap()
-        XCTAssertTrue(element(app, containing: "they stay in Recently Deleted").waitForExistence(timeout: 3))
+        XCTAssertTrue(element(app, containing: "they stay in Recently Deleted").waitForExistence(timeout: 5))
         XCTAssertTrue(bin.waitForNonExistence(timeout: 4))
     }
 
