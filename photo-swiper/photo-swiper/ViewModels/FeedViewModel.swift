@@ -22,7 +22,9 @@ final class FeedViewModel {
     }
 
     enum PaywallStatus: Equatable {
-        case idle, purchasing, restoring, purchaseFailed, restoreFailed
+        case idle, purchasing, restoring, purchaseFailed
+        /// Restore outcomes. A restore that unlocks also closes the wall.
+        case restored, nothingToRestore, restoreFailed
     }
 
     /// The "+3.4 MB" chip shown briefly after a delete.
@@ -74,8 +76,10 @@ final class FeedViewModel {
     private(set) var clutterEstimate: ClutterEstimate?
     /// The user tapped "Remind me" and the system said yes.
     private(set) var isRemindersOptedIn = false
-    /// The user tapped "Remind me" and notifications are turned off.
+    /// Notifications are turned off for the app, found on asking or by Settings checking.
     private(set) var areRemindersDenied = false
+    /// Bought or restored since launch. The review prompt never follows a purchase.
+    private(set) var purchasedThisLaunch = false
     /// Something about the last delete the user should know, e.g. items the system refused.
     var deleteNotice: String?
     /// Applies to the next page built.
@@ -463,20 +467,51 @@ final class FeedViewModel {
 
     /// "Not now". The next refused swipe opens it again.
     func dismissWall() {
-        guard paywallStatus != .purchasing, paywallStatus != .restoring else { return }
+        guard !isPurchaseBusy else { return }
         isWallPresented = false
     }
 
-    /// Buys the unlock from the wall. The current card can be swiped straight away. False if it didn't go through.
+    /// A purchase or restore is running. The wall and the Settings unlock can't close meanwhile.
+    var isPurchaseBusy: Bool { paywallStatus == .purchasing || paywallStatus == .restoring }
+
+    /// Buys the unlock, from the wall or Settings. Closes the wall, so the current card can be swiped
+    /// straight away. False if it didn't go through.
     @discardableResult
-    func unlockFromWall() async -> Bool {
-        await settleWall(.purchasing, failure: .purchaseFailed) { await $0.unlock() }
+    func purchaseUnlock() async -> Bool {
+        guard !isPurchaseBusy else { return false }
+        paywallStatus = .purchasing
+        guard await entitlements.unlock(), entitlements.isUnlocked else {
+            paywallStatus = .purchaseFailed
+            return false
+        }
+        didUnlock()
+        paywallStatus = .idle
+        return true
     }
 
-    /// Restores an earlier purchase from the wall.
+    /// Restores an earlier purchase, from the wall or Settings. True if the app is now unlocked;
+    /// `paywallStatus` says what was found either way.
     @discardableResult
-    func restoreFromWall() async -> Bool {
-        await settleWall(.restoring, failure: .restoreFailed) { await $0.restore() }
+    func restorePurchases() async -> Bool {
+        guard !isPurchaseBusy else { return false }
+        paywallStatus = .restoring
+        switch await entitlements.restore() {
+        case .restored where entitlements.isUnlocked:
+            didUnlock()
+            paywallStatus = .restored
+            return true
+        case .nothingToRestore:
+            paywallStatus = .nothingToRestore
+        case .restored, .failed:
+            paywallStatus = .restoreFailed
+        }
+        return false
+    }
+
+    /// Clears a finished purchase or restore message, e.g. when Settings opens. Not while one runs.
+    func resetPurchaseStatus() {
+        guard !isPurchaseBusy else { return }
+        paywallStatus = .idle
     }
 
     /// Credits any refills owed by now. Called on returning to the app and while a countdown shows.
@@ -499,27 +534,34 @@ final class FeedViewModel {
         if isRemindersOptedIn, allowance.remaining == 0 { await scheduleReminders() }
     }
 
+    /// The Settings switch. On asks for permission the same way the wall does; off cancels what's scheduled.
+    func setRemindersEnabled(_ on: Bool) async {
+        guard let notifier else { return }
+        if on {
+            await remindWhenSwipesAreBack()
+        } else {
+            notifier.optOut(now: now())
+            isRemindersOptedIn = false
+        }
+    }
+
+    /// Reads whether notifications are off in the Settings app, which can change while the app is away.
+    func refreshReminderPermission() async {
+        guard let notifier else { return }
+        areRemindersDenied = await notifier.isDenied()
+    }
+
     func clearReturningCard() {
         returningCard = nil
     }
 
     // MARK: Internals
 
-    private func settleWall(
-        _ working: PaywallStatus,
-        failure: PaywallStatus,
-        _ attempt: (any EntitlementStore) async -> Bool
-    ) async -> Bool {
-        guard isWallPresented, paywallStatus != .purchasing, paywallStatus != .restoring else { return false }
-        paywallStatus = working
-        guard await attempt(entitlements), entitlements.isUnlocked else {
-            paywallStatus = failure
-            return false
-        }
+    /// Bought or restored: reminders are moot and the wall, if up, closes.
+    private func didUnlock() {
         notifier?.cancelAll(now: now())
-        paywallStatus = .idle
+        purchasedThisLaunch = true
         isWallPresented = false
-        return true
     }
 
     /// Lets a card decision through, or refuses it and opens the wall when no swipes are left.

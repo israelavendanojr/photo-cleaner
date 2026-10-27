@@ -5,6 +5,8 @@ import UserNotifications
 @MainActor
 protocol NotificationScheduling: AnyObject {
     func requestAuthorization() async -> Bool
+    /// The user turned notifications off for the app in the Settings app.
+    func isDenied() async -> Bool
     func add(_ reminder: RefillReminder) async
     func removePending(_ ids: [String])
 }
@@ -112,6 +114,17 @@ final class RefillNotifier {
         return granted
     }
 
+    /// Settings turned reminders off. Anything already scheduled is cancelled.
+    func optOut(now: Date) {
+        isOptedIn = false
+        cancelAll(now: now)
+    }
+
+    /// Notifications are off for the app at the system level, so asking again won't prompt.
+    func isDenied() async -> Bool {
+        await center.isDenied()
+    }
+
     /// Schedules the reminders for an empty allowance. Fixed identifiers, so calling it again replaces
     /// them instead of adding more.
     func scheduleOnEmpty(
@@ -156,6 +169,10 @@ final class SystemNotificationCenter: NotificationScheduling {
 
     func requestAuthorization() async -> Bool {
         (try? await center.requestAuthorization(options: [.alert, .sound])) ?? false
+    }
+
+    func isDenied() async -> Bool {
+        await center.notificationSettings().authorizationStatus == .denied
     }
 
     func add(_ reminder: RefillReminder) async {

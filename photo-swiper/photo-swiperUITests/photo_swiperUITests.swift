@@ -570,6 +570,31 @@ final class photo_swiperUITests: XCTestCase {
     }
 
     @MainActor
+    func testSettingsRestoreRuns() throws {
+        let app = launch("-unlocked", "NO")
+        openSettings(app)
+        XCTAssertTrue(app.buttons["settings.unlock"].exists, "Locked shows the unlock row")
+        let restore = app.buttons["settings.restore"]
+        XCTAssertTrue(restore.exists)
+        restore.tap()
+        XCTAssertTrue(waitForLabel(restore, containing: "Restoring", timeout: 2), "Shows progress")
+        XCTAssertTrue(app.descendants(matching: .any)["settings.unlocked"].waitForExistence(timeout: 5),
+                      "The debug store restores, and the row thanks the user")
+        XCTAssertTrue(restore.label.contains("Purchase restored"), restore.label)
+        XCTAssertFalse(app.buttons["settings.unlock"].exists)
+    }
+
+    @MainActor
+    func testSettingsRestoreWithNothingToRestore() throws {
+        let app = launch("-unlocked", "NO", "-restoreFails", "YES")
+        openSettings(app)
+        let restore = app.buttons["settings.restore"]
+        restore.tap()
+        XCTAssertTrue(waitForLabel(restore, containing: "Nothing to restore", timeout: 5))
+        XCTAssertTrue(app.buttons["settings.unlock"].exists, "Still locked")
+    }
+
+    @MainActor
     func testLegalRowsAndStubsInDebug() throws {
         let app = launch()
         openSettings(app)
@@ -614,6 +639,11 @@ final class photo_swiperUITests: XCTestCase {
 
     private func waitForValue(_ element: XCUIElement, _ value: String, timeout: TimeInterval = 3) -> Bool {
         let predicate = NSPredicate(format: "value == %@", value)
+        return XCTWaiter().wait(for: [XCTNSPredicateExpectation(predicate: predicate, object: element)], timeout: timeout) == .completed
+    }
+
+    private func waitForLabel(_ element: XCUIElement, containing text: String, timeout: TimeInterval) -> Bool {
+        let predicate = NSPredicate(format: "label CONTAINS %@", text)
         return XCTWaiter().wait(for: [XCTNSPredicateExpectation(predicate: predicate, object: element)], timeout: timeout) == .completed
     }
 

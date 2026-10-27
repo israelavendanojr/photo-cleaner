@@ -10,8 +10,10 @@ struct SettingsView: View {
     @Environment(FeedViewModel.self) private var vm
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
+    @Environment(\.scenePhase) private var scenePhase
 
     @State private var safariLink: SafariLink?
+    @State private var isUnlockPresented = false
     /// "Email address copied", shown briefly when mail can't open.
     @State private var copiedNotice = false
     #if DEBUG
@@ -25,6 +27,7 @@ struct SettingsView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: DS.Spacing.l) {
+                    purchase
                     SettingsSection("Feed") {
                         Toggle(isOn: $vm.skipFavorites) {
                             SettingsLabel(icon: "heart", title: "Skip favorites",
@@ -33,6 +36,20 @@ struct SettingsView: View {
                         .tint(DS.Palette.ink)
                         .settingsRowPadding()
                         .accessibilityIdentifier("settings.skipFavorites")
+                        if vm.canRemind {
+                            reminders
+                            if vm.areRemindersDenied {
+                                Button {
+                                    if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
+                                } label: {
+                                    SettingsLabel(icon: "gear", title: "Open Settings", showsChevron: true)
+                                        .settingsRowPadding()
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityHint("Turn on notifications for \(AppInfo.name)")
+                                .accessibilityIdentifier("settings.openSystemSettings")
+                            }
+                        }
                     }
                     SettingsSection("Support") {
                         launchRow(AppInfo.supportEmail, icon: "envelope", title: "Contact support", id: "settings.support") {
@@ -94,9 +111,84 @@ struct SettingsView: View {
         }
         .tint(DS.Palette.ink)
         .safariSheet($safariLink)
+        .sheet(isPresented: $isUnlockPresented) {
+            UnlockSheet()
+                .presentationDragIndicator(.visible)
+                .presentationBackground(DS.Palette.paper)
+                .presentationCornerRadius(DS.Radius.card)
+        }
+        .onAppear { vm.resetPurchaseStatus() }
+        .task { await vm.refreshReminderPermission() }
+        .onChange(of: scenePhase) { _, phase in
+            // Back from the Settings app, maybe with notifications turned on.
+            if phase == .active { Task { await vm.refreshReminderPermission() } }
+        }
     }
 
     // MARK: Sections
+
+    private var purchase: some View {
+        SettingsSection("Purchase") {
+            if vm.isUnlocked {
+                SettingsLabel(icon: "checkmark.seal", title: "Unlocked · thanks for supporting \(AppInfo.name)")
+                    .settingsRowPadding()
+                    .accessibilityIdentifier("settings.unlocked")
+            } else {
+                Button {
+                    vm.resetPurchaseStatus()
+                    isUnlockPresented = true
+                } label: {
+                    SettingsLabel(icon: "lock.open", title: "Unlock for \(vm.displayPrice)",
+                                  detail: "One-time purchase. No subscription.", showsChevron: true)
+                        .settingsRowPadding()
+                }
+                .buttonStyle(.plain)
+                .disabled(vm.isPurchaseBusy)
+                .accessibilityIdentifier("settings.unlock")
+            }
+            Button {
+                Task {
+                    if await vm.restorePurchases() { Haptics.unlocked() }
+                }
+            } label: {
+                SettingsLabel(icon: "arrow.clockwise",
+                              title: vm.paywallStatus == .restoring ? "Restoring…" : "Restore Purchases",
+                              detail: restoreMessage,
+                              isWorking: vm.paywallStatus == .restoring)
+                    .settingsRowPadding()
+            }
+            .buttonStyle(.plain)
+            .disabled(vm.isPurchaseBusy)
+            .animation(DS.Motion.calm, value: vm.paywallStatus)
+            .accessibilityIdentifier("settings.restore")
+        }
+    }
+
+    private var restoreMessage: String? {
+        switch vm.paywallStatus {
+        case .restored: "Purchase restored"
+        case .nothingToRestore: "Nothing to restore"
+        case .restoreFailed: "Couldn't reach the App Store. Try again."
+        default: nil
+        }
+    }
+
+    /// On only while opted in and allowed. Off in the Settings app shows the switch off, with a way there.
+    private var reminders: some View {
+        Toggle(isOn: Binding(
+            get: { vm.isRemindersOptedIn && !vm.areRemindersDenied },
+            set: { on in Task { await vm.setRemindersEnabled(on) } }
+        )) {
+            SettingsLabel(icon: "bell", title: "Refill reminders",
+                          detail: vm.areRemindersDenied
+                              ? "Notifications are off for \(AppInfo.name)"
+                              : "A heads-up when free swipes are back.")
+        }
+        .tint(DS.Palette.ink)
+        .disabled(vm.areRemindersDenied)
+        .settingsRowPadding()
+        .accessibilityIdentifier("settings.reminders")
+    }
 
     private var about: some View {
         SettingsSection("About") {
@@ -268,6 +360,8 @@ struct SettingsLabel: View {
     var value: String?
     var showsChevron = false
     var isDestructive = false
+    /// A spinner at the trailing edge, e.g. while restoring.
+    var isWorking = false
 
     var body: some View {
         HStack(spacing: DS.Spacing.m) {
@@ -288,7 +382,11 @@ struct SettingsLabel: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-            if showsChevron {
+            if isWorking {
+                ProgressView()
+                    .controlSize(.small)
+                    .tint(DS.Palette.secondary)
+            } else if showsChevron {
                 Image(systemName: "chevron.right")
                     .font(.footnote.weight(.semibold))
                     .foregroundStyle(DS.Palette.secondary)
