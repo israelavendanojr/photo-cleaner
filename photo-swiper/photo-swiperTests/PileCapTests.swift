@@ -221,4 +221,65 @@ struct PileCapTests {
 
         #expect(vm.canDecide(.left))
     }
+
+    // MARK: The unlock offer after a delete
+
+    /// A started deck with several deletes pending and one earlier delete on record, so a big
+    /// delete would earn a review prompt if the user were unlocked.
+    private func started(unlocked: Bool, library: FakeLibrary = FakeLibrary()) async throws -> (FeedViewModel, big: LibraryItem) {
+        defaults.set(1, forKey: DefaultsKey.deleteCount)
+        let vm = FeedViewModel(library: library, builder: MockFeedBuilder(), entitlements: TestEntitlements(isUnlocked: unlocked), defaults: defaults)
+        await vm.start()
+        for _ in 0..<6 { vm.decide(.left) }
+        let big = try #require(vm.pendingItems.first { $0.bytes >= ReviewPrompt.minimumFreedBytes })
+        return (vm, big)
+    }
+
+    @Test func aFreeUsersDeleteOffersTheUnlockOnceThePileCloses() async throws {
+        let (vm, big) = try await started(unlocked: false)
+
+        await vm.deleteNow([big])
+        #expect(!vm.isDeleteUpsellDue, "Not while the freed confirmation shows")
+        vm.releaseReviewPrompt()
+
+        #expect(vm.isDeleteUpsellDue)
+        #expect(vm.upsellFreedBytes == big.bytes)
+        #expect(!vm.isReviewPromptDue, "The offer replaces the review prompt")
+
+        vm.finishDeleteUpsell()
+        #expect(!vm.isDeleteUpsellDue)
+        #expect(defaults.integer(forKey: DefaultsKey.deleteCount) == 2, "The delete still counts")
+    }
+
+    @Test func unlockedDeletesNeverOfferTheUnlock() async throws {
+        let (vm, big) = try await started(unlocked: true)
+
+        await vm.deleteNow([big])
+        vm.releaseReviewPrompt()
+
+        #expect(!vm.isDeleteUpsellDue)
+        #expect(vm.isReviewPromptDue, "Unlocked users get the review prompt as before")
+    }
+
+    @Test func noOfferWhileTheWallIsUp() async throws {
+        let (vm, big) = try await started(unlocked: false)
+        vm.presentWall()
+
+        await vm.deleteNow([big])
+        vm.releaseReviewPrompt()
+
+        #expect(!vm.isDeleteUpsellDue)
+        #expect(!vm.isReviewPromptDue)
+    }
+
+    @Test func aCancelledDeleteOffersNothing() async throws {
+        let library = FakeLibrary()
+        library.onDelete = { _ in throw DeletionError.cancelled }
+        let (vm, big) = try await started(unlocked: false, library: library)
+
+        await vm.deleteNow([big])
+        vm.releaseReviewPrompt()
+
+        #expect(!vm.isDeleteUpsellDue)
+    }
 }

@@ -442,8 +442,46 @@ final class photo_swiperUITests: XCTestCase {
         attachScreenshot(app, "freed")
         XCTAssertTrue(bin.waitForNonExistence(timeout: 4), "Then it closes by itself")
 
+        // Mocks start locked, so the unlock is offered once the pile has closed.
+        let notNow = app.buttons["paywall.notNow"]
+        XCTAssertTrue(notNow.waitForExistence(timeout: 4))
+        notNow.tap()
+        XCTAssertTrue(notNow.waitForNonExistence(timeout: 3))
+
         XCTAssertTrue(emptyPile(app).waitForExistence(timeout: 3))
         XCTAssertEqual(cardMarker(app).label, fourth, "The pile doesn't move the feed")
+    }
+
+    @MainActor
+    func testFreeDeleteOffersTheUnlockAfterThePileCloses() throws {
+        let app = launch("-startAt", "pending", "-showPile", "YES", "-unlocked", "NO")
+        let limit = app.descendants(matching: .any)["pile.limit"]
+        XCTAssertTrue(limit.waitForExistence(timeout: 5), "Free users see how full the pile is")
+        XCTAssertTrue(limit.label.contains("of 50 photos"))
+        deleteAllInPile(app)
+
+        let unlock = app.buttons["paywall.unlock"]
+        XCTAssertTrue(unlock.waitForExistence(timeout: 5), "The unlock is offered after the delete")
+        let title = app.staticTexts["unlock.title"]
+        XCTAssertTrue(title.label.hasPrefix("Freed "), "The headline says what was freed")
+        XCTAssertTrue(element(app, containing: "Unlock to keep going without limits").exists)
+        sleep(1)
+        attachScreenshot(app, "unlock after delete")
+
+        app.buttons["paywall.notNow"].tap()
+        XCTAssertTrue(unlock.waitForNonExistence(timeout: 3))
+        XCTAssertTrue(emptyPile(app).waitForExistence(timeout: 3))
+    }
+
+    @MainActor
+    func testUnlockedDeleteOffersNothing() throws {
+        let app = launch("-startAt", "pending", "-showPile", "YES", "-unlocked", "YES")
+        XCTAssertTrue(app.buttons["binButton"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.descendants(matching: .any)["pile.limit"].exists, "No limit once unlocked")
+        deleteAllInPile(app)
+
+        XCTAssertTrue(emptyPile(app).waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["paywall.unlock"].waitForExistence(timeout: 2))
     }
 
     // MARK: The endless deck
@@ -701,6 +739,19 @@ final class photo_swiperUITests: XCTestCase {
     /// The full-screen batch review leaves the feed's buttons in the tree underneath it.
     /// Prefer an enabled match (the feed's Undo is disabled behind the review); tapping its
     /// center skips the scroll-to-visible step that fails on covered elements.
+    /// Deletes everything in the open pile and waits for it to close.
+    private func deleteAllInPile(_ app: XCUIApplication) {
+        let bin = app.buttons["binButton"]
+        XCTAssertTrue(bin.waitForExistence(timeout: 5))
+        XCTAssertTrue(bin.isHittable, "The Delete button is clear of the home indicator")
+        bin.tap()
+        let confirm = app.alerts.buttons["Delete"]
+        XCTAssertTrue(confirm.waitForExistence(timeout: 3))
+        confirm.tap()
+        XCTAssertTrue(element(app, containing: "they stay in Recently Deleted").waitForExistence(timeout: 3))
+        XCTAssertTrue(bin.waitForNonExistence(timeout: 4))
+    }
+
     private func onScreen(_ app: XCUIApplication, _ label: String) -> XCUIElement {
         let matches = app.buttons.matching(NSPredicate(format: "label == %@", label)).allElementsBoundByIndex
         // A full-screen cover leaves the feed's buttons in the tree underneath, in no fixed order.

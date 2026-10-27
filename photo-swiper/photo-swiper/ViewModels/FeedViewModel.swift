@@ -84,6 +84,12 @@ final class FeedViewModel {
     private(set) var isReviewPromptDue = false
     /// The last delete earned a review prompt; it waits for the pile to close.
     private var isReviewPromptQueued = false
+    /// RootView should offer the unlock now: a free user's delete went through and the pile has closed.
+    private(set) var isDeleteUpsellDue = false
+    /// What the free user's last delete freed, for the offer's headline.
+    private(set) var upsellFreedBytes: Int64 = 0
+    /// A free user's delete earned the unlock offer; it waits for the pile to close.
+    private var isDeleteUpsellQueued = false
     /// A free user's swipe was refused because the pile is full. FeedView shows it.
     var isPileFullNoticePresented = false
     /// Something about the last delete the user should know, e.g. items the system refused.
@@ -480,15 +486,25 @@ final class FeedViewModel {
         saveProgress()
         refreshTotals()
         let freed = deletedItems.reduce(0) { $0 + $1.bytes }
-        queueReviewPromptIfEarned(freed: freed)
+        queueFollowUp(freed: freed)
         return freed
     }
 
-    /// The pile's freed confirmation has closed: a review prompt the delete earned may show now.
+    /// The pile's freed confirmation has closed: the review prompt or unlock offer the delete earned may show now.
     func releaseReviewPrompt() {
-        guard isReviewPromptQueued else { return }
-        isReviewPromptQueued = false
-        isReviewPromptDue = true
+        if isDeleteUpsellQueued {
+            isDeleteUpsellQueued = false
+            isDeleteUpsellDue = true
+        }
+        if isReviewPromptQueued {
+            isReviewPromptQueued = false
+            isReviewPromptDue = true
+        }
+    }
+
+    /// RootView showed the unlock offer after a delete, or decided not to.
+    func finishDeleteUpsell() {
+        isDeleteUpsellDue = false
     }
 
     /// RootView handled the due prompt. `asked` records this version, so it won't ask again until the next.
@@ -608,11 +624,20 @@ final class FeedViewModel {
 
     // MARK: Internals
 
-    /// Counts the delete, and queues a review prompt if it earned one. See `ReviewPrompt`.
-    private func queueReviewPromptIfEarned(freed: Int64) {
+    /// Counts the delete and queues what follows it once the pile closes: the unlock offer for a free
+    /// user, or a review prompt if the delete earned one (see `ReviewPrompt`). Never both.
+    private func queueFollowUp(freed: Int64) {
         let prior = defaults.integer(forKey: DefaultsKey.deleteCount)
         defaults.set(prior + 1, forKey: DefaultsKey.deleteCount)
-        guard !purchasedThisLaunch, !isWallPresented else { return }
+        isReviewPromptQueued = false
+        isDeleteUpsellQueued = false
+        guard !isWallPresented else { return }
+        if !isUnlocked {
+            upsellFreedBytes = freed
+            isDeleteUpsellQueued = true
+            return
+        }
+        guard !purchasedThisLaunch else { return }
         isReviewPromptQueued = ReviewPrompt.isEligible(
             freedBytes: freed,
             priorDeletes: prior,

@@ -6,6 +6,8 @@ struct RootView: View {
     @Environment(FeedViewModel.self) private var vm
     @State private var tab: AppTab = .feed
     @State private var isPilePresented = false
+    /// The unlock offered after a free user's delete.
+    @State private var isUpsellPresented = false
     /// The feed is about to replace onboarding, so its first deck deals in.
     @State private var dealsInDeck = false
     @Environment(\.scenePhase) private var scenePhase
@@ -50,6 +52,21 @@ struct RootView: View {
                 .presentationDragIndicator(.visible)
                 .presentationBackground(DS.Palette.paper)
                 .presentationCornerRadius(DS.Radius.card)
+        }
+        .sheet(isPresented: $isUpsellPresented) {
+            UnlockSheet(title: "Freed \(Format.size(vm.upsellFreedBytes))", subtitle: "Unlock to keep going without limits.")
+                .presentationDragIndicator(.visible)
+                .presentationBackground(DS.Palette.paper)
+                .presentationCornerRadius(DS.Radius.card)
+        }
+        .task(id: vm.isDeleteUpsellDue) {
+            guard vm.isDeleteUpsellDue else { return }
+            // Let the pile finish closing first.
+            try? await Task.sleep(for: .seconds(0.6))
+            guard !Task.isCancelled, vm.isDeleteUpsellDue else { return }
+            // Never over the wall, or once unlocked meanwhile.
+            if !vm.isWallPresented, !vm.isUnlocked { isUpsellPresented = true }
+            vm.finishDeleteUpsell()
         }
         .task(id: vm.isReviewPromptDue) {
             guard vm.isReviewPromptDue else { return }
