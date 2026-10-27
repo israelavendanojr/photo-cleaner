@@ -239,8 +239,13 @@ final class FeedViewModel {
     // MARK: Card helpers
 
     /// Items in a similar group that a left swipe would clear.
+    /// A partial one-by-one review overrides the marks of the shots it reached.
     func markedForClearing(in group: SimilarGroup) -> Set<LibraryItem.ID> {
-        marks[group.id] ?? Set(group.others.map(\.id))
+        var marked = marks[group.id] ?? Set(group.others.map(\.id))
+        for (id, decision) in drafts[group.id] ?? [:] {
+            if decision == .delete { marked.insert(id) } else { marked.remove(id) }
+        }
+        return marked
     }
 
     /// Bytes a left swipe on this card would add to the pile.
@@ -254,12 +259,10 @@ final class FeedViewModel {
         switch (direction, card) {
         case (.up, _): "Later"
         case (.left, .photo(let item)), (.left, .video(let item)): "Delete · \(Format.size(item.bytes))"
-        case (.left, .similar(let group)):
-            markedForClearing(in: group).isEmpty ? "Keep all \(group.items.count)" : "Clear \(markedForClearing(in: group).count)"
         case (.left, .batch(let batch)) where drafts[batch.id] == nil: "Clear all \(batch.items.count)"
-        case (.left, .batch(let batch)):
+        case (.left, .similar), (.left, .batch):
             switch itemDecisions(for: card, direction: .left).values.filter({ $0 == .delete }).count {
-            case 0: "Keep all \(batch.items.count)"
+            case 0: "Keep all \(card.items.count)"
             case let n: "Clear \(n)"
             }
         case (.right, .photo), (.right, .video): "Keep"
@@ -327,15 +330,26 @@ final class FeedViewModel {
         commit(itemDecisions(for: card, direction: direction), card: card, direction: direction)
     }
 
-    /// Settles the current batch card from a one-by-one review. Items left out count as "later".
+    /// Settles the current batch or similar-shots card from a one-by-one review. Items left out
+    /// count as "later" in a batch, and follow their marks in a similar set.
     /// It costs one swipe like any card; out of swipes, the review is kept as a draft and the wall opens.
     func decideIndividually(_ outcome: [LibraryItem.ID: Decision]) {
-        guard phase == .feed, let card = currentCard, case .batch = card else { return }
+        guard phase == .feed, let card = currentCard else { return }
+        let rest: (LibraryItem.ID) -> Decision
+        switch card {
+        case .batch:
+            rest = { _ in .later }
+        case .similar(let group):
+            let marked = markedForClearing(in: group)
+            rest = { marked.contains($0) ? .delete : .keep }
+        case .photo, .video:
+            return
+        }
         guard admitSwipe() else {
             saveDraft(outcome, for: card.id)
             return
         }
-        let complete = Dictionary(uniqueKeysWithValues: card.items.map { ($0.id, outcome[$0.id] ?? .later) })
+        let complete = Dictionary(uniqueKeysWithValues: card.items.map { ($0.id, outcome[$0.id] ?? rest($0.id)) })
         commit(complete, card: card, direction: complete.values.contains(.delete) ? .left : .right)
     }
 
@@ -350,10 +364,14 @@ final class FeedViewModel {
         saveProgress()
     }
 
+    /// Also changes a partial review's decision for the shot, so the card and the review agree.
     func toggleMark(_ itemID: LibraryItem.ID, in group: SimilarGroup) {
         var marked = markedForClearing(in: group)
         if marked.contains(itemID) { marked.remove(itemID) } else { marked.insert(itemID) }
         marks[group.id] = marked
+        if drafts[group.id] != nil {
+            drafts[group.id]?[itemID] = marked.contains(itemID) ? .delete : .keep
+        }
         saveProgress()
     }
 
@@ -665,28 +683,19 @@ final class FeedViewModel {
     }
 
     /// Per-item outcome of swiping a card in a direction.
+    /// Items from a partial one-by-one review keep their decision; the rest follow the swipe.
     private func itemDecisions(for card: FeedCard, direction: SwipeDirection) -> [LibraryItem.ID: Decision] {
-        let ids = card.items.map(\.id)
-        switch (direction, card) {
-        case (_, .batch(let batch)) where drafts[batch.id] != nil:
-            // Items from a partial review keep their decision; the rest follow the swipe.
-            let draft = drafts[batch.id] ?? [:]
-            let rest: Decision = switch direction {
-            case .left: .delete
-            case .right: .keep
+        let draft = drafts[card.id] ?? [:]
+        let marked: Set<LibraryItem.ID>? = if case .similar(let group) = card { markedForClearing(in: group) } else { nil }
+        return Dictionary(uniqueKeysWithValues: card.items.map { item in
+            if let drafted = draft[item.id] { return (item.id, drafted) }
+            let decision: Decision = switch direction {
             case .up: .later
+            case .right: .keep
+            case .left: marked.map { $0.contains(item.id) ? .delete : .keep } ?? .delete
             }
-            return Dictionary(uniqueKeysWithValues: ids.map { ($0, draft[$0] ?? rest) })
-        case (.up, _):
-            return Dictionary(uniqueKeysWithValues: ids.map { ($0, .later) })
-        case (.right, _):
-            return Dictionary(uniqueKeysWithValues: ids.map { ($0, .keep) })
-        case (.left, .similar(let group)):
-            let marked = markedForClearing(in: group)
-            return Dictionary(uniqueKeysWithValues: ids.map { ($0, marked.contains($0) ? .delete : .keep) })
-        case (.left, _):
-            return Dictionary(uniqueKeysWithValues: ids.map { ($0, .delete) })
-        }
+            return (item.id, decision)
+        })
     }
 
     /// Asks the library to delete these and settles the ones that can't be. Returns what was
