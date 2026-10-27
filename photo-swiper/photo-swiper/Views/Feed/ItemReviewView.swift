@@ -1,29 +1,32 @@
 import SwiftUI
 
-/// Goes through a batch one item at a time on the same deck as the main feed.
+/// Goes through a card's items one at a time on the same deck as the main feed:
+/// a batch of screenshots, or a set of similar shots.
 ///
 /// Decisions go out together through `onFinish` once the last item is swiped.
 /// Closing early keeps them as a draft on the view model, and reopening picks up where it left off.
-struct BatchReviewView: View {
+struct ItemReviewView: View {
     @Environment(FeedViewModel.self) private var vm
     @Environment(\.dismiss) private var dismiss
-    let batch: ItemBatch
+    let set: ReviewSet
     let onFinish: ([LibraryItem.ID: Decision]) -> Void
 
+    /// The set in the order the deck shows it: drafted items first, so undo can reach them.
+    private let items: [LibraryItem]
     @State private var index: Int
     @State private var decisions: [LibraryItem.ID: Decision]
     @State private var request: SwipeDirection?
     @State private var addedBytes: Int64?
     @State private var returning: FeedViewModel.ReturningCard?
 
-    init(batch: ItemBatch, draft: [LibraryItem.ID: Decision] = [:], onFinish: @escaping ([LibraryItem.ID: Decision]) -> Void) {
-        self.batch = batch
+    init(set: ReviewSet, draft: [LibraryItem.ID: Decision] = [:], onFinish: @escaping ([LibraryItem.ID: Decision]) -> Void) {
+        self.set = set
         self.onFinish = onFinish
+        items = set.visitOrder(draft: draft)
         _decisions = State(initialValue: draft)
-        _index = State(initialValue: batch.items.firstIndex { draft[$0.id] == nil } ?? batch.items.count)
+        _index = State(initialValue: items.firstIndex { draft[$0.id] == nil } ?? items.count)
     }
 
-    private var items: [LibraryItem] { batch.items }
     private var cards: [FeedCard] { items.map(FeedCard.init(item:)) }
     private var clearBytes: Int64 {
         items.filter { decisions[$0.id] == .delete }.reduce(0) { $0 + $1.bytes }
@@ -41,7 +44,8 @@ struct BatchReviewView: View {
                 returning: returning,
                 label: vm.swipeLabel,
                 onDecide: decide,
-                request: $request
+                request: $request,
+                bestPickReason: bestPickReason
             )
         }
         .background(DS.Palette.paper)
@@ -56,7 +60,7 @@ struct BatchReviewView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             DeckProgress(
-                title: batch.label,
+                title: set.title,
                 position: min(index + 1, items.count),
                 total: items.count,
                 value: Double(index) / Double(max(items.count, 1))
@@ -64,6 +68,11 @@ struct BatchReviewView: View {
             ToClearCounter(bytes: clearBytes, addedBytes: addedBytes, addedID: index)
                 .frame(maxWidth: .infinity, alignment: .trailing)
         }
+    }
+
+    private func bestPickReason(for card: FeedCard) -> String? {
+        guard let bestID = set.bestID, card.items.first?.id == bestID else { return nil }
+        return set.reason ?? ""
     }
 
     private func decide(_ direction: SwipeDirection, card: FeedCard) {
@@ -78,7 +87,7 @@ struct BatchReviewView: View {
         returning = nil
         addedBytes = decision == .delete ? item.bytes : nil
         index += 1
-        if index >= items.count { onFinish(decisions) } else { vm.saveDraft(decisions, for: batch) }
+        if index >= items.count { onFinish(decisions) } else { vm.saveDraft(decisions, for: set.id) }
     }
 
     private func undo() {
@@ -96,13 +105,18 @@ struct BatchReviewView: View {
             decisions[item.id] = nil
             addedBytes = nil
         }
-        vm.saveDraft(decisions, for: batch)
+        vm.saveDraft(decisions, for: set.id)
     }
 }
 
 #if DEBUG
-#Preview {
-    BatchReviewView(batch: PreviewSamples.screenshotBatch) { print($0) }
+#Preview("Batch") {
+    ItemReviewView(set: ReviewSet(batch: PreviewSamples.screenshotBatch)) { print($0) }
+        .environment(FeedViewModel.mock())
+}
+
+#Preview("Similar") {
+    ItemReviewView(set: ReviewSet(group: PreviewSamples.similarGroup, startingAt: PreviewSamples.similarGroup.bestID)) { print($0) }
         .environment(FeedViewModel.mock())
 }
 #endif

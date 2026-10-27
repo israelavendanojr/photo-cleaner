@@ -41,7 +41,7 @@ final class FeedViewModel {
         var index: Int
         var decisions: [LibraryItem.ID: Decision]
         var marks: [SimilarGroup.ID: Set<LibraryItem.ID>]
-        let drafts: [ItemBatch.ID: [LibraryItem.ID: Decision]]
+        let drafts: [FeedCard.ID: [LibraryItem.ID: Decision]]
         let cardID: FeedCard.ID
         let direction: SwipeDirection
         /// Saved decisions for the card's items before the swipe; nil where there were none.
@@ -85,8 +85,8 @@ final class FeedViewModel {
 
     /// Similar-group overrides. Missing means "everything but the best pick".
     private var marks: [SimilarGroup.ID: Set<LibraryItem.ID>] = [:]
-    /// One-by-one decisions for batches reviewed partway. Applied when the batch card is swiped.
-    private var drafts: [ItemBatch.ID: [LibraryItem.ID: Decision]] = [:]
+    /// One-by-one decisions for cards reviewed partway, by card. Applied when the card is swiped.
+    private var drafts: [FeedCard.ID: [LibraryItem.ID: Decision]] = [:]
     private var history: [Snapshot] = []
     /// Pending deletes that are no longer in the deck: from earlier decks, or trimmed from behind this one.
     private var carriedPending: [LibraryItem] = []
@@ -330,22 +330,23 @@ final class FeedViewModel {
     /// Settles the current batch card from a one-by-one review. Items left out count as "later".
     /// It costs one swipe like any card; out of swipes, the review is kept as a draft and the wall opens.
     func decideIndividually(_ outcome: [LibraryItem.ID: Decision]) {
-        guard phase == .feed, let card = currentCard, case .batch(let batch) = card else { return }
+        guard phase == .feed, let card = currentCard, case .batch = card else { return }
         guard admitSwipe() else {
-            saveDraft(outcome, for: batch)
+            saveDraft(outcome, for: card.id)
             return
         }
         let complete = Dictionary(uniqueKeysWithValues: card.items.map { ($0.id, outcome[$0.id] ?? .later) })
         commit(complete, card: card, direction: complete.values.contains(.delete) ? .left : .right)
     }
 
-    /// Decisions from an unfinished one-by-one review of this batch.
-    func draft(for batch: ItemBatch) -> [LibraryItem.ID: Decision] {
-        drafts[batch.id] ?? [:]
+    /// Decisions from an unfinished one-by-one review of this card.
+    /// Batch drafts saved before similar sets had reviews are keyed by batch ID, which is the card ID.
+    func draft(for cardID: FeedCard.ID) -> [LibraryItem.ID: Decision] {
+        drafts[cardID] ?? [:]
     }
 
-    func saveDraft(_ outcome: [LibraryItem.ID: Decision], for batch: ItemBatch) {
-        drafts[batch.id] = outcome.isEmpty ? nil : outcome
+    func saveDraft(_ outcome: [LibraryItem.ID: Decision], for cardID: FeedCard.ID) {
+        drafts[cardID] = outcome.isEmpty ? nil : outcome
         saveProgress()
     }
 

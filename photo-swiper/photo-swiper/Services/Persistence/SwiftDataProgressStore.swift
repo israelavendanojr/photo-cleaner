@@ -139,7 +139,7 @@ final class SwiftDataProgressStore: ProgressStoring {
                 index: row.index,
                 marks: try decoder.decode([SimilarGroup.ID: Set<LibraryItem.ID>].self, from: row.marks),
                 finished: row.finished,
-                drafts: row.drafts.flatMap { try? decoder.decode([ItemBatch.ID: [LibraryItem.ID: Decision]].self, from: $0) } ?? [:]
+                drafts: row.drafts.flatMap { try? decoder.decode([FeedCard.ID: [LibraryItem.ID: Decision]].self, from: $0) } ?? [:]
             )
         } catch {
             // Likely an older snapshot format. Decisions are stored separately, so only the card order is lost.

@@ -88,12 +88,12 @@ struct FeedViewModelPersistenceTests {
             return
         }
         let draft = [batch.items[0].id: Decision.delete, batch.items[1].id: .keep]
-        vm.saveDraft(draft, for: batch)
+        vm.saveDraft(draft, for: batch.id)
 
         let relaunched = await launch(store)
 
         #expect(relaunched.currentCard?.id == batch.id)
-        #expect(relaunched.draft(for: batch) == draft)
+        #expect(relaunched.draft(for: batch.id) == draft)
     }
 
     @Test(arguments: ProgressStoreTests.Kind.allCases)

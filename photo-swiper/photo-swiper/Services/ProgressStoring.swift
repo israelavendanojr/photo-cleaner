@@ -74,6 +74,7 @@ struct SavedSession: Codable, Equatable, Sendable {
     var marks: [SimilarGroup.ID: Set<LibraryItem.ID>]
     /// No longer used: the deck always resumes. Kept so saved rows stay readable; always written false.
     var finished: Bool
-    /// Partial one-by-one reviews of batch cards, by batch.
-    var drafts: [ItemBatch.ID: [LibraryItem.ID: Decision]] = [:]
+    /// Partial one-by-one reviews of batch and similar-shots cards, by card ID.
+    /// For a batch that's its batch ID, so drafts saved before this keep loading.
+    var drafts: [FeedCard.ID: [LibraryItem.ID: Decision]] = [:]
 }

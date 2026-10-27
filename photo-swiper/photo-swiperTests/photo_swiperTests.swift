@@ -303,12 +303,12 @@ struct BatchReviewTests {
         let batch = try batchCard(vm)
         let kept = batch.items[0], deleted = batch.items[1]
 
-        vm.saveDraft([kept.id: .keep, deleted.id: .delete], for: batch)
+        vm.saveDraft([kept.id: .keep, deleted.id: .delete], for: batch.id)
         vm.decide(.left)
 
         #expect(Set(vm.pendingItems.map(\.id)) == Set(batch.items.dropFirst().map(\.id)))
         #expect(vm.decisions[kept.id] == .keep)
-        #expect(vm.draft(for: batch).isEmpty)
+        #expect(vm.draft(for: batch.id).isEmpty)
     }
 
     @Test func swipingRightAfterAPartialReviewStillClearsDraftedDeletes() throws {
@@ -316,7 +316,7 @@ struct BatchReviewTests {
         let batch = try batchCard(vm)
         let deleted = batch.items[0]
 
-        vm.saveDraft([deleted.id: .delete], for: batch)
+        vm.saveDraft([deleted.id: .delete], for: batch.id)
         #expect(vm.bytesToClear(for: .batch(batch)) == batch.items.reduce(0) { $0 + $1.bytes })
         vm.decide(.right)
 
@@ -329,11 +329,11 @@ struct BatchReviewTests {
         let batch = try batchCard(vm)
         let draft = [batch.items[0].id: Decision.delete]
 
-        vm.saveDraft(draft, for: batch)
+        vm.saveDraft(draft, for: batch.id)
         vm.decide(.up)
         vm.undo()
 
-        #expect(vm.draft(for: batch) == draft)
+        #expect(vm.draft(for: batch.id) == draft)
         #expect(vm.decisions.isEmpty)
     }
 
@@ -341,10 +341,10 @@ struct BatchReviewTests {
         let vm = FeedViewModel.mock(startingAt: .batch)
         let batch = try batchCard(vm)
 
-        vm.saveDraft([batch.items[0].id: .delete], for: batch)
+        vm.saveDraft([batch.items[0].id: .delete], for: batch.id)
         vm.decideIndividually(Dictionary(uniqueKeysWithValues: batch.items.map { ($0.id, Decision.keep) }))
 
-        #expect(vm.draft(for: batch).isEmpty)
+        #expect(vm.draft(for: batch.id).isEmpty)
         #expect(vm.pendingItems.isEmpty)
     }
 

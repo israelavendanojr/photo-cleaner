@@ -4,7 +4,7 @@ import SwiftUI
 /// the action buttons, full-screen previews, and image pre-caching.
 ///
 /// It only shows cards and reports swipes. What a swipe means is up to the caller, so the
-/// main feed and a batch's one-by-one review get the same feel from the same code.
+/// main feed and a card's one-by-one review get the same feel from the same code.
 struct SwipeDeck: View {
     let cards: [FeedCard]
     let index: Int
@@ -16,7 +16,10 @@ struct SwipeDeck: View {
     let onDecide: (SwipeDirection, FeedCard) -> Void
     /// Set to swipe the top card in code. The action buttons use it too.
     @Binding var request: SwipeDirection?
-    var onOpenBatch: (ItemBatch) -> Void = { _ in }
+    /// A batch or similar-shots card asked to be gone through one by one.
+    var onOpenReview: (ReviewSet) -> Void = { _ in }
+    /// Marks a set's best pick with its reason. Only the one-by-one review has one.
+    var bestPickReason: (FeedCard) -> String? = { _ in nil }
     /// Shows the swipe caption and plays the swipe demo on the top card.
     var showsHint = false
     /// Deals the cards in from above when the deck first appears (straight after onboarding).
@@ -75,7 +78,8 @@ struct SwipeDeck: View {
                     ) {
                         CardContentView(
                             card: card,
-                            onOpenBatch: onOpenBatch,
+                            bestPickReason: bestPickReason(card),
+                            onOpenReview: onOpenReview,
                             onPlayVideo: { previewingVideo = $0 },
                             onOpenPhoto: { previewingPhoto = $0 }
                         )
