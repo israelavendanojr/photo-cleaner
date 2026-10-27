@@ -537,6 +537,16 @@ final class photo_swiperUITests: XCTestCase {
         attachScreenshot(app, "restore failed")
     }
 
+    @MainActor
+    func testWallShowsTermsLink() throws {
+        let app = launch("-startAt", "outOfSwipes", "-unlocked", "NO")
+        XCTAssertTrue(app.buttons["paywall.unlock"].waitForExistence(timeout: 5))
+        let terms = app.buttons["legal.terms"]
+        XCTAssertTrue(terms.exists, "Terms sits under the unlock")
+        XCTAssertEqual(terms.label, "Terms of use")
+        XCTAssertFalse(app.buttons["legal.privacy"].exists, "No privacy link until its URL is set")
+    }
+
     // MARK: Settings
 
     @MainActor

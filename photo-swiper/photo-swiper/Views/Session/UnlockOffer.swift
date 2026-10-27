@@ -1,6 +1,7 @@
 import SwiftUI
 
-/// The unlock: one-time purchase, what it includes, the buy button, and Restore beside a way out.
+/// The unlock: one-time purchase, what it includes, the buy button, Restore beside a way out,
+/// and the legal links.
 /// Shared by the swipe wall and Settings' unlock sheet; the purchase itself runs in `FeedViewModel`.
 struct UnlockOffer: View {
     @Environment(FeedViewModel.self) private var vm
@@ -102,6 +103,8 @@ struct UnlockOffer: View {
                     .transition(.opacity)
                     .accessibilityIdentifier("paywall.message")
             }
+
+            LegalLinks()
         }
         .animation(DS.Motion.calm, value: status)
     }
