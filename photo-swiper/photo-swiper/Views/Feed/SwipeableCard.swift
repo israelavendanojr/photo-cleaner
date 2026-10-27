@@ -21,10 +21,10 @@ struct SwipeableCard<Content: View>: View {
     let onSwipe: (SwipeDirection) -> Void
     /// Plays the first-time swipe demo (`SwipeNudge`) while the card sits untouched.
     let nudges: Bool
-    /// False when a swipe can't go through (out of free swipes). The card then resists the drag,
-    /// springs back, and reports `onRefused` instead of committing.
-    let canCommit: Bool
-    let onRefused: () -> Void
+    /// False when a swipe that way can't go through (out of free swipes). Asked as the swipe
+    /// commits. The card then springs back and reports `onRefused` instead of committing.
+    let canCommit: (SwipeDirection) -> Bool
+    let onRefused: (SwipeDirection) -> Void
     @ViewBuilder let content: Content
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -46,8 +46,8 @@ struct SwipeableCard<Content: View>: View {
         onRelease: @escaping (SwipeDirection) -> Void = { _ in },
         onSwipe: @escaping (SwipeDirection) -> Void,
         nudges: Bool = false,
-        canCommit: Bool = true,
-        onRefused: @escaping () -> Void = {},
+        canCommit: @escaping (SwipeDirection) -> Bool = { _ in true },
+        onRefused: @escaping (SwipeDirection) -> Void = { _ in },
         @ViewBuilder content: () -> Content
     ) {
         self.canCommit = canCommit
@@ -114,7 +114,7 @@ struct SwipeableCard<Content: View>: View {
                 guard !isFlying else { return }
                 isDragging = true
                 lastTouch = .now
-                guard canCommit else {
+                guard SwipeDirection.allCases.allSatisfy(canCommit) else {
                     // Gives a little, then stops short of committing.
                     offset = SwipeThresholds.resisted(value.translation)
                     progress = Self.progress(for: offset)
@@ -147,7 +147,7 @@ struct SwipeableCard<Content: View>: View {
     /// Flies off, or refuses when the swipe can't go through.
     private func attempt(_ direction: SwipeDirection) {
         guard isEnabled, !isFlying else { return }
-        guard canCommit else {
+        guard canCommit(direction) else {
             refuse(direction)
             return
         }
@@ -172,7 +172,7 @@ struct SwipeableCard<Content: View>: View {
                 progress = 0
             }
         }
-        onRefused()
+        onRefused(direction)
     }
 
     private func fly(_ direction: SwipeDirection) {

@@ -22,8 +22,8 @@ struct CardStackView: View {
             onOpenReview: { reviewing = $0 },
             showsHint: !hasSeenSwipeHint,
             dealsIn: dealsIn,
-            canSwipe: vm.canSwipe,
-            onRefused: refused,
+            canSwipe: { _ in vm.canSwipe },
+            onRefused: { _ in refused() },
             waitingText: vm.isFindingMore ? "Finding more…" : nil
         )
         #if DEBUG
