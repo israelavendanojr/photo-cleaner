@@ -17,9 +17,12 @@ struct CardContentView: View {
         case .video(let item):
             VideoCardView(item: item) { onPlayVideo(item) }
         case .similar(let group):
-            SimilarShotsCardView(group: group, marked: vm.markedForClearing(in: group)) { id in
-                vm.toggleMark(id, in: group)
-            }
+            SimilarShotsCardView(
+                group: group,
+                marked: vm.markedForClearing(in: group),
+                onToggle: { vm.toggleMark($0, in: group) },
+                onOpen: { onOpenReview(ReviewSet(group: group, startingAt: $0)) }
+            )
         case .batch(let batch):
             ScreenshotBatchCardView(batch: batch) { onOpenReview(ReviewSet(batch: batch)) }
         }

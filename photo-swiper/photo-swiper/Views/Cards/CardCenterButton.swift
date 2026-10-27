@@ -8,13 +8,13 @@ struct CardCenterButton: View {
     let accessibilityLabel: String
     let action: () -> Void
 
-    /// Side of the invisible square that accepts taps.
+    /// Side of the invisible square that accepts taps, shrunk to fit a smaller space.
     private let hitSize: CGFloat = 160
 
     var body: some View {
         Button(action: action) {
             Color.clear
-                .frame(width: hitSize, height: hitSize)
+                .frame(maxWidth: hitSize, maxHeight: hitSize)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
