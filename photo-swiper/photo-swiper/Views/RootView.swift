@@ -8,6 +8,8 @@ struct RootView: View {
     @State private var isPilePresented = false
     /// The unlock offered after a free user's delete.
     @State private var isUpsellPresented = false
+    /// The tabs' bottom safe area, tab bar included.
+    @State private var tabBarInset: CGFloat = 0
     /// The feed is about to replace onboarding, so its first deck deals in.
     @State private var dealsInDeck = false
     @Environment(\.scenePhase) private var scenePhase
@@ -97,6 +99,8 @@ struct RootView: View {
             LibraryView()
                 .tabVisibility(tab == .library)
         }
+        .onGeometryChange(for: CGFloat.self) { $0.safeAreaInsets.bottom } action: { tabBarInset = $0 }
+        .environment(\.tabBarInset, tabBarInset)
         .safeAreaInset(edge: .bottom, spacing: 0) {
             PillTabBar(items: AppTab.allCases.map(\.tabItem), selection: $tab)
                 .padding(.top, DS.Spacing.xs)
@@ -131,6 +135,12 @@ private struct DelayedProgressView: View {
                 withAnimation(.easeIn(duration: 0.2)) { isShown = true }
             }
     }
+}
+
+extension EnvironmentValues {
+    /// How far the tab bar reaches up from the bottom edge, home indicator included. Zero outside the tabs.
+    /// Screens pushed inside a tab don't always get the tab bar's inset, so they can pad by what's missing.
+    @Entry var tabBarInset: CGFloat = 0
 }
 
 private extension View {

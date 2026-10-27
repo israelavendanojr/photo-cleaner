@@ -19,11 +19,16 @@ struct PendingPileView: View {
     /// Bytes the last delete freed, shown briefly before the pile closes.
     @State private var freed: Int64?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.tabBarInset) private var tabBarInset
+    /// The bottom safe area this screen was given.
+    @State private var bottomInset: CGFloat = 0
 
     private var count: Int { vm.pendingItems.count }
     private var selectedItems: [LibraryItem] { vm.pendingItems.filter { selected.contains($0.id) } }
     private var keptItems: [LibraryItem] { vm.pendingItems.filter { !selected.contains($0.id) } }
     private var selectedBytes: Int64 { selectedItems.reduce(0) { $0 + $1.bytes } }
+    /// Pushed inside the Library tab, the tab bar can cover the bottom without being in the safe area.
+    private var tabBarOverlap: CGFloat { max(0, tabBarInset - bottomInset) }
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 6), count: 3)
 
     var body: some View {
@@ -64,6 +69,8 @@ struct PendingPileView: View {
                 actions.transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
+        .safeAreaPadding(.bottom, tabBarOverlap)
+        .onGeometryChange(for: CGFloat.self) { $0.safeAreaInsets.bottom } action: { bottomInset = $0 }
         .background(DS.Palette.paper)
         .sensoryFeedback(.selection, trigger: selected)
         .onAppear {
@@ -140,7 +147,7 @@ struct PendingPileView: View {
         }
         .padding(.horizontal, DS.Spacing.l)
         .padding(.top, DS.Spacing.s)
-        .padding(.bottom, DS.Spacing.xs)
+        .padding(.bottom, DS.Spacing.m)
         .background(DS.Palette.paper)
     }
 
@@ -258,7 +265,7 @@ private struct FreedConfirmation: View {
             .padding(.vertical, DS.Spacing.m)
             .background(DS.Palette.brickTint, in: RoundedRectangle(cornerRadius: DS.Radius.inner, style: .continuous))
             .padding(.horizontal, DS.Spacing.l)
-            .padding(.bottom, DS.Spacing.xs)
+            .padding(.bottom, DS.Spacing.m)
             .accessibilityIdentifier("pile.freed")
             .onAppear {
                 AccessibilityNotification.Announcement("Freed \(Format.size(bytes))").post()
