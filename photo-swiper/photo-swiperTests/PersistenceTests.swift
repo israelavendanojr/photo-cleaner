@@ -97,6 +97,42 @@ struct FeedViewModelPersistenceTests {
     }
 
     @Test(arguments: ProgressStoreTests.Kind.allCases)
+    func aBatchDraftSavedByBatchIDStillLoads(_ kind: ProgressStoreTests.Kind) async throws {
+        let store = try makeStore(kind)
+        let vm = await launch(store)
+        while vm.phase == .feed, !{ if case .batch = vm.currentCard { true } else { false } }() { vm.decide(.right) }
+        guard case .batch(let batch) = try #require(vm.currentCard), let session = vm.session else {
+            Issue.record("Expected a batch card on top")
+            return
+        }
+        // As saved before drafts were keyed by card: by the batch's own ID.
+        let draft = [batch.items[0].id: Decision.delete]
+        store.saveSession(SavedSession(session: session, index: vm.index, marks: [:], finished: false, drafts: [batch.id: draft]))
+
+        let relaunched = await launch(store)
+
+        #expect(relaunched.draft(for: FeedCard.batch(batch).id) == draft)
+    }
+
+    @Test(arguments: ProgressStoreTests.Kind.allCases)
+    func aPartialSimilarReviewSurvivesARelaunch(_ kind: ProgressStoreTests.Kind) async throws {
+        let store = try makeStore(kind)
+        let vm = await launch(store)
+        while vm.phase == .feed, !{ if case .similar = vm.currentCard { true } else { false } }() { vm.decide(.right) }
+        guard case .similar(let group) = try #require(vm.currentCard) else {
+            Issue.record("Expected a similar card on top")
+            return
+        }
+        let draft = [group.bestID: Decision.delete]
+        vm.saveDraft(draft, for: group.id)
+
+        let relaunched = await launch(store)
+
+        #expect(relaunched.draft(for: group.id) == draft)
+        #expect(relaunched.markedForClearing(in: group).contains(group.bestID))
+    }
+
+    @Test(arguments: ProgressStoreTests.Kind.allCases)
     func aCancelledDeleteStaysPendingAfterARelaunch(_ kind: ProgressStoreTests.Kind) async throws {
         let store = try makeStore(kind)
         library.onDelete = { _ in throw DeletionError.cancelled }

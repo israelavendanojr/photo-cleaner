@@ -359,6 +359,181 @@ struct BatchReviewTests {
     }
 }
 
+@MainActor
+struct SimilarReviewTests {
+    private func similarCard(_ vm: FeedViewModel) throws -> SimilarGroup {
+        guard case .similar(let group) = try #require(vm.currentCard) else {
+            Issue.record("Expected a similar card on top")
+            throw CancellationError()
+        }
+        try #require(group.others.count >= 2)
+        return group
+    }
+
+    private func lockedMock(swipes: Int) -> FeedViewModel {
+        FeedViewModel.mock(
+            startingAt: .similar,
+            entitlements: TestEntitlements(isUnlocked: false),
+            allowance: SwipeAllowance(balance: swipes, tunables: .standard, now: .now)
+        )
+    }
+
+    @Test func theReviewSetPutsTheBestPickFirstAndStartsOnTheTappedShot() throws {
+        let vm = FeedViewModel.mock(startingAt: .similar)
+        let group = try similarCard(vm)
+        let tapped = group.others[1]
+
+        let set = ReviewSet(group: group, startingAt: tapped.id)
+
+        #expect(set.id == FeedCard.similar(group).id)
+        #expect(set.title == "Similar shots")
+        #expect(set.items.map(\.id) == [group.bestID] + group.others.map(\.id))
+        #expect(set.items[set.start].id == tapped.id)
+        #expect(set.bestID == group.bestID)
+        #expect(set.reason == group.reason)
+        #expect(set.visitOrder(draft: [:]).first?.id == tapped.id, "The deck opens on the tapped shot")
+        #expect(set.visitOrder(draft: [:]).count == group.items.count)
+    }
+
+    @Test func reopeningResumesAfterTheDraftedShots() throws {
+        let vm = FeedViewModel.mock(startingAt: .similar)
+        let group = try similarCard(vm)
+        let set = ReviewSet(group: group, startingAt: group.bestID)
+        let draft = [group.bestID: Decision.keep]
+
+        let order = set.visitOrder(draft: draft)
+
+        #expect(order.first?.id == group.bestID, "Drafted shots come first so undo reaches them")
+        #expect(order.dropFirst().map(\.id) == group.others.map(\.id))
+    }
+
+    @Test func aDraftIsKeptByCardID() throws {
+        let vm = FeedViewModel.mock(startingAt: .similar)
+        let group = try similarCard(vm)
+        let draft = [group.bestID: Decision.keep]
+
+        vm.saveDraft(draft, for: FeedCard.similar(group).id)
+
+        #expect(vm.draft(for: group.id) == draft)
+    }
+
+    @Test func aBatchCardIDIsItsBatchID() throws {
+        let vm = FeedViewModel.mock(startingAt: .batch)
+        guard case .batch(let batch) = try #require(vm.currentCard) else { return }
+        // Drafts saved before similar reviews existed are keyed by batch ID.
+        #expect(FeedCard.batch(batch).id == batch.id)
+    }
+
+    @Test func decidingOneByOneAppliesTheReviewAndUnreachedShotsFollowTheirMarks() throws {
+        let vm = FeedViewModel.mock(startingAt: .similar)
+        let start = vm.index
+        let group = try similarCard(vm)
+        let deletedBest = group.best, keptOther = group.others[0], unreached = group.others[1]
+
+        vm.decideIndividually([deletedBest.id: .delete, keptOther.id: .keep])
+
+        #expect(vm.index == start + 1)
+        #expect(vm.decisions[deletedBest.id] == .delete, "Deleting the best pick is the user's call")
+        #expect(vm.decisions[keptOther.id] == .keep)
+        #expect(vm.decisions[unreached.id] == .delete, "Unreached shots are still marked by default")
+        #expect(vm.draft(for: group.id).isEmpty)
+    }
+
+    @Test func theCardFaceShowsTheDraft() throws {
+        let vm = FeedViewModel.mock(startingAt: .similar)
+        let group = try similarCard(vm)
+        let kept = group.others[0]
+
+        vm.saveDraft([group.bestID: .delete, kept.id: .keep], for: group.id)
+
+        let marked = vm.markedForClearing(in: group)
+        #expect(marked.contains(group.bestID))
+        #expect(!marked.contains(kept.id))
+        #expect(marked.contains(group.others[1].id), "Shots the review didn't reach keep their mark")
+        #expect(vm.swipeLabel(.left, for: .similar(group)) == "Clear \(group.items.count - 1)")
+    }
+
+    @Test func togglingAMarkUpdatesTheDraft() throws {
+        let vm = FeedViewModel.mock(startingAt: .similar)
+        let group = try similarCard(vm)
+        let shot = group.others[0], other = group.others[1]
+        vm.saveDraft([shot.id: .delete], for: group.id)
+
+        vm.toggleMark(shot.id, in: group)
+        #expect(vm.draft(for: group.id)[shot.id] == .keep)
+        #expect(!vm.markedForClearing(in: group).contains(shot.id))
+
+        vm.toggleMark(other.id, in: group)
+        #expect(vm.draft(for: group.id)[other.id] == .keep)
+        vm.toggleMark(other.id, in: group)
+        #expect(vm.draft(for: group.id)[other.id] == .delete)
+        #expect(vm.markedForClearing(in: group).contains(other.id))
+    }
+
+    @Test func togglingWithoutADraftLeavesNoDraft() throws {
+        let vm = FeedViewModel.mock(startingAt: .similar)
+        let group = try similarCard(vm)
+
+        vm.toggleMark(group.others[0].id, in: group)
+
+        #expect(vm.draft(for: group.id).isEmpty)
+    }
+
+    @Test func swipingLeftAfterClosingEarlyCommitsTheDraft() throws {
+        let vm = FeedViewModel.mock(startingAt: .similar)
+        let group = try similarCard(vm)
+        let kept = group.others[0]
+
+        vm.saveDraft([group.bestID: .keep, kept.id: .keep], for: group.id)
+        vm.decide(.left)
+
+        #expect(vm.decisions[group.bestID] == .keep)
+        #expect(vm.decisions[kept.id] == .keep)
+        #expect(Set(vm.pendingItems.map(\.id)) == Set(group.others.dropFirst().map(\.id)))
+    }
+
+    @Test func aFinishedReviewCostsOneSwipeAndDraftsCostNone() throws {
+        let vm = lockedMock(swipes: 5)
+        let group = try similarCard(vm)
+
+        vm.saveDraft([group.bestID: .keep], for: group.id)
+        vm.toggleMark(group.others[0].id, in: group)
+        #expect(vm.swipesLeft == 5)
+
+        vm.decideIndividually(Dictionary(uniqueKeysWithValues: group.items.map { ($0.id, Decision.keep) }))
+
+        #expect(vm.swipesLeft == 4)
+    }
+
+    @Test func outOfSwipesKeepsTheReviewAsADraftAndOpensTheWall() throws {
+        let vm = lockedMock(swipes: 0)
+        let start = vm.index
+        let group = try similarCard(vm)
+        let outcome = Dictionary(uniqueKeysWithValues: group.items.map { ($0.id, Decision.keep) })
+
+        vm.decideIndividually(outcome)
+
+        #expect(vm.index == start)
+        #expect(vm.draft(for: group.id) == outcome)
+        #expect(vm.isWallPresented)
+    }
+
+    @Test func undoBringsBackTheDraftAndMarks() throws {
+        let vm = FeedViewModel.mock(startingAt: .similar)
+        let group = try similarCard(vm)
+        let draft = [group.others[0].id: Decision.keep]
+        vm.saveDraft(draft, for: group.id)
+        let marked = vm.markedForClearing(in: group)
+
+        vm.decideIndividually(Dictionary(uniqueKeysWithValues: group.items.map { ($0.id, Decision.delete) }))
+        vm.undo()
+
+        #expect(vm.draft(for: group.id) == draft)
+        #expect(vm.markedForClearing(in: group) == marked)
+        #expect(vm.returningCard?.direction == .left)
+    }
+}
+
 struct SessionCodingTests {
     @Test func sessionsRoundTripThroughJSON() throws {
         let session = MockFeedBuilder().makeSessionNow(number: 2, options: FeedOptions(skipFavorites: false))
