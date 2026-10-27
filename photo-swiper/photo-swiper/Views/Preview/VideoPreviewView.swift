@@ -1,9 +1,11 @@
 import AVFoundation
 import SwiftUI
 
-/// Full-screen playback for a video card, with play/pause and a scrubbable timeline.
+/// Full-screen playback for a video card, with play/pause, a scrubbable timeline, and pinch
+/// and double-tap zoom like photos.
 ///
 /// Swiping the video left, right, or up decides like on the card; swiping down just closes.
+/// While zoomed, one finger pans instead.
 struct VideoPreviewView: View {
     @Environment(\.dismiss) private var dismiss
     let item: LibraryItem
@@ -15,6 +17,7 @@ struct VideoPreviewView: View {
     @State private var playback = VideoPlayback()
     @State private var showsControls = true
     @State private var swipe = PreviewDrag()
+    @State private var zoom = ZoomTransform()
     /// The screen the video is fitted into.
     @State private var size = CGSize.zero
     @State private var posterSize = CGSize.zero
@@ -28,21 +31,11 @@ struct VideoPreviewView: View {
                 .ignoresSafeArea()
                 .overlay { video }
                 .onGeometryChange(for: CGSize.self, of: \.size) { size = $0 }
-                .onTapGesture {
+                // The controls sit above, unzoomed, so their buttons and the timeline's own
+                // drag keep working.
+                .zoomable($zoom, content: videoSize, container: size, swipe: swipe, onSwipe: finish) {
                     withAnimation(DS.Motion.calm) { showsControls.toggle() }
                 }
-                // The controls sit above, so the timeline keeps its own drag.
-                .gesture(
-                    DragGesture(coordinateSpace: .global)
-                        .onChanged { swipe.track($0) }
-                        .onEnded { value in
-                            switch swipe.end(value) {
-                            case .dismiss: dismiss()
-                            case .decide(let direction): decide(direction)
-                            case nil: break
-                            }
-                        }
-                )
                 .accessibilityActions {
                     ForEach(SwipeDirection.allCases, id: \.self) { direction in
                         Button(label(direction)) { decide(direction) }
@@ -80,6 +73,8 @@ struct VideoPreviewView: View {
                 .accessibilityHidden(true)
         }
         .frame(width: videoSize.width, height: videoSize.height)
+        .scaleEffect(zoom.scale)
+        .offset(zoom.offset)
         .overlay { SwipeOverlay(offset: swipe.decideOffset, label: label) }
         .scaleEffect(swipe.contentScale)
         .rotationEffect(.degrees(swipe.rotation))
@@ -91,6 +86,13 @@ struct VideoPreviewView: View {
         let natural = playback.videoSize == .zero ? posterSize : playback.videoSize
         guard natural.width > 0, natural.height > 0 else { return size }
         return AVMakeRect(aspectRatio: natural, insideRect: CGRect(origin: .zero, size: size)).size
+    }
+
+    private func finish(_ outcome: PreviewDrag.Outcome) {
+        switch outcome {
+        case .dismiss: dismiss()
+        case .decide(let direction): decide(direction)
+        }
     }
 
     private func decide(_ direction: SwipeDirection) {
