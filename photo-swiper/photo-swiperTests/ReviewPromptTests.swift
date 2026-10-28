@@ -29,7 +29,8 @@ struct ReviewPromptTests {
 
     private let library = FakeLibrary()
     private let defaults = freshDefaults()
-    private let entitlements = TestEntitlements(isUnlocked: false)
+    /// Unlocked: a free user's delete is followed by the unlock offer instead. See `PileCapTests`.
+    private let entitlements = TestEntitlements(isUnlocked: true)
 
     /// A started deck with several deletes pending, the mock video among them.
     private func vmWithPile() async throws -> (FeedViewModel, small: [LibraryItem], big: LibraryItem) {

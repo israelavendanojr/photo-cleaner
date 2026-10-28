@@ -4,6 +4,10 @@ import SwiftUI
 struct ToClearCounter: View {
     let bytes: Int64
     var label: String = "to clear"
+    /// What VoiceOver reads after the size, when it should differ from `label`, e.g. "to clear, 12 of 50 photos".
+    var accessibilityText: String?
+    /// Tints the label, e.g. when a free user's pile is full.
+    var isLabelEmphasized = false
     /// Bytes just added. Shown as a chip while non-nil.
     var addedBytes: Int64?
     /// Changes whenever a new chip should pop, even for equal amounts.
@@ -19,7 +23,8 @@ struct ToClearCounter: View {
                 .minimumScaleFactor(0.6)
             Text(label)
                 .font(.caption)
-                .foregroundStyle(DS.Palette.secondary)
+                .monospacedDigit()
+                .foregroundStyle(isLabelEmphasized ? DS.Palette.brick : DS.Palette.secondary)
         }
         .overlay(alignment: .topTrailing) {
             if let addedBytes, addedBytes > 0 {
@@ -39,7 +44,7 @@ struct ToClearCounter: View {
             }
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(Format.size(bytes)) \(label)")
+        .accessibilityLabel("\(Format.size(bytes)) \(accessibilityText ?? label)")
     }
 }
 
