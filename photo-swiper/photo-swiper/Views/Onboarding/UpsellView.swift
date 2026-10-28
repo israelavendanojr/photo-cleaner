@@ -1,10 +1,11 @@
 import SwiftUI
 
 /// Onboarding's last step: what the free version gives, plainly, then the same unlock offer as the
-/// wall. Carrying on for free is one tap, from the close button or beside Restore.
+/// wall. Carrying on for free is one tap, from the close button in onboarding's top bar or beside Restore.
 /// A purchase or restore moves on by itself.
 struct UpsellView: View {
     @Environment(FeedViewModel.self) private var vm
+    @Environment(\.onboardingTopInset) private var topInset
     let page: Int
     let pageCount: Int
     /// Leaves onboarding, free or unlocked.
@@ -13,7 +14,7 @@ struct UpsellView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                topBar
+                PageDots(current: page, count: pageCount)
                     .onboardingEntrance(order: 0)
                 Text(Copy.headline)
                     .dsSerif(40, relativeTo: .largeTitle, weight: .medium)
@@ -31,7 +32,7 @@ struct UpsellView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, DS.Spacing.xl)
-            .padding(.top, DS.Spacing.s)
+            .padding(.top, DS.Spacing.s + topInset)
             .padding(.bottom, DS.Spacing.l)
         }
         .scrollBounceBehavior(.basedOnSize)
@@ -43,16 +44,6 @@ struct UpsellView: View {
         .onAppear { vm.resetPurchaseStatus() }
         .onChange(of: vm.isUnlocked) { _, unlocked in
             if unlocked { onContinue() }
-        }
-    }
-
-    private var topBar: some View {
-        HStack {
-            PageDots(current: page, count: pageCount)
-            Spacer()
-            CircleIconButton(systemImage: "xmark", accessibilityLabel: Copy.continueFree, action: continueFree)
-                .disabled(vm.isPurchaseBusy)
-                .accessibilityIdentifier("onboarding.upsell.close")
         }
     }
 

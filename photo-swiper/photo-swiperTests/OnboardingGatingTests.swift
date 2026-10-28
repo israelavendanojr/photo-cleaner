@@ -364,4 +364,84 @@ struct OnboardingGatingTests {
         let again = await launched(center: center)
         #expect(again.phase == .feed)
     }
+
+    // MARK: Going back
+
+    @Test func goingBackRetracesTheStepsAndForwardReachesThemAgain() async {
+        library.needsPrompt = true
+        let vm = await launched(entitlements: TestEntitlements(isUnlocked: false), center: FakeNotificationCenter())
+        await vm.start()
+        #expect(!vm.canGoBackInOnboarding, "The primer and Welcome go back in the view")
+        await vm.advanceOnboarding()
+        await vm.advanceOnboarding()
+        #expect(vm.onboardingStep == .upsell)
+
+        vm.goBackInOnboarding()
+        #expect(vm.onboardingStep == .notifications)
+        vm.goBackInOnboarding()
+        #expect(vm.onboardingStep == .intro)
+        #expect(vm.phase == .onboarding, "The feed stays held while the user looks back")
+        #expect(vm.onboardingPageCount == 4)
+
+        await vm.advanceOnboarding()
+        #expect(vm.onboardingStep == .notifications)
+        await vm.advanceOnboarding()
+        #expect(vm.onboardingStep == .upsell)
+        await vm.advanceOnboarding()
+        #expect(vm.phase == .feed)
+        #expect(defaults.bool(forKey: DefaultsKey.hasOnboarded))
+    }
+
+    @Test func withoutRemindersTheOfferGoesBackToThePrimer() async {
+        library.needsPrompt = true
+        let vm = await launched(entitlements: TestEntitlements(isUnlocked: false))
+        await vm.start()
+        await vm.advanceOnboarding()
+        #expect(vm.onboardingStep == .upsell)
+
+        vm.goBackInOnboarding()
+        #expect(vm.onboardingStep == .intro)
+    }
+
+    @Test func answeredRemindersStillShowWhenComingBackThrough() async {
+        library.needsPrompt = true
+        let center = FakeNotificationCenter()
+        let vm = await launched(entitlements: TestEntitlements(isUnlocked: false), center: center)
+        await vm.start()
+        await vm.advanceOnboarding()
+        await vm.remindWhenSwipesAreBack()
+        await vm.advanceOnboarding()
+        #expect(!center.undetermined, "iOS has answered, so the step wouldn't be offered fresh")
+
+        vm.goBackInOnboarding()
+        vm.goBackInOnboarding()
+        await vm.advanceOnboarding()
+        #expect(vm.onboardingStep == .notifications, "The page dots don't change on the way back through")
+        #expect(vm.isRemindersOptedIn)
+        #expect(center.authorizationRequests == 1)
+    }
+
+    @Test func noGoingBackOnceFinished() async {
+        library.needsPrompt = true
+        let builder = GatedBuilder()
+        builder.isGated = true
+        let vm = FeedViewModel(library: library, builder: builder, entitlements: TestEntitlements(isUnlocked: false),
+                               defaults: defaults)
+        await vm.start()
+        let allow = Task { await vm.start() }
+        while !builder.isWaiting { await Task.yield() }
+        await vm.advanceOnboarding()
+        #expect(vm.onboardingStep == .upsell)
+        #expect(vm.canGoBackInOnboarding)
+
+        await vm.advanceOnboarding()
+        #expect(vm.isLeavingOnboarding)
+        #expect(!vm.canGoBackInOnboarding)
+        vm.goBackInOnboarding()
+        #expect(vm.onboardingStep == .upsell)
+
+        builder.release()
+        await allow.value
+        #expect(vm.phase == .feed)
+    }
 }

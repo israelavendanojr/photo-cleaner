@@ -3,7 +3,9 @@ import SwiftUI
 /// Second onboarding screen: explains the one permission right before iOS asks for it, then
 /// shows access granted and the first session underway before onboarding moves on.
 struct PhotoAccessPrimerView: View {
-    enum Progress { case idle, requesting, preparing }
+    /// `preparing` is the moment after access is granted; `granted` is the primer seen again later,
+    /// which shows the same steps but just continues.
+    enum Progress { case idle, requesting, preparing, granted }
 
     let progress: Progress
     var pageCount = 2
@@ -21,7 +23,7 @@ struct PhotoAccessPrimerView: View {
                 .dsSerif(40, relativeTo: .largeTitle, weight: .medium)
                 .foregroundStyle(DS.Palette.ink)
                 .accessibilityAddTraits(.isHeader)
-                .padding(.top, DS.Spacing.xxl)
+                .padding(.top, DS.Spacing.l)
                 .onboardingEntrance(order: 0)
             Text("To find similar shots and blurry ones, \(AppInfo.name) needs to see your whole library.")
                 .font(.body)
@@ -49,7 +51,7 @@ struct PhotoAccessPrimerView: View {
                 Button(action: onContinue) { buttonLabel }
                     .buttonStyle(.pill(.ink))
                     // Not `.disabled`, which would dim the button while it shows progress.
-                    .allowsHitTesting(progress == .idle)
+                    .allowsHitTesting(progress == .idle || progress == .granted)
                     .accessibilityLabel("Continue")
                     .accessibilityValue(progress == .preparing ? "Finding your first photos" : "")
                     .accessibilityIdentifier("onboarding.access.continue")
@@ -79,7 +81,7 @@ struct PhotoAccessPrimerView: View {
     }
 
     private func status(ofStep i: Int) -> StepRow.Status {
-        guard progress == .preparing else { return .idle }
+        guard progress == .preparing || progress == .granted else { return .idle }
         return switch i {
         case 0: .done
         case 1: .active
@@ -175,5 +177,10 @@ private struct StepRow: View {
 
 #Preview("Preparing") {
     PhotoAccessPrimerView(progress: .preparing, onContinue: {})
+        .background(DS.Palette.paper)
+}
+
+#Preview("Granted, revisited") {
+    PhotoAccessPrimerView(progress: .granted, pageCount: 4, onContinue: {})
         .background(DS.Palette.paper)
 }

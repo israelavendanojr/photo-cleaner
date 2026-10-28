@@ -410,7 +410,8 @@ final class FeedViewModel {
     func advanceOnboarding() async {
         guard phase == .onboarding, isOnboardingAccessGranted else { return }
         if onboardingStep == .intro {
-            offersReminderStep = await reminderStepApplies()
+            // Once offered it stays, so coming back through after answering iOS still shows it.
+            if !offersReminderStep { offersReminderStep = await reminderStepApplies() }
             if offersReminderStep {
                 onboardingStep = .notifications
                 return
@@ -421,6 +422,17 @@ final class FeedViewModel {
             return
         }
         finishOnboarding()
+    }
+
+    /// Back one step after photo access: the offer to reminders where they were shown, either to the primer.
+    func goBackInOnboarding() {
+        guard canGoBackInOnboarding else { return }
+        onboardingStep = onboardingStep == .upsell && offersReminderStep ? .notifications : .intro
+    }
+
+    /// Onboarding can step back from where it is. Not mid-purchase, nor once the user has finished.
+    var canGoBackInOnboarding: Bool {
+        phase == .onboarding && holdsOnboarding && onboardingStep != .intro && !isPurchaseBusy
     }
 
     /// Lets the feed replace onboarding. If the first deck is still being built, `start()` shows it

@@ -67,6 +67,60 @@ final class photo_swiperUITests: XCTestCase {
     }
 
     @MainActor
+    func testOnboardingGoesBackThroughEveryStep() throws {
+        let app = launch("-startAt", "onboarding")
+        app.buttons["onboarding.welcome.continue"].tap()
+        let access = app.buttons["onboarding.access.continue"]
+        XCTAssertTrue(access.waitForExistence(timeout: 3))
+        access.tap()
+        let skipReminders = app.buttons["onboarding.notifications.skip"]
+        XCTAssertTrue(skipReminders.waitForExistence(timeout: 4), "The mock hasn't been asked about notifications")
+        skipReminders.tap()
+        let close = app.buttons["onboarding.upsell.close"]
+        XCTAssertTrue(close.waitForExistence(timeout: 4))
+
+        // The back button brings reminders back.
+        app.buttons["onboarding.back"].tap()
+        XCTAssertTrue(skipReminders.waitForExistence(timeout: 3))
+        XCTAssertFalse(close.exists)
+        sleep(1)
+        attachScreenshot(app, "reminders again")
+
+        // A swipe in from the left edge goes back to the primer, which shows access granted.
+        swipeBackFromEdge(app)
+        XCTAssertTrue(access.waitForExistence(timeout: 3))
+        XCTAssertTrue(access.isHittable, "Seen again, the primer just continues")
+        sleep(1)
+        attachScreenshot(app, "photo access again")
+
+        // A short pull springs back.
+        swipeBackFromEdge(app, distance: 0.15)
+        sleep(1)
+        XCTAssertTrue(access.isHittable)
+
+        swipeBackFromEdge(app)
+        XCTAssertTrue(app.buttons["onboarding.welcome.continue"].waitForExistence(timeout: 3))
+        XCTAssertFalse(app.buttons["onboarding.back"].isHittable, "Welcome has nowhere to go back to")
+
+        // And forward again, without a second prompt.
+        app.buttons["onboarding.welcome.continue"].tap()
+        XCTAssertTrue(access.waitForExistence(timeout: 3))
+        access.tap()
+        XCTAssertTrue(skipReminders.waitForExistence(timeout: 3))
+        skipReminders.tap()
+        XCTAssertTrue(close.waitForExistence(timeout: 4))
+        close.tap()
+        XCTAssertTrue(waitForTopCard(app, not: "none", timeout: 8), "Finishing again opens the feed")
+    }
+
+    /// Drags in from the leading edge, as far as `distance` of the screen's width.
+    private func swipeBackFromEdge(_ app: XCUIApplication, distance: CGFloat = 0.7) {
+        let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.01, dy: 0.5))
+        let end = app.coordinate(withNormalizedOffset: CGVector(dx: 0.01 + distance, dy: 0.5))
+        start.press(forDuration: 0.05, thenDragTo: end, withVelocity: .slow, thenHoldForDuration: 0.1)
+    }
+
+    @MainActor
     func testShortDragSnapsBack() throws {
         let app = launch()
         let first = topCard(app)

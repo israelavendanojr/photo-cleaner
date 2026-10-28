@@ -2,7 +2,10 @@ import SwiftUI
 
 /// Onboarding's reminders step: what a refill reminder looks like and when one can arrive, before
 /// iOS asks. "Not now" never shows the system prompt, so it can still be asked from the wall or Settings.
+/// Come back to after answering, it says how things stand and just continues.
 struct NotificationsPrimerView: View {
+    private enum Answer { case unasked, on, off }
+
     @Environment(FeedViewModel.self) private var vm
     let page: Int
     let pageCount: Int
@@ -21,47 +24,89 @@ struct NotificationsPrimerView: View {
                 .accessibilityAddTraits(.isHeader)
                 .padding(.top, DS.Spacing.xl)
                 .onboardingEntrance(order: 1)
-            Text(Copy.caption)
-                .font(.body)
-                .foregroundStyle(DS.Palette.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+            caption
                 .padding(.top, DS.Spacing.m)
                 .onboardingEntrance(order: 2)
         }
         .onboardingLayout(footerOrder: 3) {
             VStack(spacing: DS.Spacing.s) {
                 PageDots(current: page, count: pageCount)
-                Button(action: turnOn) {
-                    ZStack {
-                        Text(Copy.turnOn)
-                            .opacity(isAsking ? 0 : 1)
-                        if isAsking {
-                            ProgressView()
-                                .tint(.white)
-                        }
+                if answer == .unasked {
+                    askButtons
+                } else {
+                    Button(Copy.continueTitle) {
+                        Haptics.advance()
+                        onContinue()
                     }
+                    .buttonStyle(.pill(.ink))
+                    .accessibilityIdentifier("onboarding.notifications.continue")
                 }
-                .buttonStyle(.pill(.ink))
-                .allowsHitTesting(!isAsking)
-                .accessibilityIdentifier("onboarding.notifications.enable")
-                Button(Copy.notNow) {
-                    Haptics.advance()
-                    onContinue()
-                }
-                .buttonStyle(.pill(.ghost))
-                .disabled(isAsking)
-                .accessibilityIdentifier("onboarding.notifications.skip")
             }
         }
     }
 
-    /// Shows the system prompt, then moves on whatever the answer.
+    /// How the user answered iOS, if they have. Holds while the prompt is up, so the screen doesn't
+    /// change under it on the way out.
+    private var answer: Answer {
+        if isAsking { return .unasked }
+        if vm.isRemindersOptedIn { return .on }
+        return vm.areRemindersDenied ? .off : .unasked
+    }
+
+    @ViewBuilder
+    private var caption: some View {
+        switch answer {
+        case .unasked:
+            Text(Copy.caption)
+                .font(.body)
+                .foregroundStyle(DS.Palette.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        case .on, .off:
+            let isOn = answer == .on
+            HStack(alignment: .firstTextBaseline, spacing: DS.Spacing.xs) {
+                Image(systemName: isOn ? "checkmark" : "bell.slash")
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(isOn ? DS.Palette.brick : DS.Palette.secondary)
+                    .accessibilityHidden(true)
+                Text(isOn ? Copy.remindersOn : Copy.remindersOff)
+                    .font(.body)
+                    .foregroundStyle(DS.Palette.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .accessibilityElement(children: .combine)
+        }
+    }
+
+    @ViewBuilder
+    private var askButtons: some View {
+        Button(action: turnOn) {
+            ZStack {
+                Text(Copy.turnOn)
+                    .opacity(isAsking ? 0 : 1)
+                if isAsking {
+                    ProgressView()
+                        .tint(.white)
+                }
+            }
+        }
+        .buttonStyle(.pill(.ink))
+        .allowsHitTesting(!isAsking)
+        .accessibilityIdentifier("onboarding.notifications.enable")
+        Button(Copy.notNow) {
+            Haptics.advance()
+            onContinue()
+        }
+        .buttonStyle(.pill(.ghost))
+        .disabled(isAsking)
+        .accessibilityIdentifier("onboarding.notifications.skip")
+    }
+
+    /// Shows the system prompt, then moves on whatever the answer. Stays asking as it leaves.
     private func turnOn() {
         Haptics.advance()
         isAsking = true
         Task {
             await vm.remindWhenSwipesAreBack()
-            isAsking = false
             onContinue()
         }
     }
@@ -72,6 +117,9 @@ private enum Copy {
     static let headline = "Know when your swipes are back."
     static let turnOn = "Turn On Reminders"
     static let notNow = "Not now"
+    static let continueTitle = "Continue"
+    static let remindersOn = "Reminders are on. We'll let you know when your swipes are back."
+    static let remindersOff = "Notifications are off. You can turn them on any time in Settings."
 
     /// "Only after you run out of swipes. At most two a day, and never between 9 PM and 9 AM."
     static var caption: String {
@@ -99,6 +147,7 @@ private struct NotificationBannerPreview: View {
     let message: String
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.onboardingEntranceSettled) private var isSettled
     @State private var isShown = false
     @ScaledMetric(relativeTo: .body) private var iconSize: CGFloat = 38
 
@@ -117,6 +166,11 @@ private struct NotificationBannerPreview: View {
             .accessibilityLabel("Example notification from \(AppInfo.name): \(message)")
             .onAppear {
                 guard !isShown else { return }
+                // Already landed when the screen is revealed by going back.
+                guard !isSettled else {
+                    isShown = true
+                    return
+                }
                 let animation = reduceMotion
                     ? Animation.easeIn(duration: 0.3).delay(Self.delay)
                     : DS.Motion.calm.delay(Self.delay)
@@ -169,6 +223,14 @@ private struct NotificationBannerPreview: View {
     NotificationsPrimerView(page: 2, pageCount: 4, onContinue: {})
         .background(DS.Palette.paper)
         .environment(FeedViewModel.mock(startingAt: .onboarding))
+}
+
+#Preview("Reminders on") {
+    let vm = FeedViewModel.mock(startingAt: .onboarding)
+    return NotificationsPrimerView(page: 2, pageCount: 4, onContinue: {})
+        .background(DS.Palette.paper)
+        .environment(vm)
+        .task { await vm.remindWhenSwipesAreBack() }
 }
 
 #Preview("Banner") {
