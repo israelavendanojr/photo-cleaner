@@ -27,6 +27,16 @@ final class FeedViewModel {
         case restored, nothingToRestore, restoreFailed
     }
 
+    /// Where onboarding is. `intro` is Welcome and the photo access primer, which the view steps between;
+    /// the rest follow once access is granted, each only when it applies.
+    enum OnboardingStep: Equatable {
+        case intro
+        /// Offers refill reminders, before the system has been asked.
+        case notifications
+        /// The unlock, with a way to carry on for free. Never shown once unlocked.
+        case upsell
+    }
+
     /// The "+3.4 MB" chip shown briefly after a delete.
     struct DeleteChip: Equatable {
         let id = UUID()
@@ -67,6 +77,17 @@ final class FeedViewModel {
     /// Access was just granted from onboarding and the first session is being built.
     /// Onboarding stays up meanwhile instead of a loading screen.
     private(set) var isPreparingFirstSession = false
+    /// Photo access was granted from onboarding. The primer can't be left backward from here.
+    private(set) var isOnboardingAccessGranted = false
+    private(set) var onboardingStep = OnboardingStep.intro
+    /// Onboarding will offer reminders after photo access. Re-checked when it gets there.
+    private(set) var offersReminderStep = false
+    /// Onboarding stays up after access is granted until its last step, while the deck is dealt underneath.
+    private var holdsOnboarding = false
+    /// Where the deck stands while onboarding holds the screen. Becomes `phase` when onboarding finishes.
+    private var heldPhase: Phase?
+    /// Debug builds: this onboarding is a replay, so every step shows whatever was decided before.
+    private var isReplayingOnboarding = false
     private(set) var paywallStatus = PaywallStatus.idle
     /// The free swipes. Never spent or checked while unlocked.
     private(set) var allowance: SwipeAllowance
@@ -253,6 +274,25 @@ final class FeedViewModel {
     /// "Remind me when swipes are back" can be offered.
     var canRemind: Bool { notifier != nil }
 
+    /// Onboarding's last step is done but the first deck is still being built. The step shows progress meanwhile.
+    var isLeavingOnboarding: Bool { phase == .onboarding && isOnboardingAccessGranted && !holdsOnboarding }
+    /// Onboarding will end on the unlock offer.
+    var offersUpsellStep: Bool { !isUnlocked || isReplayingOnboarding }
+    /// Onboarding's pages, for its page dots: Welcome, photo access, then the steps that apply.
+    var onboardingPageCount: Int { 2 + (offersReminderStep ? 1 : 0) + (offersUpsellStep ? 1 : 0) }
+    /// The page dot for a step after photo access.
+    var onboardingPageIndex: Int {
+        switch onboardingStep {
+        case .intro: 1
+        case .notifications: 2
+        case .upsell: offersReminderStep ? 3 : 2
+        }
+    }
+
+    /// The deck's phase, even while onboarding holds the screen. Paging and reordering go by this;
+    /// swiping still needs `phase` itself to be the feed.
+    private var deckPhase: Phase { heldPhase ?? phase }
+
     /// The number the next page gets. Pages are numbered across decks, so saved decisions can tell them apart.
     private var nextPageNumber: Int { max(session?.number ?? 0, store.lastSessionNumber()) + 1 }
 
@@ -295,13 +335,20 @@ final class FeedViewModel {
     /// Called at launch, from onboarding's Allow button, and again from the no-access screen
     /// when the app returns from Settings. A first launch stops at onboarding without prompting.
     func start() async {
-        guard phase == .loading || phase == .noAccess || phase == .onboarding, !isRequestingAccess else { return }
+        guard phase == .loading || phase == .noAccess || phase == .onboarding, !isRequestingAccess,
+              !isOnboardingAccessGranted else { return }
         if phase == .loading, needsOnboarding {
+            #if DEBUG
+            isReplayingOnboarding = defaults.bool(forKey: DefaultsKey.debugShowOnboarding)
+            #endif
             phase = .onboarding
+            // Settled long before the page dots fade in, without holding up onboarding at launch.
+            offersReminderStep = await reminderStepApplies()
             return
         }
         let fromOnboarding = phase == .onboarding
         if fromOnboarding {
+            // Written before access is asked for, so a relaunch from any later step opens the feed.
             defaults.set(true, forKey: DefaultsKey.hasOnboarded)
             defaults.removeObject(forKey: DefaultsKey.debugShowOnboarding)
         }
@@ -314,6 +361,8 @@ final class FeedViewModel {
         }
         if fromOnboarding {
             isPreparingFirstSession = true
+            isOnboardingAccessGranted = true
+            holdsOnboarding = true
         } else {
             phase = .loading
         }
@@ -335,7 +384,7 @@ final class FeedViewModel {
         if let saved {
             await restore(saved)
             // Saved with every card decided: the next page is dealt before the feed shows.
-            if phase == .feed, currentCard == nil { await appendPage() }
+            if deckPhase == .feed, currentCard == nil { await appendPage() }
         } else if let next {
             apply(next)
         }
@@ -354,6 +403,48 @@ final class FeedViewModel {
         if defaults.bool(forKey: DefaultsKey.debugShowOnboarding) { return true }
         #endif
         return library.needsAccessPrompt()
+    }
+
+    /// Moves onboarding past photo access to the next step that applies, or finishes it.
+    /// Each step is checked as it's reached, so e.g. a restore that lands meanwhile skips the offer.
+    func advanceOnboarding() async {
+        guard phase == .onboarding, isOnboardingAccessGranted else { return }
+        if onboardingStep == .intro {
+            offersReminderStep = await reminderStepApplies()
+            if offersReminderStep {
+                onboardingStep = .notifications
+                return
+            }
+        }
+        if onboardingStep != .upsell, offersUpsellStep {
+            onboardingStep = .upsell
+            return
+        }
+        finishOnboarding()
+    }
+
+    /// Lets the feed replace onboarding. If the first deck is still being built, `start()` shows it
+    /// once it's ready, and `isLeavingOnboarding` holds meanwhile.
+    private func finishOnboarding() {
+        guard holdsOnboarding else { return }
+        holdsOnboarding = false
+        isReplayingOnboarding = false
+        guard let held = heldPhase else { return }
+        heldPhase = nil
+        phase = held
+        fillIfNeeded()
+    }
+
+    /// Reminders can be offered and the system hasn't asked yet, since iOS only asks once.
+    /// A debug replay offers them regardless.
+    private func reminderStepApplies() async -> Bool {
+        guard let notifier else { return false }
+        return isReplayingOnboarding ? true : await notifier.canAsk()
+    }
+
+    /// Sets the deck's phase, or holds it while onboarding is still up.
+    private func enterDeckPhase(_ next: Phase) {
+        if holdsOnboarding { heldPhase = next } else { phase = next }
     }
 
     /// Whether swiping the current card this way would go through. The deck asks before letting a card fly.
@@ -708,7 +799,7 @@ final class FeedViewModel {
 
     /// Moves the strongest cards still to come to the front, or leaves it to the next deck dealt.
     private func frontLoad() {
-        guard phase == .feed, var current = session else {
+        guard deckPhase == .feed, var current = session else {
             refilledSinceDeal = true
             return
         }
@@ -756,7 +847,7 @@ final class FeedViewModel {
 
     /// Starts building the next page once few undecided cards are left ahead.
     private func fillIfNeeded() {
-        guard phase == .feed, session != nil, pageTask == nil, cards.count - index <= Self.pageAhead else { return }
+        guard deckPhase == .feed, session != nil, pageTask == nil, cards.count - index <= Self.pageAhead else { return }
         // An empty build isn't retried while cards remain; running out tries once more.
         guard !isLibraryExhausted || currentCard == nil else { return }
         let generation = deckGeneration
@@ -778,14 +869,14 @@ final class FeedViewModel {
         options.excluding.formUnion(inDeck)
         options.excluding.formUnion(decisions.keys)
         let page = await builder.makeSession(number: nextPageNumber, options: options)
-        guard generation == deckGeneration, phase == .feed, var current = session else { return }
+        guard generation == deckGeneration, deckPhase == .feed, var current = session else { return }
 
         // Anything dealt meanwhile stays out, so no item is ever in the deck twice.
         let taken = Set(current.items.map(\.id))
         let fresh = page.cards.compactMap { $0.removing(taken) }
         guard !fresh.isEmpty else {
             isLibraryExhausted = true
-            if currentCard == nil { phase = .caughtUp }
+            if currentCard == nil { enterDeckPhase(.caughtUp) }
             return
         }
         isLibraryExhausted = false
@@ -951,7 +1042,7 @@ final class FeedViewModel {
         carriedPending = store.pile().filter { !ids.contains($0.id) }
         returningCard = nil
         dismissChip()
-        phase = next.cards.isEmpty ? .caughtUp : .feed
+        enterDeckPhase(next.cards.isEmpty ? .caughtUp : .feed)
         saveProgress()
         fillIfNeeded()
     }
@@ -993,7 +1084,7 @@ final class FeedViewModel {
         carriedPending = store.pile().filter { !ids.contains($0.id) }
         history = []
         returningCard = nil
-        phase = cards.isEmpty ? .caughtUp : .feed
+        enterDeckPhase(cards.isEmpty ? .caughtUp : .feed)
         if !gone.isEmpty || saved.finished { saveProgress() }
     }
 
@@ -1086,6 +1177,7 @@ extension FeedViewModel {
         let entitlements = entitlements ?? EntitlementServices.make(mock: true)
         if start == .onboarding {
             // Unstarted, on a library that hasn't been asked yet, with nothing remembered.
+            // Previews get a stand-in notification center that hasn't asked, so the reminders step shows.
             let suite = "mock.onboarding"
             let defaults = UserDefaults(suiteName: suite) ?? .standard
             defaults.removePersistentDomain(forName: suite)
@@ -1094,7 +1186,9 @@ extension FeedViewModel {
                 builder: MockFeedBuilder(),
                 entitlements: entitlements,
                 defaults: defaults,
-                firstSessionMinimum: onboardingPreparingMinimum
+                firstSessionMinimum: onboardingPreparingMinimum,
+                allowanceTunables: allowanceTunables,
+                notifier: notifier ?? RefillNotifier(center: PreviewNotificationCenter(), defaults: defaults)
             )
         }
         let builder = MockFeedBuilder()

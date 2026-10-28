@@ -49,8 +49,21 @@ final class photo_swiperUITests: XCTestCase {
         attachScreenshot(app, "photo access")
 
         allow.tap()
-        XCTAssertTrue(waitForTopCard(app, not: "none", timeout: 8), "Continuing opens the feed")
+        // Reminders only show while the simulator hasn't been asked about notifications yet.
+        let skipReminders = app.buttons["onboarding.notifications.skip"]
+        if skipReminders.waitForExistence(timeout: 4) {
+            sleep(1)
+            attachScreenshot(app, "reminders")
+            skipReminders.tap()
+        }
+        // Mocks start locked, so the offer always shows.
+        let continueFree = app.buttons["onboarding.upsell.close"]
+        XCTAssertTrue(continueFree.waitForExistence(timeout: 4), "The unlock offer comes last")
         XCTAssertFalse(allow.exists)
+        sleep(1)
+        attachScreenshot(app, "upsell")
+        continueFree.tap()
+        XCTAssertTrue(waitForTopCard(app, not: "none", timeout: 8), "Continuing for free opens the feed")
     }
 
     @MainActor

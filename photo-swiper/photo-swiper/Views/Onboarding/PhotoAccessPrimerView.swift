@@ -1,11 +1,12 @@
 import SwiftUI
 
 /// Second onboarding screen: explains the one permission right before iOS asks for it, then
-/// shows the first session being prepared once access is granted.
+/// shows access granted and the first session underway before onboarding moves on.
 struct PhotoAccessPrimerView: View {
     enum Progress { case idle, requesting, preparing }
 
     let progress: Progress
+    var pageCount = 2
     let onContinue: () -> Void
 
     private let steps = [
@@ -44,7 +45,7 @@ struct PhotoAccessPrimerView: View {
         }
         .onboardingLayout(footerOrder: 2 + steps.count) {
             VStack(spacing: DS.Spacing.m) {
-                PageDots(current: 1, count: 2)
+                PageDots(current: 1, count: pageCount)
                 Button(action: onContinue) { buttonLabel }
                     .buttonStyle(.pill(.ink))
                     // Not `.disabled`, which would dim the button while it shows progress.

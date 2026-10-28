@@ -1,0 +1,179 @@
+import SwiftUI
+
+/// Onboarding's reminders step: what a refill reminder looks like and when one can arrive, before
+/// iOS asks. "Not now" never shows the system prompt, so it can still be asked from the wall or Settings.
+struct NotificationsPrimerView: View {
+    @Environment(FeedViewModel.self) private var vm
+    let page: Int
+    let pageCount: Int
+    /// Called once the user has answered, or skipped.
+    let onContinue: () -> Void
+
+    @State private var isAsking = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            NotificationBannerPreview(message: Copy.bannerBody(vm.allowanceTunables))
+                .onboardingEntrance(order: 0)
+            Text(Copy.headline)
+                .dsSerif(40, relativeTo: .largeTitle, weight: .medium)
+                .foregroundStyle(DS.Palette.ink)
+                .accessibilityAddTraits(.isHeader)
+                .padding(.top, DS.Spacing.xl)
+                .onboardingEntrance(order: 1)
+            Text(Copy.caption)
+                .font(.body)
+                .foregroundStyle(DS.Palette.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, DS.Spacing.m)
+                .onboardingEntrance(order: 2)
+        }
+        .onboardingLayout(footerOrder: 3) {
+            VStack(spacing: DS.Spacing.s) {
+                PageDots(current: page, count: pageCount)
+                Button(action: turnOn) {
+                    ZStack {
+                        Text(Copy.turnOn)
+                            .opacity(isAsking ? 0 : 1)
+                        if isAsking {
+                            ProgressView()
+                                .tint(.white)
+                        }
+                    }
+                }
+                .buttonStyle(.pill(.ink))
+                .allowsHitTesting(!isAsking)
+                .accessibilityIdentifier("onboarding.notifications.enable")
+                Button(Copy.notNow) {
+                    Haptics.advance()
+                    onContinue()
+                }
+                .buttonStyle(.pill(.ghost))
+                .disabled(isAsking)
+                .accessibilityIdentifier("onboarding.notifications.skip")
+            }
+        }
+    }
+
+    /// Shows the system prompt, then moves on whatever the answer.
+    private func turnOn() {
+        Haptics.advance()
+        isAsking = true
+        Task {
+            await vm.remindWhenSwipesAreBack()
+            isAsking = false
+            onContinue()
+        }
+    }
+}
+
+/// This screen's words, together so they're easy to change. Numbers come from the reminder rules.
+private enum Copy {
+    static let headline = "Know when your swipes are back."
+    static let turnOn = "Turn On Reminders"
+    static let notNow = "Not now"
+
+    /// "Only after you run out of swipes. At most two a day, and never between 9 PM and 9 AM."
+    static var caption: String {
+        let perDay = Format.spelled(RefillReminderPlanner.maxPerDay)
+        let quietStart = hour(RefillReminderPlanner.quietStartHour)
+        let quietEnd = hour(RefillReminderPlanner.quietEndHour)
+        return "Only after you run out of swipes. At most \(perDay) a day, and never between \(quietStart) and \(quietEnd)."
+    }
+
+    /// The real reminder's wording, e.g. "10 swipes are back".
+    static func bannerBody(_ tunables: SwipeAllowance.Tunables) -> String {
+        RefillReminderPlanner.refillBody(amount: tunables.refillAmount, estimate: nil)
+    }
+
+    /// "9 PM", in the user's own clock style.
+    private static func hour(_ hour: Int) -> String {
+        let date = Calendar.current.date(bySettingHour: hour, minute: 0, second: 0, of: .now) ?? .now
+        return date.formatted(.dateTime.hour())
+    }
+}
+
+/// A stand-in for an iOS notification banner, sliding down from the top of its frame.
+/// Fades in instead with Reduce Motion.
+private struct NotificationBannerPreview: View {
+    let message: String
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var isShown = false
+    @ScaledMetric(relativeTo: .body) private var iconSize: CGFloat = 38
+
+    /// Waits for the screen's entrance, so the banner lands after its frame has appeared.
+    private static let delay = 0.55
+
+    var body: some View {
+        banner
+            .padding(DS.Spacing.s)
+            .frame(maxWidth: .infinity, alignment: .top)
+            .padding(.bottom, DS.Spacing.xxl)
+            .background(DS.Palette.muted, in: RoundedRectangle(cornerRadius: DS.Radius.inner, style: .continuous))
+            // The banner comes in from beyond the top edge, like it does on screen.
+            .clipShape(RoundedRectangle(cornerRadius: DS.Radius.inner, style: .continuous))
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Example notification from \(AppInfo.name): \(message)")
+            .onAppear {
+                guard !isShown else { return }
+                let animation = reduceMotion
+                    ? Animation.easeIn(duration: 0.3).delay(Self.delay)
+                    : DS.Motion.calm.delay(Self.delay)
+                withAnimation(animation) { isShown = true }
+            }
+    }
+
+    private var banner: some View {
+        HStack(alignment: .center, spacing: DS.Spacing.s) {
+            appIcon
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text(AppInfo.name)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(DS.Palette.ink)
+                    Spacer(minLength: DS.Spacing.xs)
+                    Text("now")
+                        .font(.footnote)
+                        .foregroundStyle(DS.Palette.secondary)
+                }
+                Text(message)
+                    .font(.subheadline)
+                    .foregroundStyle(DS.Palette.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(.horizontal, DS.Spacing.m)
+        .padding(.vertical, DS.Spacing.s)
+        .background(DS.Palette.card, in: RoundedRectangle(cornerRadius: DS.Radius.inner - DS.Spacing.xxs, style: .continuous))
+        .softShadow()
+        .opacity(isShown ? 1 : 0)
+        .offset(y: isShown || reduceMotion ? 0 : -120)
+    }
+
+    /// The asset catalog's app icon can't be drawn in a view, so this stands in for it.
+    private var appIcon: some View {
+        RoundedRectangle(cornerRadius: iconSize * 0.225, style: .continuous)
+            .fill(DS.Palette.ink)
+            .frame(width: iconSize, height: iconSize)
+            .overlay {
+                Image(systemName: "rectangle.stack")
+                    .font(.system(size: iconSize * 0.45, weight: .medium))
+                    .foregroundStyle(DS.Palette.paper)
+            }
+    }
+}
+
+#if DEBUG
+#Preview {
+    NotificationsPrimerView(page: 2, pageCount: 4, onContinue: {})
+        .background(DS.Palette.paper)
+        .environment(FeedViewModel.mock(startingAt: .onboarding))
+}
+
+#Preview("Banner") {
+    NotificationBannerPreview(message: "10 swipes are back")
+        .padding()
+        .background(DS.Palette.paper)
+}
+#endif

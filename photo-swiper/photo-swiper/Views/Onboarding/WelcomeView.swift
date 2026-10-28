@@ -2,6 +2,7 @@ import SwiftUI
 
 /// First onboarding screen: what the app does and what it never does with your photos.
 struct WelcomeView: View {
+    var pageCount = 2
     let onContinue: () -> Void
 
     var body: some View {
@@ -26,7 +27,7 @@ struct WelcomeView: View {
         }
         .onboardingLayout(footerOrder: 4) {
             VStack(spacing: DS.Spacing.s) {
-                PageDots(current: 0, count: 2)
+                PageDots(current: 0, count: pageCount)
                 Button("Continue") {
                     Haptics.advance()
                     onContinue()
@@ -83,6 +84,6 @@ private struct AssuranceRow: View {
 }
 
 #Preview {
-    WelcomeView(onContinue: {})
+    WelcomeView(pageCount: 4, onContinue: {})
         .background(DS.Palette.paper)
 }
