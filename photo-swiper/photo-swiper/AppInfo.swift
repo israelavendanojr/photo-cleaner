@@ -57,6 +57,8 @@ enum DefaultsKey {
     static let hasSeenSwipeHint = "hasSeenSwipeHint"
     /// Debug builds only: the stand-in unlock was bought. Release builds never read it.
     static let debugUnlocked = "debugUnlocked"
+    /// Debug builds only: show onboarding on the next launch even though photo access was already answered.
+    static let debugShowOnboarding = "debugShowOnboarding"
     /// The free swipe allowance (`SwipeAllowance`), as JSON.
     static let swipeAllowance = "swipeAllowance"
     /// The user asked to be told when swipes are back. Settings can turn it off.

@@ -56,6 +56,22 @@ struct OnboardingGatingTests {
         #expect(defaults.bool(forKey: DefaultsKey.hasOnboarded) == false)
     }
 
+    @Test func aDebugResetShowsOnboardingAgainOnceAfterAccessWasGranted() async {
+        library.needsPrompt = false
+        defaults.set(true, forKey: DefaultsKey.hasOnboarded)
+        let first = await launched()
+        #expect(first.phase == .feed)
+
+        first.debugResetOnboarding()
+        let relaunched = await launched()
+        #expect(relaunched.phase == .onboarding)
+        await relaunched.start()
+        #expect(relaunched.phase == .feed)
+
+        let again = await launched()
+        #expect(again.phase == .feed)
+    }
+
     @Test func onboardedButUnansweredAsksDirectly() async {
         library.needsPrompt = true
         defaults.set(true, forKey: DefaultsKey.hasOnboarded)

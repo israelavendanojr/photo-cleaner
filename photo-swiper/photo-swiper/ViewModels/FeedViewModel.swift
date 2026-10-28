@@ -296,12 +296,15 @@ final class FeedViewModel {
     /// when the app returns from Settings. A first launch stops at onboarding without prompting.
     func start() async {
         guard phase == .loading || phase == .noAccess || phase == .onboarding, !isRequestingAccess else { return }
-        if phase == .loading, library.needsAccessPrompt(), !defaults.bool(forKey: DefaultsKey.hasOnboarded) {
+        if phase == .loading, needsOnboarding {
             phase = .onboarding
             return
         }
         let fromOnboarding = phase == .onboarding
-        if fromOnboarding { defaults.set(true, forKey: DefaultsKey.hasOnboarded) }
+        if fromOnboarding {
+            defaults.set(true, forKey: DefaultsKey.hasOnboarded)
+            defaults.removeObject(forKey: DefaultsKey.debugShowOnboarding)
+        }
         isRequestingAccess = true
         access = await library.requestAccess()
         isRequestingAccess = false
@@ -342,6 +345,15 @@ final class FeedViewModel {
         refreshAllowance()
         if isUnlocked { notifier?.cancelAll(now: now()) }
         fillIfNeeded()
+    }
+
+    /// Only before the user has been asked for photo access, unless a debug reset asked for it again.
+    private var needsOnboarding: Bool {
+        guard !defaults.bool(forKey: DefaultsKey.hasOnboarded) else { return false }
+        #if DEBUG
+        if defaults.bool(forKey: DefaultsKey.debugShowOnboarding) { return true }
+        #endif
+        return library.needsAccessPrompt()
     }
 
     /// Whether swiping the current card this way would go through. The deck asks before letting a card fly.
@@ -1139,6 +1151,8 @@ extension FeedViewModel {
     func debugResetOnboarding() {
         defaults.removeObject(forKey: DefaultsKey.hasOnboarded)
         defaults.removeObject(forKey: DefaultsKey.hasSeenSwipeHint)
+        // Access is usually granted by now, which on its own skips onboarding.
+        defaults.set(true, forKey: DefaultsKey.debugShowOnboarding)
     }
 
     /// Forgets every saved decision, the pile, and preferences, then deals a fresh first deck.
