@@ -84,6 +84,14 @@ final class FeedViewModel {
     private(set) var isReviewPromptDue = false
     /// The last delete earned a review prompt; it waits for the pile to close.
     private var isReviewPromptQueued = false
+    /// RootView should offer the unlock now: a free user's delete went through and the pile has closed.
+    private(set) var isDeleteUpsellDue = false
+    /// What the free user's last delete freed, for the offer's headline.
+    private(set) var upsellFreedBytes: Int64 = 0
+    /// A free user's delete earned the unlock offer; it waits for the pile to close.
+    private var isDeleteUpsellQueued = false
+    /// A free user's swipe was refused because the pile is full. FeedView shows it.
+    var isPileFullNoticePresented = false
     /// Something about the last delete the user should know, e.g. items the system refused.
     var deleteNotice: String?
     /// Applies to the next page built.
@@ -232,6 +240,10 @@ final class FeedViewModel {
 
     /// A card decision would go through. Unlocked, always.
     var canSwipe: Bool { isUnlocked || allowance.remaining > 0 }
+    /// The most the pile holds before deleting, e.g. 50; nil when unlocked, where it has no limit.
+    var pileLimit: Int? { isUnlocked ? nil : Self.freePileCap }
+    /// A free user's pile is at its limit, so only keeps and laters go through.
+    var isPileFull: Bool { pileLimit.map { pendingItems.count >= $0 } ?? false }
     /// Free swipes left; nil when unlocked, where nothing is counted.
     var swipesLeft: Int? { isUnlocked ? nil : allowance.remaining }
     /// When the next refill lands; nil when unlocked or full.
@@ -332,32 +344,58 @@ final class FeedViewModel {
         fillIfNeeded()
     }
 
+    /// Whether swiping the current card this way would go through. The deck asks before letting a card fly.
+    /// False out of swipes, or for a free user when it would take the pile past `freePileCap`.
+    func canDecide(_ direction: SwipeDirection) -> Bool {
+        guard canSwipe || !chargesSwipes else { return false }
+        guard let card = currentCard else { return true }
+        return fitsInPile(itemDecisions(for: card, direction: direction))
+    }
+
+    /// Whether a finished one-by-one review of the current card would go through, like `canDecide`.
+    func canDecideIndividually(_ outcome: [LibraryItem.ID: Decision]) -> Bool {
+        guard canSwipe || !chargesSwipes else { return false }
+        guard let card = currentCard, let complete = completed(outcome, for: card) else { return true }
+        return fitsInPile(complete)
+    }
+
+    /// The deck refused a swipe: opens the wall when out of swipes, or says the pile is full.
+    func refuse(_ direction: SwipeDirection) {
+        refreshAllowance()
+        if !canSwipe, chargesSwipes {
+            presentWall()
+        } else if !isUnlocked {
+            isPileFullNoticePresented = true
+        }
+    }
+
     /// Out of free swipes, nothing is committed and the wall opens instead.
+    /// A free user's delete that won't fit in the pile is refused whole, and says so.
     func decide(_ direction: SwipeDirection) {
         guard phase == .feed, let card = currentCard, admitSwipe() else { return }
-        commit(itemDecisions(for: card, direction: direction), card: card, direction: direction)
+        let outcome = itemDecisions(for: card, direction: direction)
+        guard fitsInPile(outcome) else {
+            isPileFullNoticePresented = true
+            return
+        }
+        commit(outcome, card: card, direction: direction)
     }
 
     /// Settles the current batch or similar-shots card from a one-by-one review. Items left out
     /// count as "later" in a batch, and follow their marks in a similar set.
-    /// It costs one swipe like any card; out of swipes, the review is kept as a draft and the wall opens.
+    /// It costs one swipe like any card; out of swipes, or past a free user's pile limit, the review
+    /// is kept as a draft and the wall or the pile notice opens.
     func decideIndividually(_ outcome: [LibraryItem.ID: Decision]) {
-        guard phase == .feed, let card = currentCard else { return }
-        let rest: (LibraryItem.ID) -> Decision
-        switch card {
-        case .batch:
-            rest = { _ in .later }
-        case .similar(let group):
-            let marked = markedForClearing(in: group)
-            rest = { marked.contains($0) ? .delete : .keep }
-        case .photo, .video:
-            return
-        }
+        guard phase == .feed, let card = currentCard, let complete = completed(outcome, for: card) else { return }
         guard admitSwipe() else {
             saveDraft(outcome, for: card.id)
             return
         }
-        let complete = Dictionary(uniqueKeysWithValues: card.items.map { ($0.id, outcome[$0.id] ?? rest($0.id)) })
+        guard fitsInPile(complete) else {
+            saveDraft(outcome, for: card.id)
+            isPileFullNoticePresented = true
+            return
+        }
         commit(complete, card: card, direction: complete.values.contains(.delete) ? .left : .right)
     }
 
@@ -448,15 +486,25 @@ final class FeedViewModel {
         saveProgress()
         refreshTotals()
         let freed = deletedItems.reduce(0) { $0 + $1.bytes }
-        queueReviewPromptIfEarned(freed: freed)
+        queueFollowUp(freed: freed)
         return freed
     }
 
-    /// The pile's freed confirmation has closed: a review prompt the delete earned may show now.
+    /// The pile's freed confirmation has closed: the review prompt or unlock offer the delete earned may show now.
     func releaseReviewPrompt() {
-        guard isReviewPromptQueued else { return }
-        isReviewPromptQueued = false
-        isReviewPromptDue = true
+        if isDeleteUpsellQueued {
+            isDeleteUpsellQueued = false
+            isDeleteUpsellDue = true
+        }
+        if isReviewPromptQueued {
+            isReviewPromptQueued = false
+            isReviewPromptDue = true
+        }
+    }
+
+    /// RootView showed the unlock offer after a delete, or decided not to.
+    func finishDeleteUpsell() {
+        isDeleteUpsellDue = false
     }
 
     /// RootView handled the due prompt. `asked` records this version, so it won't ask again until the next.
@@ -576,11 +624,20 @@ final class FeedViewModel {
 
     // MARK: Internals
 
-    /// Counts the delete, and queues a review prompt if it earned one. See `ReviewPrompt`.
-    private func queueReviewPromptIfEarned(freed: Int64) {
+    /// Counts the delete and queues what follows it once the pile closes: the unlock offer for a free
+    /// user, or a review prompt if the delete earned one (see `ReviewPrompt`). Never both.
+    private func queueFollowUp(freed: Int64) {
         let prior = defaults.integer(forKey: DefaultsKey.deleteCount)
         defaults.set(prior + 1, forKey: DefaultsKey.deleteCount)
-        guard !purchasedThisLaunch, !isWallPresented else { return }
+        isReviewPromptQueued = false
+        isDeleteUpsellQueued = false
+        guard !isWallPresented else { return }
+        if !isUnlocked {
+            upsellFreedBytes = freed
+            isDeleteUpsellQueued = true
+            return
+        }
+        guard !purchasedThisLaunch else { return }
         isReviewPromptQueued = ReviewPrompt.isEligible(
             freedBytes: freed,
             priorDeletes: prior,
@@ -772,6 +829,32 @@ final class FeedViewModel {
         })
     }
 
+    /// A one-by-one review's outcome for every item on the card. Items left out count as "later" in
+    /// a batch, and follow their marks in a similar set. Nil for single photos and videos.
+    private func completed(_ outcome: [LibraryItem.ID: Decision], for card: FeedCard) -> [LibraryItem.ID: Decision]? {
+        let rest: (LibraryItem.ID) -> Decision
+        switch card {
+        case .batch:
+            rest = { _ in .later }
+        case .similar(let group):
+            let marked = markedForClearing(in: group)
+            rest = { marked.contains($0) ? .delete : .keep }
+        case .photo, .video:
+            return nil
+        }
+        return Dictionary(uniqueKeysWithValues: card.items.map { ($0.id, outcome[$0.id] ?? rest($0.id)) })
+    }
+
+    /// The pile can take these deletes: always when unlocked, and up to `freePileCap` items otherwise.
+    /// Keeps and laters add nothing, so they always fit unless a partial review drafted deletes.
+    private func fitsInPile(_ outcome: [LibraryItem.ID: Decision]) -> Bool {
+        guard let limit = pileLimit, chargesSwipes else { return true }
+        let pending = pendingItems
+        let pendingIDs = Set(pending.map(\.id))
+        let added = outcome.filter { $0.value == .delete && !pendingIDs.contains($0.key) }.count
+        return added == 0 || pending.count + added <= limit
+    }
+
     /// Asks the library to delete these and settles the ones that can't be. Returns what was
     /// actually deleted, or nil if nothing was (cancelled, failed, or none deletable).
     private func delete(_ items: [LibraryItem]) async -> [LibraryItem]? {
@@ -961,6 +1044,8 @@ extension FeedViewModel {
     static let pageAhead = 5
     /// Decided cards kept behind the current one, for undo. Older ones are trimmed when a page lands.
     static let keptBehind = 30
+    /// Items a free user's pile holds before they have to delete. Unlocked, there's no limit.
+    static let freePileCap = 50
 }
 
 // MARK: - Mock setup
