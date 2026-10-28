@@ -77,6 +77,8 @@ final class FakeNotificationCenter: NotificationScheduling {
     var grants = true
     /// Notifications turned off in the Settings app.
     var denied = false
+    /// The system hasn't asked yet. Asking answers it either way.
+    var undetermined = true
     private(set) var authorizationRequests = 0
     /// What's scheduled and not yet cancelled, by identifier.
     private(set) var pending: [String: RefillReminder] = [:]
@@ -84,11 +86,16 @@ final class FakeNotificationCenter: NotificationScheduling {
 
     func requestAuthorization() async -> Bool {
         authorizationRequests += 1
+        undetermined = false
         return grants
     }
 
     func isDenied() async -> Bool {
         denied
+    }
+
+    func needsPermissionPrompt() async -> Bool {
+        undetermined
     }
 
     func add(_ reminder: RefillReminder) async {
