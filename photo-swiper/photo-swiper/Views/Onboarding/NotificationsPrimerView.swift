@@ -7,8 +7,6 @@ struct NotificationsPrimerView: View {
     private enum Answer { case unasked, on, off }
 
     @Environment(FeedViewModel.self) private var vm
-    let page: Int
-    let pageCount: Int
     /// Called once the user has answered, or skipped.
     let onContinue: () -> Void
 
@@ -30,7 +28,6 @@ struct NotificationsPrimerView: View {
         }
         .onboardingLayout(footerOrder: 3) {
             VStack(spacing: DS.Spacing.s) {
-                PageDots(current: page, count: pageCount)
                 if answer == .unasked {
                     askButtons
                 } else {
@@ -147,7 +144,6 @@ private struct NotificationBannerPreview: View {
     let message: String
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.onboardingEntranceSettled) private var isSettled
     @State private var isShown = false
     @ScaledMetric(relativeTo: .body) private var iconSize: CGFloat = 38
 
@@ -166,11 +162,6 @@ private struct NotificationBannerPreview: View {
             .accessibilityLabel("Example notification from \(AppInfo.name): \(message)")
             .onAppear {
                 guard !isShown else { return }
-                // Already landed when the screen is revealed by going back.
-                guard !isSettled else {
-                    isShown = true
-                    return
-                }
                 let animation = reduceMotion
                     ? Animation.easeIn(duration: 0.3).delay(Self.delay)
                     : DS.Motion.calm.delay(Self.delay)
@@ -220,14 +211,14 @@ private struct NotificationBannerPreview: View {
 
 #if DEBUG
 #Preview {
-    NotificationsPrimerView(page: 2, pageCount: 4, onContinue: {})
+    NotificationsPrimerView(onContinue: {})
         .background(DS.Palette.paper)
         .environment(FeedViewModel.mock(startingAt: .onboarding))
 }
 
 #Preview("Reminders on") {
     let vm = FeedViewModel.mock(startingAt: .onboarding)
-    return NotificationsPrimerView(page: 2, pageCount: 4, onContinue: {})
+    return NotificationsPrimerView(onContinue: {})
         .background(DS.Palette.paper)
         .environment(vm)
         .task { await vm.remindWhenSwipesAreBack() }

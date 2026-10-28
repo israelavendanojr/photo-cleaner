@@ -67,57 +67,62 @@ final class photo_swiperUITests: XCTestCase {
     }
 
     @MainActor
-    func testOnboardingGoesBackThroughEveryStep() throws {
+    func testOnboardingSwipesBothWaysThroughPagesAlreadySeen() throws {
         let app = launch("-startAt", "onboarding")
-        app.buttons["onboarding.welcome.continue"].tap()
+        let welcome = app.buttons["onboarding.welcome.continue"]
         let access = app.buttons["onboarding.access.continue"]
-        XCTAssertTrue(access.waitForExistence(timeout: 3))
-        access.tap()
         let skipReminders = app.buttons["onboarding.notifications.skip"]
+        let close = app.buttons["onboarding.upsell.close"]
+        let progress = app.descendants(matching: .any)["onboarding.progress"]
+
+        welcome.tap()
+        XCTAssertTrue(access.waitForExistence(timeout: 3))
+        XCTAssertEqual(progress.label, "Step 2 of 4")
+        // Not yet allowed, so a swipe can't go on past it.
+        swipe(app, forward: true)
+        sleep(1)
+        XCTAssertTrue(access.isHittable, "Access needs the button")
+
+        access.tap()
         XCTAssertTrue(skipReminders.waitForExistence(timeout: 4), "The mock hasn't been asked about notifications")
         skipReminders.tap()
-        let close = app.buttons["onboarding.upsell.close"]
         XCTAssertTrue(close.waitForExistence(timeout: 4))
+        XCTAssertEqual(progress.label, "Step 4 of 4")
+        sleep(1)
+        attachScreenshot(app, "upsell")
+        // Nothing after the offer to swipe to.
+        swipe(app, forward: true)
+        sleep(1)
+        XCTAssertTrue(close.isHittable)
 
-        // The back button brings reminders back.
+        // Back by the button, then by swiping from mid-screen.
         app.buttons["onboarding.back"].tap()
         XCTAssertTrue(skipReminders.waitForExistence(timeout: 3))
-        XCTAssertFalse(close.exists)
-        sleep(1)
-        attachScreenshot(app, "reminders again")
-
-        // A swipe in from the left edge goes back to the primer, which shows access granted.
-        swipeBackFromEdge(app)
+        XCTAssertEqual(progress.label, "Step 3 of 4")
+        swipe(app, forward: false)
         XCTAssertTrue(access.waitForExistence(timeout: 3))
         XCTAssertTrue(access.isHittable, "Seen again, the primer just continues")
         sleep(1)
         attachScreenshot(app, "photo access again")
+        swipe(app, forward: false)
+        XCTAssertTrue(welcome.waitForExistence(timeout: 3))
 
-        // A short pull springs back.
-        swipeBackFromEdge(app, distance: 0.15)
-        sleep(1)
-        XCTAssertTrue(access.isHittable)
-
-        swipeBackFromEdge(app)
-        XCTAssertTrue(app.buttons["onboarding.welcome.continue"].waitForExistence(timeout: 3))
-        XCTAssertFalse(app.buttons["onboarding.back"].isHittable, "Welcome has nowhere to go back to")
-
-        // And forward again, without a second prompt.
-        app.buttons["onboarding.welcome.continue"].tap()
+        // Forward again by swiping, through the pages already reached, without a second prompt.
+        swipe(app, forward: true)
         XCTAssertTrue(access.waitForExistence(timeout: 3))
-        access.tap()
+        swipe(app, forward: true)
         XCTAssertTrue(skipReminders.waitForExistence(timeout: 3))
-        skipReminders.tap()
-        XCTAssertTrue(close.waitForExistence(timeout: 4))
+        swipe(app, forward: true)
+        XCTAssertTrue(close.waitForExistence(timeout: 3))
         close.tap()
         XCTAssertTrue(waitForTopCard(app, not: "none", timeout: 8), "Finishing again opens the feed")
     }
 
-    /// Drags in from the leading edge, as far as `distance` of the screen's width.
-    private func swipeBackFromEdge(_ app: XCUIApplication, distance: CGFloat = 0.7) {
-        let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.01, dy: 0.5))
-        let end = app.coordinate(withNormalizedOffset: CGVector(dx: 0.01 + distance, dy: 0.5))
-        start.press(forDuration: 0.05, thenDragTo: end, withVelocity: .slow, thenHoldForDuration: 0.1)
+    /// A sideways swipe across the middle of the screen: forward is right to left.
+    private func swipe(_ app: XCUIApplication, forward: Bool) {
+        let from = app.coordinate(withNormalizedOffset: CGVector(dx: forward ? 0.8 : 0.2, dy: 0.45))
+        let to = app.coordinate(withNormalizedOffset: CGVector(dx: forward ? 0.2 : 0.8, dy: 0.45))
+        from.press(forDuration: 0.05, thenDragTo: to, withVelocity: .default, thenHoldForDuration: 0)
     }
 
     @MainActor

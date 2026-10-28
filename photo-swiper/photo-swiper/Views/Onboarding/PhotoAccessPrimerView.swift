@@ -8,7 +8,6 @@ struct PhotoAccessPrimerView: View {
     enum Progress { case idle, requesting, preparing, granted }
 
     let progress: Progress
-    var pageCount = 2
     let onContinue: () -> Void
 
     private let steps = [
@@ -47,7 +46,6 @@ struct PhotoAccessPrimerView: View {
         }
         .onboardingLayout(footerOrder: 2 + steps.count) {
             VStack(spacing: DS.Spacing.m) {
-                PageDots(current: 1, count: pageCount)
                 Button(action: onContinue) { buttonLabel }
                     .buttonStyle(.pill(.ink))
                     // Not `.disabled`, which would dim the button while it shows progress.
@@ -181,6 +179,6 @@ private struct StepRow: View {
 }
 
 #Preview("Granted, revisited") {
-    PhotoAccessPrimerView(progress: .granted, pageCount: 4, onContinue: {})
+    PhotoAccessPrimerView(progress: .granted, onContinue: {})
         .background(DS.Palette.paper)
 }

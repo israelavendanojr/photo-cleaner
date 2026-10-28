@@ -278,17 +278,6 @@ final class FeedViewModel {
     var isLeavingOnboarding: Bool { phase == .onboarding && isOnboardingAccessGranted && !holdsOnboarding }
     /// Onboarding will end on the unlock offer.
     var offersUpsellStep: Bool { !isUnlocked || isReplayingOnboarding }
-    /// Onboarding's pages, for its page dots: Welcome, photo access, then the steps that apply.
-    var onboardingPageCount: Int { 2 + (offersReminderStep ? 1 : 0) + (offersUpsellStep ? 1 : 0) }
-    /// The page dot for a step after photo access.
-    var onboardingPageIndex: Int {
-        switch onboardingStep {
-        case .intro: 1
-        case .notifications: 2
-        case .upsell: offersReminderStep ? 3 : 2
-        }
-    }
-
     /// The deck's phase, even while onboarding holds the screen. Paging and reordering go by this;
     /// swiping still needs `phase` itself to be the feed.
     private var deckPhase: Phase { heldPhase ?? phase }

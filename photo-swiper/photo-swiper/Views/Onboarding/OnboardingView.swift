@@ -4,11 +4,17 @@ import SwiftUI
 /// apply. Nothing asks for access until the primer's Continue. Once access is granted the first deck
 /// is dealt underneath while the last steps show.
 ///
-/// Every page after Welcome can go back, from the back button or a swipe in from the left edge that
-/// follows the finger, with the previous page sliding in underneath. Going back past photo access
-/// shows it granted, so it never asks twice.
+/// Pages after Welcome have a back button and a progress bar. A sideways swipe anywhere goes back,
+/// or forward to a page already reached, so a swipe never asks for anything or skips something unseen.
+/// Going back past photo access shows it granted, so it never asks twice.
 struct OnboardingView: View {
     enum Page: Hashable { case welcome, access, notifications, upsell }
+    private enum Move: Equatable { case back, forward }
+    /// A move waiting for the outgoing page to pick up its direction, numbered so repeats still register.
+    private struct PendingMove: Equatable {
+        let move: Move
+        let id: Int
+    }
 
     @Environment(FeedViewModel.self) private var vm
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -16,22 +22,19 @@ struct OnboardingView: View {
     @State private var introPage = Page.welcome
     /// The user has come back to the primer after access was granted, so it offers a plain Continue.
     @State private var hasRevisitedAccess = false
-    /// How far the current page has been pulled back, in points.
+    /// The furthest page reached. Swiping forward goes no further than this.
+    @State private var furthest = Page.welcome
+    /// Which way the outgoing page drifts as it fades: `.leading` going forward, `.trailing` going back.
+    @State private var direction = Edge.leading
+    @State private var pendingMove: PendingMove?
+    /// The finger's sideways travel in the swipe underway.
     @State private var dragX: CGFloat = 0
-    /// A back move is running, so the previous page stays drawn underneath until it lands.
-    @State private var isGoingBack = false
-    /// Whether the drag in progress is a back swipe. Decided on its first movement.
-    @State private var isTrackingBack: Bool?
+    /// Whether the drag underway is a sideways swipe. Decided on its first movement; nil between drags.
+    @State private var isSwiping: Bool?
     @State private var hasCrossedCommit = false
 
     /// How long the primer shows access granted before moving on, so its checkmark can be read.
     private static let grantedPause = Duration.seconds(0.9)
-    /// A back swipe has to start this close to the leading edge, so scrolling and buttons are left alone.
-    private static let edgeWidth: CGFloat = 30
-    /// Share of the width past which letting go finishes going back.
-    private static let commitFraction: CGFloat = 0.35
-    /// How far the previous page sits behind, as a share of its distance from the current one.
-    private static let parallax: CGFloat = 0.3
     /// The back button and the space around it, which pages after Welcome start below.
     private static let topBarHeight: CGFloat = 44 + DS.Spacing.xs
 
@@ -39,18 +42,35 @@ struct OnboardingView: View {
         GeometryReader { proxy in
             let width = proxy.size.width
             ZStack {
-                ForEach(visiblePages, id: \.self) { page in
-                    pageLayer(page, width: width)
-                }
+                pageView(current)
+                    .id(current)
+                    .offset(x: displacement(width: width))
+                    .opacity(Double(1 - 0.25 * commitProgress(width: width)))
+                    .environment(\.onboardingTopInset, current == .welcome ? 0 : Self.topBarHeight)
+                    .transition(leaving(toward: direction))
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             // Over the pages rather than above them, so Welcome keeps the room it doesn't need for it.
             .overlay(alignment: .top) { topBar(width: width) }
-            .simultaneousGesture(backSwipe(width: width))
-            .accessibilityAction(.escape) { goBack(width: width) }
+            .contentShape(Rectangle())
+            .simultaneousGesture(swipe(width: width))
+            .accessibilityAction(.escape) { request(.back) }
         }
         .background(DS.Palette.paper)
         // The steps after access change in the view model, often after an await, so they animate here.
         .animation(pageAnimation, value: vm.onboardingStep)
+        .onChange(of: current, initial: true) { _, page in
+            if index(of: page) > index(of: furthest) { furthest = page }
+        }
+        // Runs once the outgoing page has been drawn with the new direction, so it leaves that way.
+        .onChange(of: pendingMove) { _, pending in
+            guard let pending else { return }
+            pendingMove = nil
+            withAnimation(pageAnimation) {
+                dragX = 0
+                perform(pending.move)
+            }
+        }
         .task(id: vm.isOnboardingAccessGranted) {
             // Only full or limited access gets here; a denial goes straight to the no-access screen.
             guard vm.isOnboardingAccessGranted, vm.onboardingStep == .intro else { return }
@@ -79,53 +99,19 @@ struct OnboardingView: View {
         }
     }
 
-    private var previous: Page? {
-        guard let index = pages.firstIndex(of: current), index > 0 else { return nil }
-        return pages[index - 1]
-    }
-
-    /// The previous page is only drawn while it's being revealed.
-    private var showsPrevious: Bool { dragX > 0 || isGoingBack }
-
-    private var visiblePages: [Page] {
-        if showsPrevious, let previous { return [previous, current] }
-        return [current]
-    }
-
-    private func pageLayer(_ page: Page, width: CGFloat) -> some View {
-        let isCurrent = page == current
-        let progress = backProgress(width: width)
-        return pageView(page)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            // Opaque only while it's pulled over the previous page; forward changes cross-fade.
-            .background(isCurrent && showsPrevious ? DS.Palette.paper : .clear)
-            .shadow(color: .black.opacity(isCurrent && showsPrevious ? 0.1 : 0), radius: 18, x: -6)
-            .overlay {
-                if !isCurrent {
-                    // Lifts as the previous page comes forward.
-                    DS.Palette.ink.opacity(0.06 * (1 - progress))
-                        .allowsHitTesting(false)
-                }
-            }
-            .offset(x: isCurrent ? dragX : (dragX - width) * Self.parallax)
-            // Shown in place under the swipe rather than entering.
-            .environment(\.onboardingEntranceSettled, !isCurrent)
-            .environment(\.onboardingTopInset, page == .welcome ? 0 : Self.topBarHeight)
-            .allowsHitTesting(isCurrent && !showsPrevious)
-            .accessibilityHidden(!isCurrent)
-            .zIndex(isCurrent ? 1 : 0)
-            // A page leaving by going back has already slid away, so it goes at once.
-            .transition(isCurrent && isGoingBack ? .identity : leaving)
+    /// Where `page` falls in `pages`. A step that no longer applies, like the offer after a restore,
+    /// counts as the last.
+    private func index(of page: Page) -> Int {
+        pages.firstIndex(of: page) ?? pages.count - 1
     }
 
     @ViewBuilder
     private func pageView(_ page: Page) -> some View {
-        let index = pages.firstIndex(of: page) ?? 0
         switch page {
         case .welcome:
-            WelcomeView(pageCount: pages.count) { go(to: .access) }
+            WelcomeView { request(.forward, bySwipe: false) }
         case .access:
-            PhotoAccessPrimerView(progress: primerProgress(isCurrent: page == current), pageCount: pages.count) {
+            PhotoAccessPrimerView(progress: primerProgress) {
                 Haptics.advance()
                 if vm.isOnboardingAccessGranted {
                     advance()
@@ -134,48 +120,63 @@ struct OnboardingView: View {
                 }
             }
         case .notifications:
-            NotificationsPrimerView(page: index, pageCount: pages.count) { advance() }
+            NotificationsPrimerView { advance() }
         case .upsell:
-            UpsellView(page: index, pageCount: pages.count) { advance() }
+            UpsellView { advance() }
         }
     }
 
     /// The primer just after access is granted shows the first deck underway, then moves on.
     /// Seen again, it offers a plain Continue.
-    private func primerProgress(isCurrent: Bool) -> PhotoAccessPrimerView.Progress {
-        if vm.isOnboardingAccessGranted {
-            return hasRevisitedAccess || !isCurrent ? .granted : .preparing
-        }
+    private var primerProgress: PhotoAccessPrimerView.Progress {
+        if vm.isOnboardingAccessGranted { return hasRevisitedAccess ? .granted : .preparing }
         return vm.isRequestingAccess ? .requesting : .idle
     }
 
     // MARK: Top bar
 
     private func topBar(width: CGFloat) -> some View {
-        let progress = backProgress(width: width)
-        return HStack {
-            CircleIconButton(systemImage: "chevron.left", accessibilityLabel: "Back") {
-                goBack(width: width)
+        HStack(spacing: DS.Spacing.m) {
+            CircleIconButton(systemImage: "chevron.left", accessibilityLabel: "Back") { request(.back) }
+                .opacity(canGoBack ? 1 : 0.4)
+                .disabled(!canGoBack)
+                .accessibilityIdentifier("onboarding.back")
+            OnboardingProgressBar(fraction: progressFraction(width: width))
+                // Follows the finger exactly; settles with a spring otherwise.
+                .animation(isSwiping == true ? nil : DS.Motion.calm, value: progressFraction(width: width))
+                .accessibilityLabel("Step \(index(of: current) + 1) of \(pages.count)")
+                .accessibilityIdentifier("onboarding.progress")
+            // The same width either way, so the bar never changes length.
+            ZStack {
+                if current == .upsell {
+                    CircleIconButton(systemImage: "xmark", accessibilityLabel: "Continue for free", action: continueFree)
+                        .disabled(vm.isPurchaseBusy || vm.isLeavingOnboarding)
+                        .accessibilityIdentifier("onboarding.upsell.close")
+                        .transition(.opacity)
+                }
             }
-            // Fades out as Welcome, which has nowhere to go back to, comes in.
-            .opacity(current == .welcome ? 0 : previous == .welcome ? 1 - progress : 1)
-            .opacity(canGoBack ? 1 : 0.4)
-            .disabled(!canGoBack)
-            .accessibilityHidden(current == .welcome)
-            .accessibilityIdentifier("onboarding.back")
-            Spacer()
-            if current == .upsell {
-                CircleIconButton(systemImage: "xmark", accessibilityLabel: "Continue for free", action: continueFree)
-                    .opacity(1 - progress)
-                    .disabled(vm.isPurchaseBusy || vm.isLeavingOnboarding)
-                    .accessibilityIdentifier("onboarding.upsell.close")
-                    .transition(.opacity)
-            }
+            .frame(width: 44, height: 44)
         }
         .padding(.horizontal, DS.Spacing.l)
         .padding(.top, DS.Spacing.xs)
+        // Welcome is the cover, without a bar; it fades in with the first step.
+        .opacity(current == .welcome ? 0 : 1)
+        .allowsHitTesting(current != .welcome)
+        .accessibilityHidden(current == .welcome)
         .animation(pageAnimation, value: current)
         .animation(DS.Motion.calm, value: canGoBack)
+    }
+
+    /// How far through onboarding this is: Welcome is empty, the last step full, the steps between
+    /// evenly spaced over the ones that apply. Mid-swipe, it leans toward the page the swipe heads for.
+    private func progressFraction(width: CGFloat) -> Double {
+        let last = max(pages.count - 1, 1)
+        var position = Double(index(of: current))
+        if allows(dragX), width > 0 {
+            let lean = min(abs(dragX) / (width / 2), 1)
+            position += dragX > 0 ? -lean : lean
+        }
+        return min(max(position / Double(last), 0), 1)
     }
 
     private func continueFree() {
@@ -190,103 +191,117 @@ struct OnboardingView: View {
         switch current {
         case .welcome: false
         // Not while the system prompt is up or the granted checkmark is showing.
-        case .access: [.idle, .granted].contains(primerProgress(isCurrent: true))
+        case .access: primerProgress == .idle || primerProgress == .granted
         case .notifications, .upsell: vm.canGoBackInOnboarding
         }
     }
 
-    /// Forward from Welcome to the primer.
-    private func go(to next: Page) {
-        withAnimation(pageAnimation) { introPage = next }
+    /// Forward by swiping, only to a page already reached, and never by doing what a button would ask.
+    private var canGoForward: Bool {
+        let next = index(of: current) + 1
+        guard next < pages.count, next <= index(of: furthest) else { return false }
+        switch current {
+        case .welcome: return true
+        // Access has to be granted from the button; swiping on past it doesn't ask again.
+        case .access: return primerProgress == .granted
+        // The same as "Not now".
+        case .notifications: return vm.isOnboardingAccessGranted && !vm.isLeavingOnboarding
+        case .upsell: return false
+        }
     }
 
-    /// On to the next step after photo access, or the feed.
+    private func allows(_ dx: CGFloat) -> Bool {
+        dx > 0 ? canGoBack : dx < 0 ? canGoForward : false
+    }
+
+    /// On to the next step after photo access, or the feed, from a page's own button.
     private func advance() {
+        direction = .leading
         Task { await vm.advanceOnboarding() }
     }
 
-    /// Slides the current page off to the right and brings the previous one forward. With Reduce
-    /// Motion the two cross-fade instead.
-    private func goBack(width: CGFloat) {
-        guard canGoBack, !isGoingBack else { return }
-        Haptics.advance()
-        guard !reduceMotion else {
-            withAnimation(pageAnimation) { stepBack() }
-            return
+    /// Sets which way the current page will leave, then moves once that has been drawn. Welcome's
+    /// own button goes forward to a page not yet reached; a swipe can't.
+    private func request(_ move: Move, bySwipe: Bool = true) {
+        let isAllowed = switch move {
+        case .back: canGoBack
+        case .forward: bySwipe ? canGoForward : current == .welcome
         }
-        let alreadyRevealed = dragX > 0
-        isGoingBack = true
-        let slide = {
-            withAnimation(DS.Motion.page) {
-                dragX = width
-            } completion: {
-                var transaction = Transaction()
-                transaction.disablesAnimations = true
-                withTransaction(transaction) {
-                    stepBack()
-                    dragX = 0
-                    isGoingBack = false
-                }
-            }
-        }
-        // From the button, the previous page has to be drawn in its starting place before it can slide.
-        if alreadyRevealed { slide() } else { DispatchQueue.main.async(execute: slide) }
+        guard isAllowed else { return }
+        // Welcome's button plays its own.
+        if bySwipe { Haptics.advance() }
+        direction = move == .back ? .trailing : .leading
+        pendingMove = PendingMove(move: move, id: (pendingMove?.id ?? 0) + 1)
     }
 
-    private func stepBack() {
-        switch current {
-        case .welcome:
-            break
-        case .access:
+    private func perform(_ move: Move) {
+        switch (move, current) {
+        case (.back, .access):
             introPage = .welcome
-        case .notifications, .upsell:
+        case (.back, .notifications), (.back, .upsell):
             vm.goBackInOnboarding()
             if vm.onboardingStep == .intro {
                 introPage = .access
                 hasRevisitedAccess = true
             }
+        case (.forward, .welcome):
+            introPage = .access
+        case (.forward, .access), (.forward, .notifications):
+            Task { await vm.advanceOnboarding() }
+        case (.back, .welcome), (.forward, .upsell):
+            break
         }
     }
 
-    /// How far a back move has got, from 0 to 1.
-    private func backProgress(width: CGFloat) -> CGFloat {
-        width > 0 ? min(max(dragX / width, 0), 1) : 0
-    }
+    // MARK: Swiping
 
-    /// A swipe in from the left edge pulls the page back with the finger. Let go past about a third of
-    /// the way, or with a flick, and it finishes; otherwise it springs back.
-    private func backSwipe(width: CGFloat) -> some Gesture {
-        DragGesture(minimumDistance: 10)
+    /// A sideways swipe anywhere moves a page; an upright one is left to scrolling. Let go past a fifth
+    /// of the width, or flick, to go; otherwise the page settles back.
+    private func swipe(width: CGFloat) -> some Gesture {
+        DragGesture(minimumDistance: 12)
             .onChanged { value in
-                if isTrackingBack == nil {
-                    isTrackingBack = canGoBack && !isGoingBack
-                        && value.startLocation.x < Self.edgeWidth
-                        && value.translation.width > abs(value.translation.height)
-                }
-                guard isTrackingBack == true else { return }
-                let pulled = max(0, value.translation.width)
-                let crossed = pulled > width * Self.commitFraction
+                let dx = value.translation.width
+                if isSwiping == nil { isSwiping = abs(dx) > abs(value.translation.height) }
+                guard isSwiping == true else { return }
+                dragX = dx
+                let crossed = allows(dx) && abs(dx) > commitDistance(width: width)
                 if crossed != hasCrossedCommit {
                     hasCrossedCommit = crossed
                     if crossed { Haptics.threshold() }
                 }
-                // Reduce Motion doesn't track the finger; the change happens on release.
-                if !reduceMotion { dragX = pulled }
             }
             .onEnded { value in
                 defer {
-                    isTrackingBack = nil
+                    isSwiping = nil
                     hasCrossedCommit = false
                 }
-                guard isTrackingBack == true else { return }
-                let commits = value.translation.width > width * Self.commitFraction
-                    || value.predictedEndTranslation.width > width * 0.6
-                if commits {
-                    goBack(width: width)
+                guard isSwiping == true else { return }
+                let dx = value.translation.width
+                let flung = value.predictedEndTranslation.width
+                let isFar = abs(dx) > commitDistance(width: width) || abs(flung) > width / 3
+                // A flick back against the drag cancels it.
+                if isFar, allows(dx), flung.sign == dx.sign {
+                    request(dx > 0 ? .back : .forward)
                 } else {
                     withAnimation(DS.Motion.page) { dragX = 0 }
                 }
             }
+    }
+
+    private func commitDistance(width: CGFloat) -> CGFloat { width / 5 }
+
+    /// 0 to 1 as an allowed swipe nears the point where letting go moves the page.
+    private func commitProgress(width: CGFloat) -> CGFloat {
+        guard allows(dragX), !reduceMotion, width > 0 else { return 0 }
+        return min(abs(dragX) / commitDistance(width: width), 1)
+    }
+
+    /// The page follows the finger part of the way, easing off the further it goes, and barely moves
+    /// toward a page it can't go to. Still with Reduce Motion.
+    private func displacement(width: CGFloat) -> CGFloat {
+        guard !reduceMotion, width > 0 else { return 0 }
+        let reach = allows(dragX) ? width / 6 : width / 20
+        return reach * tanh(dragX / (reach * 2.5))
     }
 
     private var pageAnimation: Animation {
@@ -294,15 +309,41 @@ struct OnboardingView: View {
     }
 
     /// The incoming page appears at once and runs its own staggered entrance; the outgoing one
-    /// fades as it drifts a little to the left. Going back has its own slide, above.
-    private var leaving: AnyTransition {
+    /// fades as it drifts a little toward `edge`.
+    private func leaving(toward edge: Edge) -> AnyTransition {
         let drift: CGFloat = reduceMotion ? 0 : 32
         return .asymmetric(
             insertion: reduceMotion ? .opacity : .identity,
             // Clears out quickly, so the headlines don't double up as the next page enters.
-            removal: .opacity.combined(with: .offset(x: -drift))
+            removal: .opacity.combined(with: .offset(x: edge == .leading ? -drift : drift))
                 .animation(.easeOut(duration: 0.22))
         )
+    }
+}
+
+/// How far through onboarding the user is, as a bar that fills toward the last step.
+private struct OnboardingProgressBar: View {
+    /// 0 to 1.
+    let fraction: Double
+
+    @ScaledMetric(relativeTo: .body) private var height: CGFloat = 6
+
+    var body: some View {
+        Capsule()
+            .fill(DS.Palette.line)
+            .frame(height: height)
+            .overlay(alignment: .leading) {
+                GeometryReader { proxy in
+                    Capsule()
+                        .fill(DS.Palette.ink)
+                        // Never narrower than it is tall, so the rounded ends keep their shape.
+                        .frame(width: max(height, proxy.size.width * fraction))
+                        .opacity(fraction > 0 ? 1 : 0)
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .accessibilityElement(children: .ignore)
+            .accessibilityValue(Text(fraction, format: .percent.precision(.fractionLength(0))))
     }
 }
 
@@ -313,5 +354,13 @@ struct OnboardingView: View {
         .environment(vm)
         // Puts the mock in onboarding, as launch does.
         .task { await vm.start() }
+}
+
+#Preview("Progress bar") {
+    VStack(spacing: 20) {
+        ForEach([0, 1.0 / 3, 2.0 / 3, 1], id: \.self) { OnboardingProgressBar(fraction: $0) }
+    }
+    .padding()
+    .background(DS.Palette.paper)
 }
 #endif

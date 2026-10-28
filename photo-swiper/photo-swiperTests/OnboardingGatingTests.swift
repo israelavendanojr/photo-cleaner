@@ -174,7 +174,7 @@ struct OnboardingGatingTests {
     @Test func grantedGoesThroughRemindersAndTheOfferToTheFeed() async {
         library.needsPrompt = true
         let vm = await launched(entitlements: TestEntitlements(isUnlocked: false), center: FakeNotificationCenter())
-        #expect(vm.onboardingPageCount == 4)
+        #expect(vm.offersReminderStep && vm.offersUpsellStep)
         await vm.start()
         #expect(vm.phase == .onboarding)
         #expect(vm.isOnboardingAccessGranted)
@@ -183,10 +183,8 @@ struct OnboardingGatingTests {
 
         await vm.advanceOnboarding()
         #expect(vm.onboardingStep == .notifications)
-        #expect(vm.onboardingPageIndex == 2)
         await vm.advanceOnboarding()
         #expect(vm.onboardingStep == .upsell)
-        #expect(vm.onboardingPageIndex == 3)
         #expect(vm.phase == .onboarding)
 
         await vm.advanceOnboarding()
@@ -213,12 +211,11 @@ struct OnboardingGatingTests {
         let center = FakeNotificationCenter()
         center.undetermined = false
         let vm = await launched(entitlements: TestEntitlements(isUnlocked: false), center: center)
-        #expect(vm.onboardingPageCount == 3)
+        #expect(!vm.offersReminderStep && vm.offersUpsellStep)
         await vm.start()
 
         await vm.advanceOnboarding()
         #expect(vm.onboardingStep == .upsell)
-        #expect(vm.onboardingPageIndex == 2)
         #expect(center.authorizationRequests == 0)
     }
 
@@ -234,7 +231,7 @@ struct OnboardingGatingTests {
     @Test func alreadyUnlockedSkipsTheOffer() async {
         library.needsPrompt = true
         let vm = await launched(entitlements: TestEntitlements(isUnlocked: true), center: FakeNotificationCenter())
-        #expect(vm.onboardingPageCount == 3)
+        #expect(vm.offersReminderStep && !vm.offersUpsellStep)
         await vm.start()
 
         await vm.advanceOnboarding()
@@ -352,7 +349,7 @@ struct OnboardingGatingTests {
         first.debugResetOnboarding()
         let replay = await launched(entitlements: TestEntitlements(isUnlocked: true), center: center)
         #expect(replay.phase == .onboarding)
-        #expect(replay.onboardingPageCount == 4)
+        #expect(replay.offersReminderStep && replay.offersUpsellStep)
         await replay.start()
         await replay.advanceOnboarding()
         #expect(replay.onboardingStep == .notifications)
@@ -381,7 +378,7 @@ struct OnboardingGatingTests {
         vm.goBackInOnboarding()
         #expect(vm.onboardingStep == .intro)
         #expect(vm.phase == .onboarding, "The feed stays held while the user looks back")
-        #expect(vm.onboardingPageCount == 4)
+        #expect(vm.offersReminderStep && vm.offersUpsellStep)
 
         await vm.advanceOnboarding()
         #expect(vm.onboardingStep == .notifications)

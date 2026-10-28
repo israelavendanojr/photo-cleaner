@@ -6,29 +6,25 @@ import SwiftUI
 struct UpsellView: View {
     @Environment(FeedViewModel.self) private var vm
     @Environment(\.onboardingTopInset) private var topInset
-    let page: Int
-    let pageCount: Int
     /// Leaves onboarding, free or unlocked.
     let onContinue: () -> Void
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                PageDots(current: page, count: pageCount)
-                    .onboardingEntrance(order: 0)
                 Text(Copy.headline)
                     .dsSerif(40, relativeTo: .largeTitle, weight: .medium)
                     .foregroundStyle(DS.Palette.ink)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityAddTraits(.isHeader)
                     .padding(.top, DS.Spacing.l)
-                    .onboardingEntrance(order: 1)
+                    .onboardingEntrance(order: 0)
                 freeTier
                     .padding(.top, DS.Spacing.l)
-                    .onboardingEntrance(order: 2)
+                    .onboardingEntrance(order: 1)
                 UnlockOffer(dismissTitle: Copy.continueFree, onDismiss: continueFree)
                     .padding(.top, DS.Spacing.xl)
-                    .onboardingEntrance(order: 3)
+                    .onboardingEntrance(order: 2)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, DS.Spacing.xl)
@@ -125,7 +121,7 @@ private struct FreeTierRow: View {
 
 #if DEBUG
 #Preview {
-    UpsellView(page: 3, pageCount: 4, onContinue: {})
+    UpsellView(onContinue: {})
         .background(DS.Palette.paper)
         .environment(FeedViewModel.mock())
 }
@@ -133,7 +129,7 @@ private struct FreeTierRow: View {
 #Preview("Purchasing") {
     let vm = FeedViewModel.mock()
     vm.previewWall(status: .purchasing)
-    return UpsellView(page: 3, pageCount: 4, onContinue: {})
+    return UpsellView(onContinue: {})
         .background(DS.Palette.paper)
         .environment(vm)
 }

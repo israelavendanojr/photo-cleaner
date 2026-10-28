@@ -4,7 +4,6 @@ import SwiftUI
 struct OnboardingEntrance: ViewModifier {
     let delay: Double
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.onboardingEntranceSettled) private var isSettled
     @State private var isVisible = false
 
     /// Gap between one element's entrance and the next.
@@ -13,24 +12,18 @@ struct OnboardingEntrance: ViewModifier {
     static let lead = 0.12
 
     func body(content: Content) -> some View {
-        let shown = isVisible || reduceMotion || isSettled
+        let shown = isVisible || reduceMotion
         content
             .opacity(shown ? 1 : 0)
             .offset(y: shown ? 0 : 12)
             .onAppear {
                 guard !reduceMotion else { return }
-                guard !isSettled else {
-                    isVisible = true
-                    return
-                }
                 withAnimation(DS.Motion.gentle.delay(delay)) { isVisible = true }
             }
     }
 }
 
 extension EnvironmentValues {
-    /// The screen is being revealed by going back, so it shows already in place instead of entering.
-    @Entry var onboardingEntranceSettled = false
     /// Room this screen leaves at the top for onboarding's back button. None on Welcome, which has none.
     @Entry var onboardingTopInset: CGFloat = 0
 }
