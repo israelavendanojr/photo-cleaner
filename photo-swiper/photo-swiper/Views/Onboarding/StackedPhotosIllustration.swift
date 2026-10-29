@@ -11,8 +11,20 @@ struct StackedPhotosIllustration: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
 
-    /// Neighbors contrast, so each photo reads as a new one.
-    private static let photos = ["photo-coast", "photo-sunset", "photo-hills", "photo-pink", "photo-desert", "photo-beach"]
+    // One cycle takes about pause + leanHold + restackDelay + settle, ≈ 2.9s.
+    /// Rest between cycles.
+    private static let pause = Duration.seconds(1.8)
+    /// How long the front photo holds its lean toward Delete before it goes.
+    private static let leanHold = Duration.seconds(0.6)
+    /// From the fly-off starting to the stack moving up.
+    private static let restackDelay = Duration.seconds(0.06)
+    /// Lets the stack settle before the departed photo is let go.
+    private static let settle = Duration.seconds(0.45)
+    /// The fly-off. The feed's own curve for now; give the illustration its own here to tune it.
+    private static let flyOff = DS.Motion.flyOut
+
+    /// Neighbors contrast, so each photo reads as a new one. Also the photo access page's library.
+    static let photos = ["photo-coast", "photo-sunset", "photo-hills", "photo-pink", "photo-desert", "photo-beach"]
 
     /// Front, middle, back.
     @State private var stack = Array(photos.prefix(3))
@@ -54,7 +66,7 @@ struct StackedPhotosIllustration: View {
             guard isRunning else { return }
             while !Task.isCancelled {
                 do {
-                    try await Task.sleep(for: .seconds(2.5))
+                    try await Task.sleep(for: Self.pause)
                     try await cycle()
                 } catch {
                     break
@@ -113,17 +125,17 @@ struct StackedPhotosIllustration: View {
     /// Lean toward Delete with the stamp coming up, fly off, then promote the stack.
     private func cycle() async throws {
         withAnimation(DS.Motion.calm) { lean = 1 }
-        try await Task.sleep(for: .seconds(0.85))
+        try await Task.sleep(for: Self.leanHold)
         guard let front = stack.first else { return }
-        withAnimation(DS.Motion.flyOut) { departing = front }
-        try await Task.sleep(for: .seconds(0.06))
+        withAnimation(Self.flyOff) { departing = front }
+        try await Task.sleep(for: Self.restackDelay)
         withAnimation(DS.Motion.calm) {
             stack.removeFirst()
             stack.append(Self.photos[nextPhoto % Self.photos.count])
             nextPhoto += 1
             lean = 0
         }
-        try await Task.sleep(for: .seconds(0.45))
+        try await Task.sleep(for: Self.settle)
         departing = nil
     }
 
