@@ -33,8 +33,9 @@ struct OnboardingView: View {
     @State private var isSwiping: Bool?
     @State private var hasCrossedCommit = false
 
-    /// How long the primer shows access granted before moving on, so its checkmark can be read.
-    private static let grantedPause = Duration.seconds(0.9)
+    /// How long the primer shows access granted before moving on: its library comes into focus and
+    /// its check draws (≈0.8s, with the haptic), then the check can be read.
+    private static let grantedPause = Duration.seconds(1.4)
     /// The back button and the space around it, which pages after Welcome start below.
     private static let topBarHeight: CGFloat = 44 + DS.Spacing.xs
 
@@ -74,7 +75,6 @@ struct OnboardingView: View {
         .task(id: vm.isOnboardingAccessGranted) {
             // Only full or limited access gets here; a denial goes straight to the no-access screen.
             guard vm.isOnboardingAccessGranted, vm.onboardingStep == .intro else { return }
-            Haptics.accessGranted()
             try? await Task.sleep(for: Self.grantedPause)
             guard !Task.isCancelled else { return }
             advance()
