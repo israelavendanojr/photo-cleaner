@@ -7,6 +7,8 @@ protocol NotificationScheduling: AnyObject {
     func requestAuthorization() async -> Bool
     /// The user turned notifications off for the app in the Settings app.
     func isDenied() async -> Bool
+    /// The system hasn't asked about notifications yet, so asking would show its prompt.
+    func needsPermissionPrompt() async -> Bool
     func add(_ reminder: RefillReminder) async
     func removePending(_ ids: [String])
 }
@@ -125,6 +127,11 @@ final class RefillNotifier {
         await center.isDenied()
     }
 
+    /// Asking would show the system prompt. False once the user has answered it either way.
+    func canAsk() async -> Bool {
+        await center.needsPermissionPrompt()
+    }
+
     /// Schedules the reminders for an empty allowance. Fixed identifiers, so calling it again replaces
     /// them instead of adding more.
     func scheduleOnEmpty(
@@ -175,6 +182,10 @@ final class SystemNotificationCenter: NotificationScheduling {
         await center.notificationSettings().authorizationStatus == .denied
     }
 
+    func needsPermissionPrompt() async -> Bool {
+        await center.notificationSettings().authorizationStatus == .notDetermined
+    }
+
     func add(_ reminder: RefillReminder) async {
         let content = UNMutableNotificationContent()
         content.body = reminder.body
@@ -188,3 +199,21 @@ final class SystemNotificationCenter: NotificationScheduling {
         center.removePendingNotificationRequests(withIdentifiers: ids)
     }
 }
+
+#if DEBUG
+/// Previews' notification center: hasn't asked yet, grants when asked, and schedules nothing.
+@MainActor
+final class PreviewNotificationCenter: NotificationScheduling {
+    private var hasAsked = false
+
+    func requestAuthorization() async -> Bool {
+        hasAsked = true
+        return true
+    }
+
+    func isDenied() async -> Bool { false }
+    func needsPermissionPrompt() async -> Bool { !hasAsked }
+    func add(_ reminder: RefillReminder) async {}
+    func removePending(_ ids: [String]) {}
+}
+#endif

@@ -23,6 +23,20 @@ struct OnboardingEntrance: ViewModifier {
     }
 }
 
+extension EnvironmentValues {
+    /// Room this screen leaves at the top for onboarding's back button. None on Welcome, which has none.
+    @Entry var onboardingTopInset: CGFloat = 0
+}
+
+/// Pads scrolling onboarding content below the top bar, where there is one.
+private struct OnboardingTopPadding: ViewModifier {
+    @Environment(\.onboardingTopInset) private var inset
+
+    func body(content: Content) -> some View {
+        content.padding(.top, DS.Spacing.l + inset)
+    }
+}
+
 extension View {
     /// Enters `order` steps after the screen's first element.
     func onboardingEntrance(order: Int) -> some View {
@@ -38,7 +52,7 @@ extension View {
             self
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, DS.Spacing.xl)
-                .padding(.top, DS.Spacing.l)
+                .modifier(OnboardingTopPadding())
                 .padding(.bottom, DS.Spacing.l)
         }
         .scrollBounceBehavior(.basedOnSize)

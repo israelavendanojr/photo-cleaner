@@ -39,6 +39,7 @@ private extension FeedViewModel {
         if UserDefaults.standard.bool(forKey: "resetOnboarding") {
             UserDefaults.standard.removeObject(forKey: DefaultsKey.hasOnboarded)
             UserDefaults.standard.removeObject(forKey: DefaultsKey.hasSeenSwipeHint)
+            UserDefaults.standard.set(true, forKey: DefaultsKey.debugShowOnboarding)
         }
         if LibraryServices.usesMock {
             let entitlements = EntitlementServices.make(mock: true)

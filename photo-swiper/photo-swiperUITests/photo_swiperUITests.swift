@@ -49,8 +49,80 @@ final class photo_swiperUITests: XCTestCase {
         attachScreenshot(app, "photo access")
 
         allow.tap()
-        XCTAssertTrue(waitForTopCard(app, not: "none", timeout: 8), "Continuing opens the feed")
+        // Reminders only show while the simulator hasn't been asked about notifications yet.
+        let skipReminders = app.buttons["onboarding.notifications.skip"]
+        if skipReminders.waitForExistence(timeout: 4) {
+            sleep(1)
+            attachScreenshot(app, "reminders")
+            skipReminders.tap()
+        }
+        // Mocks start locked, so the offer always shows.
+        let continueFree = app.buttons["onboarding.upsell.close"]
+        XCTAssertTrue(continueFree.waitForExistence(timeout: 4), "The unlock offer comes last")
         XCTAssertFalse(allow.exists)
+        sleep(1)
+        attachScreenshot(app, "upsell")
+        continueFree.tap()
+        XCTAssertTrue(waitForTopCard(app, not: "none", timeout: 8), "Continuing for free opens the feed")
+    }
+
+    @MainActor
+    func testOnboardingSwipesBothWaysThroughPagesAlreadySeen() throws {
+        let app = launch("-startAt", "onboarding")
+        let welcome = app.buttons["onboarding.welcome.continue"]
+        let access = app.buttons["onboarding.access.continue"]
+        let skipReminders = app.buttons["onboarding.notifications.skip"]
+        let close = app.buttons["onboarding.upsell.close"]
+        let progress = app.descendants(matching: .any)["onboarding.progress"]
+
+        welcome.tap()
+        XCTAssertTrue(access.waitForExistence(timeout: 3))
+        XCTAssertEqual(progress.label, "Step 2 of 4")
+        // Not yet allowed, so a swipe can't go on past it.
+        swipe(app, forward: true)
+        sleep(1)
+        XCTAssertTrue(access.isHittable, "Access needs the button")
+
+        access.tap()
+        XCTAssertTrue(skipReminders.waitForExistence(timeout: 4), "The mock hasn't been asked about notifications")
+        skipReminders.tap()
+        XCTAssertTrue(close.waitForExistence(timeout: 4))
+        XCTAssertEqual(progress.label, "Step 4 of 4")
+        sleep(1)
+        attachScreenshot(app, "upsell")
+        // Nothing after the offer to swipe to.
+        swipe(app, forward: true)
+        sleep(1)
+        XCTAssertTrue(close.isHittable)
+
+        // Back by the button, then by swiping from mid-screen.
+        app.buttons["onboarding.back"].tap()
+        XCTAssertTrue(skipReminders.waitForExistence(timeout: 3))
+        XCTAssertEqual(progress.label, "Step 3 of 4")
+        swipe(app, forward: false)
+        XCTAssertTrue(access.waitForExistence(timeout: 3))
+        XCTAssertTrue(access.isHittable, "Seen again, the primer just continues")
+        sleep(1)
+        attachScreenshot(app, "photo access again")
+        swipe(app, forward: false)
+        XCTAssertTrue(welcome.waitForExistence(timeout: 3))
+
+        // Forward again by swiping, through the pages already reached, without a second prompt.
+        swipe(app, forward: true)
+        XCTAssertTrue(access.waitForExistence(timeout: 3))
+        swipe(app, forward: true)
+        XCTAssertTrue(skipReminders.waitForExistence(timeout: 3))
+        swipe(app, forward: true)
+        XCTAssertTrue(close.waitForExistence(timeout: 3))
+        close.tap()
+        XCTAssertTrue(waitForTopCard(app, not: "none", timeout: 8), "Finishing again opens the feed")
+    }
+
+    /// A sideways swipe across the middle of the screen: forward is right to left.
+    private func swipe(_ app: XCUIApplication, forward: Bool) {
+        let from = app.coordinate(withNormalizedOffset: CGVector(dx: forward ? 0.8 : 0.2, dy: 0.45))
+        let to = app.coordinate(withNormalizedOffset: CGVector(dx: forward ? 0.2 : 0.8, dy: 0.45))
+        from.press(forDuration: 0.05, thenDragTo: to, withVelocity: .default, thenHoldForDuration: 0)
     }
 
     @MainActor
