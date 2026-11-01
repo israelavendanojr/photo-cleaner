@@ -1,0 +1,38 @@
+{
+  "identifier" : "5C1E2A7B",
+  "nonRenewingSubscriptions" : [
+
+  ],
+  "products" : [
+    {
+      "displayPrice" : "9.99",
+      "familyShareable" : false,
+      "internalID" : "6A1F0C3D",
+      "localizations" : [
+        {
+          "description" : "Unlimited swipes, forever.",
+          "displayName" : "Unlock",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "com.israelavendanojr.photo-swiper.unlock",
+      "referenceName" : "Unlock",
+      "type" : "NonConsumable"
+    }
+  ],
+  "settings" : {
+    "_failTransactionsEnabled" : false,
+    "_locale" : "en_US",
+    "_storefront" : "USA",
+    "_storeKitErrors" : [
+
+    ]
+  },
+  "subscriptionGroups" : [
+
+  ],
+  "version" : {
+    "major" : 3,
+    "minor" : 0
+  }
+}
