@@ -612,7 +612,7 @@ final class photo_swiperUITests: XCTestCase {
         XCTAssertTrue(element(app, containing: "Out of swipes").exists)
         XCTAssertTrue(element(app, containing: "+10 in").exists)
         XCTAssertTrue(element(app, containing: "Unlimited swipes").exists)
-        XCTAssertEqual(unlock.label, "Unlock for $12.99, one-time purchase")
+        XCTAssertEqual(unlock.label, "Unlock for $9.99, one-time purchase")
         sleep(1)
         attachScreenshot(app, "swipe wall")
 

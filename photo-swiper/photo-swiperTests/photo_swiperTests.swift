@@ -48,8 +48,8 @@ final class FakeLibrary: PhotoLibraryProviding, @unchecked Sendable {
 @Observable
 final class TestEntitlements: EntitlementStore {
     var isUnlocked: Bool
-    let displayPrice = "$12.99"
-    var unlockResult = true
+    let displayPrice = "$9.99"
+    var unlockResult = PurchaseOutcome.purchased
     var restoreResult = RestoreOutcome.restored
     private(set) var restoreCount = 0
     private(set) var unlockCount = 0
@@ -58,9 +58,9 @@ final class TestEntitlements: EntitlementStore {
         self.isUnlocked = isUnlocked
     }
 
-    func unlock() async -> Bool {
+    func unlock() async -> PurchaseOutcome {
         unlockCount += 1
-        if unlockResult { isUnlocked = true }
+        if unlockResult == .purchased { isUnlocked = true }
         return unlockResult
     }
 

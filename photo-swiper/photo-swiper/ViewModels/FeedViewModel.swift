@@ -651,7 +651,7 @@ final class FeedViewModel {
     func purchaseUnlock() async -> Bool {
         guard !isPurchaseBusy else { return false }
         paywallStatus = .purchasing
-        guard await entitlements.unlock(), entitlements.isUnlocked else {
+        guard await entitlements.unlock() == .purchased, entitlements.isUnlocked else {
             paywallStatus = .purchaseFailed
             return false
         }
