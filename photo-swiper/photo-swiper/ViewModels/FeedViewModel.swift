@@ -1256,10 +1256,25 @@ extension FeedViewModel {
         allowanceStore.save(allowance)
     }
 
-    /// Flips the stand-in purchase. Only the debug store can.
+    /// Flips the stand-in purchase. Only the mock store can.
     func debugSetUnlocked(_ unlocked: Bool) {
         (entitlements as? DebugEntitlementStore)?.setUnlocked(unlocked)
         if unlocked { notifier?.cancelAll(now: now()) }
+    }
+
+    /// The override over the real StoreKit store. Nil on mocks, which use `debugSetUnlocked`.
+    var debugUnlockOverride: UnlockOverride? {
+        (entitlements as? DebugOverrideEntitlementStore)?.override
+    }
+
+    /// What StoreKit itself says, under the override. Nil on mocks.
+    var debugStoreKitUnlocked: Bool? {
+        (entitlements as? DebugOverrideEntitlementStore)?.base.isUnlocked
+    }
+
+    func debugSetUnlockOverride(_ override: UnlockOverride) {
+        (entitlements as? DebugOverrideEntitlementStore)?.setOverride(override)
+        if isUnlocked { notifier?.cancelAll(now: now()) }
     }
 
     /// Onboarding and the swipe hint show again on the next launch.
