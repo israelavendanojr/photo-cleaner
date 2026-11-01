@@ -55,6 +55,8 @@ enum DefaultsKey {
     static let hasOnboarded = "hasOnboarded"
     /// Set after the first swipe, so the swipe hint shows once ever.
     static let hasSeenSwipeHint = "hasSeenSwipeHint"
+    /// The last unlock state StoreKit reported, so launch doesn't flash locked. StoreKit corrects it.
+    static let storeKitUnlocked = "storeKitUnlocked"
     /// Debug builds only: the stand-in unlock was bought. Release builds never read it.
     static let debugUnlocked = "debugUnlocked"
     /// Debug builds only: show onboarding on the next launch even though photo access was already answered.
