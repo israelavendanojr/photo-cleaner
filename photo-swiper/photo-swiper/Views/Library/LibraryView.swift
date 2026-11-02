@@ -2,10 +2,16 @@ import SwiftUI
 import UIKit
 
 /// The Library tab: library-wide progress and what's pending. The gear opens Settings.
+/// Confetti falls the first time it's seen at 100%.
 struct LibraryView: View {
+    /// The tab is on screen. Both tabs stay mounted, so this says when the confetti can be seen.
+    var isActive = true
+
     @Environment(FeedViewModel.self) private var vm
     @Environment(\.openURL) private var openURL
     @State private var isSettingsPresented = false
+    /// The confetti burst playing, if one is. A new value starts a new burst.
+    @State private var celebration: Int?
 
     var body: some View {
         NavigationStack {
@@ -29,16 +35,39 @@ struct LibraryView: View {
             }
         }
         .tint(DS.Palette.ink)
+        .overlay {
+            if let celebration {
+                ConfettiView(message: "Every photo in your library is reviewed") { self.celebration = nil }
+                    .id(celebration)
+                    .accessibilityIdentifier("library.confetti")
+            }
+        }
         .sheet(isPresented: $isSettingsPresented) {
             SettingsView()
                 .presentationDragIndicator(.visible)
                 .presentationBackground(DS.Palette.paper)
                 .presentationCornerRadius(DS.Radius.card)
         }
+        .onAppear(perform: celebrateIfDue)
+        .onChange(of: isActive) { celebrateIfDue() }
+        .onChange(of: isSettingsPresented) { celebrateIfDue() }
+        .onChange(of: vm.isCompleteCelebrationDue) { celebrateIfDue() }
+        .onChange(of: vm.celebrationRequest) { playCelebration() }
         #if DEBUG
         // `-showSettings YES` opens Settings at launch, for screenshots.
         .task { if UserDefaults.standard.bool(forKey: "showSettings") { isSettingsPresented = true } }
         #endif
+    }
+
+    /// Plays the confetti once per 100%, only where it can be seen.
+    private func celebrateIfDue() {
+        guard isActive, !isSettingsPresented, vm.isCompleteCelebrationDue else { return }
+        vm.markCompleteCelebrated()
+        playCelebration()
+    }
+
+    private func playCelebration() {
+        celebration = (celebration ?? 0) + 1
     }
 
     private var header: some View {

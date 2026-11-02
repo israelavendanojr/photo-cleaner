@@ -131,7 +131,16 @@ final class FeedViewModel {
     private var carriedPending: [LibraryItem] = []
     /// Items deleted, gone from the library, or undeletable. They stay decided but are no longer pending.
     private var settledIDs: Set<LibraryItem.ID> = []
-    /// Totals the library reports itself; saved progress is added on top.
+    /// The "whole library reviewed" confetti has played for this 100%. Cleared when progress drops below it,
+    /// so the next 100% celebrates again. Saved in `defaults`.
+    private(set) var hasCelebratedComplete = false
+    /// Bumped to play the confetti right away, whatever the progress. Only Settings' debug section does.
+    private(set) var celebrationRequest = 0
+    #if DEBUG
+    /// Debug builds: progress reads 100% without any decision being saved. Off shows the real numbers again.
+    private(set) var debugSimulatesComplete = false
+    #endif
+    /// Totals the library reports itself. Reviewed counts come from saved progress.
     private var libraryStats = LibraryStats(totalItems: 0, reviewedItems: 0, freedBytes: 0)
     private var chipTask: Task<Void, Never>?
     private var changesTask: Task<Void, Never>?
@@ -191,6 +200,7 @@ final class FeedViewModel {
         allowance = allowanceStore.load() ?? SwipeAllowance(tunables: allowanceTunables, now: now())
         isRemindersOptedIn = notifier?.isOptedIn ?? false
         skipFavorites = store.skipFavorites
+        hasCelebratedComplete = defaults.bool(forKey: DefaultsKey.celebratedComplete)
     }
 
     /// Starts already loaded. Used by previews and launch-time setup.
@@ -220,6 +230,7 @@ final class FeedViewModel {
         allowance = allowanceStore.load() ?? SwipeAllowance(tunables: allowanceTunables, now: .now)
         isRemindersOptedIn = notifier?.isOptedIn ?? false
         skipFavorites = store.skipFavorites
+        hasCelebratedComplete = defaults.bool(forKey: DefaultsKey.celebratedComplete)
         libraryStats = stats
         apply(session)
         refreshTotals()
@@ -250,12 +261,21 @@ final class FeedViewModel {
     var keptCount: Int { decisions.values.filter { $0 == .keep }.count }
     var laterCount: Int { decisions.values.filter { $0 == .later }.count }
 
+    /// Unique items decided keep or delete that are still in the library, never more than the total.
     /// "Later" doesn't count as reviewed.
-    var libraryReviewedCount: Int { stats.reviewedItems }
+    var libraryReviewedCount: Int {
+        #if DEBUG
+        if debugSimulatesComplete { return stats.totalItems }
+        #endif
+        return min(stats.reviewedItems, stats.totalItems)
+    }
     var libraryReviewedFraction: Double {
-        // Reviewed items deleted elsewhere still count, so this can overshoot a shrinking library.
         stats.totalItems == 0 ? 0 : min(1, Double(libraryReviewedCount) / Double(stats.totalItems))
     }
+    /// Every item in the library is reviewed.
+    var isLibraryComplete: Bool { stats.totalItems > 0 && libraryReviewedCount >= stats.totalItems }
+    /// The library is at 100% and the confetti hasn't played for it yet.
+    var isCompleteCelebrationDue: Bool { isLibraryComplete && !hasCelebratedComplete }
     var freedBytes: Int64 { stats.freedBytes }
 
     var isUnlocked: Bool { entitlements.isUnlocked }
@@ -332,6 +352,12 @@ final class FeedViewModel {
     }
 
     // MARK: Intents
+
+    /// The 100% confetti has played; it won't again until progress drops and comes back.
+    func markCompleteCelebrated() {
+        hasCelebratedComplete = true
+        defaults.set(true, forKey: DefaultsKey.celebratedComplete)
+    }
 
     /// Called at launch, from onboarding's Allow button, and again from the no-access screen
     /// when the app returns from Settings. A first launch stops at onboarding without prompting.
@@ -600,7 +626,7 @@ final class FeedViewModel {
         // A deleted photo can't be swiped again.
         history.removeAll()
         saveProgress()
-        refreshTotals()
+        await refreshLibraryTotal()
         let freed = deletedItems.reduce(0) { $0 + $1.bytes }
         queueFollowUp(freed: freed)
         return freed
@@ -1041,6 +1067,8 @@ final class FeedViewModel {
     /// Drops items deleted outside the app from the pile and from cards not yet shown.
     /// The current and earlier cards stay put so undo history remains valid.
     private func forget(_ ids: Set<LibraryItem.ID>) {
+        // The library is smaller now, whoever deleted these, so its total is read again.
+        Task { await refreshLibraryTotal() }
         // Our own confirmed deletes come back through here too; they're already settled.
         let gone = ids.subtracting(settledIDs)
         guard !gone.isEmpty else { return }
@@ -1134,8 +1162,24 @@ final class FeedViewModel {
     /// Recomputes library totals from saved progress. The freed sum only changes on confirm.
     private func refreshTotals(includingFreed: Bool = true) {
         stats.totalItems = libraryStats.totalItems
-        stats.reviewedItems = libraryStats.reviewedItems + store.reviewedCount()
+        // Each item counts once. The real library reports no baseline; debug mocks report a pretend one,
+        // which stands until real decisions pass it, so it's never added to them.
+        stats.reviewedItems = min(libraryStats.totalItems, max(libraryStats.reviewedItems, store.reviewedCount()))
         if includingFreed { stats.freedBytes = libraryStats.freedBytes + store.freedBytes() }
+        updateCelebration()
+    }
+
+    /// Reads the library's own total again, which shrinks as items are deleted here or elsewhere.
+    private func refreshLibraryTotal() async {
+        libraryStats = await library.stats()
+        refreshTotals()
+    }
+
+    /// Below 100% again, so reaching it next time celebrates again.
+    private func updateCelebration() {
+        guard stats.totalItems > 0, !isLibraryComplete, hasCelebratedComplete else { return }
+        hasCelebratedComplete = false
+        defaults.removeObject(forKey: DefaultsKey.celebratedComplete)
     }
 
     private func showChip(bytes: Int64) {
@@ -1315,6 +1359,23 @@ extension FeedViewModel {
         skipFavorites = store.skipFavorites
         apply(await makeSession(number: 1))
         refreshTotals()
+    }
+
+    /// Progress reads 100% while on. Only what's shown changes; nothing is saved.
+    func debugSetSimulatesComplete(_ on: Bool) {
+        debugSimulatesComplete = on
+        updateCelebration()
+    }
+
+    /// Plays the 100% confetti now.
+    func debugPlayCelebration() {
+        celebrationRequest += 1
+    }
+
+    /// Forgets that the 100% confetti played, so it plays again at 100%.
+    func debugResetCelebration() {
+        hasCelebratedComplete = false
+        defaults.removeObject(forKey: DefaultsKey.celebratedComplete)
     }
 
     /// Shows a wall state without going through a purchase, for previews.

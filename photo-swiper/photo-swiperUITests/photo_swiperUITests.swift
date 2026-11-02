@@ -740,6 +740,35 @@ final class photo_swiperUITests: XCTestCase {
         XCTAssertEqual(left.label, "Swipes left, 0")
     }
 
+    // MARK: Progress
+
+    @MainActor
+    func testSimulatedCompleteShowsHundredPercentAndConfettiOnce() throws {
+        let app = launch("-simulateComplete", "YES")
+        let library = app.buttons["Library"]
+        XCTAssertTrue(library.waitForExistence(timeout: 5))
+        library.tap()
+        let confetti = app.descendants(matching: .any)["library.confetti"]
+        XCTAssertTrue(confetti.waitForExistence(timeout: 2), "Confetti falls at 100%")
+        XCTAssertTrue(element(app, containing: "100%").exists)
+        XCTAssertTrue(element(app, containing: "17,820 of 17,820 photos reviewed").exists)
+        XCTAssertTrue(confetti.waitForNonExistence(timeout: 6), "Gone after a moment")
+
+        app.buttons["Feed"].tap()
+        library.tap()
+        XCTAssertFalse(confetti.waitForExistence(timeout: 1.5), "Only once per 100%")
+    }
+
+    @MainActor
+    func testDebugPlayConfetti() throws {
+        let app = launch()
+        openSettings(app)
+        let play = app.buttons["settings.debug.playConfetti"]
+        scrollTo(play, in: app)
+        play.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["library.confetti"].waitForExistence(timeout: 2))
+    }
+
     // MARK: Helpers
 
     /// Library tab, then the gear.

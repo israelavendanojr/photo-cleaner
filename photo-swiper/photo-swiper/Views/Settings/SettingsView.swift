@@ -214,6 +214,21 @@ struct SettingsView: View {
                 vm.debugSetSwipes(0)
             }
             debugUnlocked
+            Toggle(isOn: Binding(get: { vm.debugSimulatesComplete }, set: { vm.debugSetSimulatesComplete($0) })) {
+                SettingsLabel(icon: "checkmark.circle", title: "Simulate 100% complete",
+                              detail: "Only what the Library shows. Nothing is saved.")
+            }
+            .tint(DS.Palette.ink)
+            .settingsRowPadding()
+            .accessibilityIdentifier("settings.debug.simulateComplete")
+            debugButton("Play 100% confetti", icon: "party.popper", id: "settings.debug.playConfetti") {
+                vm.debugPlayCelebration()
+                // It plays over the Library, so Settings gets out of the way.
+                dismiss()
+            }
+            debugButton("Reset 100% celebration", icon: "arrow.uturn.backward", id: "settings.debug.resetCelebration") {
+                vm.debugResetCelebration()
+            }
             Button {
                 vm.debugResetOnboarding()
                 didResetOnboarding = true

@@ -33,8 +33,22 @@ private extension FeedViewModel {
     /// never start the feature index; `-mockProgress YES` gives them their own on-disk store, so a
     /// relaunch resumes the mock deck. `-logSimilarity YES` logs each session's similar groups and near misses
     /// (category "similar"). `-swipesLeft N` sets the free swipes left, and `-refillSoon YES` refills
-    /// every minute instead of every six hours. Release builds always run on the real library.
+    /// every minute instead of every six hours. `-simulateComplete YES` shows the library as 100% reviewed
+    /// (display only, nothing saved) and forgets that the confetti played, so it plays on the Library tab.
+    /// Release builds always run on the real library.
     static func launch() -> FeedViewModel {
+        let vm = launchServices()
+        #if DEBUG
+        if UserDefaults.standard.bool(forKey: "simulateComplete") {
+            vm.debugResetCelebration()
+            vm.debugSetSimulatesComplete(true)
+        }
+        #endif
+        return vm
+    }
+
+    /// The view model for `launch()`, before display-only debug overrides.
+    private static func launchServices() -> FeedViewModel {
         #if DEBUG
         if UserDefaults.standard.bool(forKey: "resetOnboarding") {
             UserDefaults.standard.removeObject(forKey: DefaultsKey.hasOnboarded)
