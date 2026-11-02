@@ -32,6 +32,15 @@ final class AssetFeatureRecord {
     /// Float32 vector bytes; see `FeaturePrint`. Only `FeatureIndex.featurePrints(for:)` reads it.
     @Attribute(.externalStorage) var featurePrint: Data?
 
+    // Exact-duplicate signals, added after index version 2 without a version bump: older records
+    // get them from a hash-only pass. See `LibraryIndexer`.
+    var pixelWidth: Int?
+    var pixelHeight: Int?
+    /// `DHash` bits as a signed integer, since SQLite has no unsigned one.
+    var dHash: Int64?
+    /// The `DHash.version` a hash was attempted with, found or not (no local image). Nil means never.
+    var dHashVersion: Int?
+
     /// The asset's `modificationDate` when it was indexed. A different one means it was edited since.
     var modifiedAt: Date?
     var featureVersion: Int
@@ -74,6 +83,10 @@ final class AssetFeatureRecord {
         aesthetic = features.aesthetic
         isUtility = features.isUtility
         featurePrint = entry.featurePrint
+        pixelWidth = features.pixelWidth
+        pixelHeight = features.pixelHeight
+        dHash = features.dHash.map { Int64(bitPattern: $0) }
+        dHashVersion = entry.hashVersion
         modifiedAt = entry.modifiedAt
         featureVersion = entry.version
         indexedAt = entry.indexedAt
@@ -88,7 +101,8 @@ final class AssetFeatureRecord {
             createdAt: createdAt, bytes: bytes, isVideo: isVideo, duration: duration, isScreenshot: isScreenshot,
             isFavorite: isFavorite, isInBurst: isInBurst, isBurstPick: isBurstPick, burstID: burstID,
             isUserBurstPick: isUserBurstPick, hasAdjustments: hasAdjustments,
-            sharpness: sharpness, exposure: exposure, aesthetic: aesthetic, isUtility: isUtility
+            sharpness: sharpness, exposure: exposure, aesthetic: aesthetic, isUtility: isUtility,
+            pixelWidth: pixelWidth, pixelHeight: pixelHeight, dHash: dHash.map { UInt64(bitPattern: $0) }
         )
     }
 

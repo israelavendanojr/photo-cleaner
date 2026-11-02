@@ -153,7 +153,7 @@ struct SwipeDeck: View {
                 for item in batch.items.prefix(ScreenshotBatchCardView.fannedCount) {
                     if let id = item.image.localIdentifier { window[id] = tilePixels }
                 }
-            case .similar:
+            case .similar, .duplicates:
                 break
             }
         }

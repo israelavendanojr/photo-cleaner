@@ -299,6 +299,16 @@ final class FeedViewModel {
         return marked
     }
 
+    /// Copies in a duplicate set that a left swipe would clear: every one but the keeper, unless a
+    /// partial one-by-one review decided otherwise.
+    func markedForClearing(in group: DuplicateGroup) -> Set<LibraryItem.ID> {
+        var marked = Set(group.others.map(\.id))
+        for (id, decision) in drafts[group.id] ?? [:] {
+            if decision == .delete { marked.insert(id) } else { marked.remove(id) }
+        }
+        return marked
+    }
+
     /// Bytes a left swipe on this card would add to the pile.
     func bytesToClear(for card: FeedCard) -> Int64 {
         let outcome = itemDecisions(for: card, direction: .left)
@@ -311,7 +321,7 @@ final class FeedViewModel {
         case (.up, _): "Later"
         case (.left, .photo(let item)), (.left, .video(let item)): "Delete · \(Format.size(item.bytes))"
         case (.left, .batch(let batch)) where drafts[batch.id] == nil: "Clear all \(batch.items.count)"
-        case (.left, .similar), (.left, .batch):
+        case (.left, .similar), (.left, .duplicates), (.left, .batch):
             switch itemDecisions(for: card, direction: .left).values.filter({ $0 == .delete }).count {
             case 0: "Keep all \(card.items.count)"
             case let n: "Clear \(n)"
@@ -941,7 +951,11 @@ final class FeedViewModel {
     /// Items from a partial one-by-one review keep their decision; the rest follow the swipe.
     private func itemDecisions(for card: FeedCard, direction: SwipeDirection) -> [LibraryItem.ID: Decision] {
         let draft = drafts[card.id] ?? [:]
-        let marked: Set<LibraryItem.ID>? = if case .similar(let group) = card { markedForClearing(in: group) } else { nil }
+        let marked: Set<LibraryItem.ID>? = switch card {
+        case .similar(let group): markedForClearing(in: group)
+        case .duplicates(let group): markedForClearing(in: group)
+        case .photo, .video, .batch: nil
+        }
         return Dictionary(uniqueKeysWithValues: card.items.map { item in
             if let drafted = draft[item.id] { return (item.id, drafted) }
             let decision: Decision = switch direction {
@@ -961,6 +975,9 @@ final class FeedViewModel {
         case .batch:
             rest = { _ in .later }
         case .similar(let group):
+            let marked = markedForClearing(in: group)
+            rest = { marked.contains($0) ? .delete : .keep }
+        case .duplicates(let group):
             let marked = markedForClearing(in: group)
             rest = { marked.contains($0) ? .delete : .keep }
         case .photo, .video:
@@ -1150,6 +1167,10 @@ private extension FeedCard {
             let rest = group.items.filter { !ids.contains($0.id) }
             guard rest.count > 1, !ids.contains(group.bestID) else { return nil }
             return .similar(SimilarGroup(id: group.id, items: rest, bestID: group.bestID, reason: group.reason, maxDistance: group.maxDistance))
+        case .duplicates(let group):
+            let rest = group.items.filter { !ids.contains($0.id) }
+            guard rest.count > 1, !ids.contains(group.keepID) else { return nil }
+            return .duplicates(DuplicateGroup(id: group.id, items: rest, keepID: group.keepID, reason: group.reason))
         case .batch(let batch):
             let rest = batch.items.filter { !ids.contains($0.id) }
             guard !rest.isEmpty else { return nil }
@@ -1178,7 +1199,7 @@ extension FeedViewModel {
 extension FeedViewModel {
     /// Named starting points for previews and `-startAt` launch arguments.
     enum MockStart: String {
-        case first, video, similar, batch, onboarding
+        case first, video, similar, batch, duplicates, onboarding
         /// Partway through the first page with a few deletes pending.
         case pending
         /// Locked with no swipes left, the wall up over the deck.
@@ -1233,6 +1254,8 @@ extension FeedViewModel {
             vm.index = vm.cards.firstIndex { if case .similar = $0 { true } else { false } } ?? 0
         case .batch:
             vm.index = vm.cards.firstIndex { if case .batch = $0 { true } else { false } } ?? 0
+        case .duplicates:
+            vm.index = vm.cards.firstIndex { if case .duplicates = $0 { true } else { false } } ?? 0
         case .pending:
             vm.simulateSwipes(10)
         case .outOfSwipes:

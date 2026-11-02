@@ -5,8 +5,8 @@ import Foundation
 /// nothing, so the endless deck and caught up can both be reached.
 ///
 /// Card positions mirror the reference demo: videos at 3 and 11, similar shots
-/// at 6 and 15, a screenshot batch at 8, single photos everywhere else. That's 43 photos,
-/// more than a real page's target, so the demo shows off every card kind. 
+/// at 6 and 15, a screenshot batch at 8, three copies of one photo at 13, single photos everywhere
+/// else. That's 45 photos, more than a real page's target, so the demo shows off every card kind. 
 struct MockFeedBuilder: FeedBuilding {
     static let cardsPerSession = 20
     /// Pages after this come back empty.
@@ -64,6 +64,7 @@ private struct Factory {
         case 6: .similar(similar(cardIndex: index, image: "similar-a", reason: "Sharpest of the set"))
         case 15: .similar(similar(cardIndex: index, image: "similar-b", reason: "Best exposure"))
         case 8: .batch(screenshots(cardIndex: index))
+        case 13: .duplicates(duplicates(cardIndex: index, image: "photo-coast"))
         default: .photo(photo())
         }
     }
@@ -109,6 +110,19 @@ private struct Factory {
             )
         }
         return SimilarGroup(id: cardID(cardIndex), items: items, bestID: items[0].id, reason: reason)
+    }
+
+    /// One photo saved three times, months apart; the newest copy is the largest, so it's the keeper.
+    private mutating func duplicates(cardIndex: Int, image: String) -> DuplicateGroup {
+        let saved = nextDate()
+        let dates = [saved, Calendar.current.date(byAdding: .day, value: -47, to: saved)!,
+                     Calendar.current.date(byAdding: .day, value: -212, to: saved)!]
+        let sizes = [4.2, 1.6, 1.4]
+        let items = zip(dates, sizes).map { date, mb in
+            LibraryItem(id: nextID(), kind: .photo, date: date, location: "Malibu", bytes: megabytes(mb), image: .bundled(image))
+        }
+        let others = items.dropFirst().sorted { $0.date < $1.date }
+        return DuplicateGroup(id: cardID(cardIndex), items: [items[0]] + others, keepID: items[0].id, reason: "Highest resolution")
     }
 
     private mutating func screenshots(cardIndex: Int) -> ItemBatch {

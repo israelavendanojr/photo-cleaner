@@ -26,7 +26,7 @@ struct photo_swiperApp: App {
 
 private extension FeedViewModel {
     /// The real library and saved progress by default. In debug builds, `-mockLibrary YES` uses mock
-    /// services, `-startAt similar|batch|video|pending|outOfSwipes|caughtUp|onboarding`
+    /// services, `-startAt similar|batch|duplicates|video|pending|outOfSwipes|caughtUp|onboarding`
     /// jumps straight to a mock state, `-resetProgress YES` wipes saved progress first, and
     /// `-resetOnboarding YES` shows onboarding and the swipe hint again. `-unlocked YES|NO` forces the
     /// unlock on or off (saved for the real store; mocks start locked). Mocks never read or write the real saved progress and
