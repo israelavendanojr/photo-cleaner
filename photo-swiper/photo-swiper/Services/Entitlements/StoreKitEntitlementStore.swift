@@ -58,6 +58,8 @@ final class StoreKitEntitlementStore: EntitlementStore {
     }
 
     func unlock() async -> PurchaseOutcome {
+        // So a slow launch check can't land after the purchase and relock.
+        await ready()
         if product == nil { await loadProduct() }
         guard let product else { return .failed }
         do {
@@ -85,6 +87,7 @@ final class StoreKitEntitlementStore: EntitlementStore {
     }
 
     func restore() async -> RestoreOutcome {
+        await ready()
         do {
             try await sync()
         } catch {
