@@ -9,7 +9,7 @@ struct ReviewSet: Identifiable, Hashable {
     let items: [LibraryItem]
     /// Where the review opens.
     let start: Int
-    /// The suggested keeper of a similar set, shown with a "Best pick" chip.
+    /// The suggested keeper of a similar or duplicate set, shown with a "Best pick" chip.
     var bestID: LibraryItem.ID?
     /// Why the best pick won, e.g. "Sharpest of the set".
     var reason: String?
@@ -31,11 +31,22 @@ struct ReviewSet: Identifiable, Hashable {
         reason = group.reason
     }
 
+    /// The keeper first, then the other copies, opening on `startID`.
+    init(duplicates group: DuplicateGroup, startingAt startID: LibraryItem.ID) {
+        id = group.id
+        title = "Duplicates"
+        items = [group.keep] + group.others
+        start = items.firstIndex { $0.id == startID } ?? 0
+        bestID = group.keepID
+        reason = group.reason
+    }
+
     /// Nil for single-item cards, which have nothing to go through.
     init?(card: FeedCard, startingAt startID: LibraryItem.ID? = nil) {
         switch card {
         case .batch(let batch): self.init(batch: batch)
         case .similar(let group): self.init(group: group, startingAt: startID ?? group.bestID)
+        case .duplicates(let group): self.init(duplicates: group, startingAt: startID ?? group.keepID)
         case .photo, .video: return nil
         }
     }
