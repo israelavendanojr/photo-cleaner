@@ -213,12 +213,7 @@ struct SettingsView: View {
             debugButton("Set swipes to 0", icon: "0.circle", id: "settings.debug.zeroSwipes") {
                 vm.debugSetSwipes(0)
             }
-            Toggle(isOn: Binding(get: { vm.isUnlocked }, set: { vm.debugSetUnlocked($0) })) {
-                SettingsLabel(icon: "lock.open", title: "Unlocked")
-            }
-            .tint(DS.Palette.ink)
-            .settingsRowPadding()
-            .accessibilityIdentifier("settings.debug.unlocked")
+            debugUnlocked
             Button {
                 vm.debugResetOnboarding()
                 didResetOnboarding = true
@@ -245,6 +240,30 @@ struct SettingsView: View {
             } message: {
                 Text("Forgets every keep, delete, and later, the pile, and preferences. Nothing is deleted from your library.")
             }
+        }
+    }
+
+    /// The real store gets a three-way override with StoreKit's own answer beside it; mocks a plain switch.
+    @ViewBuilder
+    private var debugUnlocked: some View {
+        if let override = vm.debugUnlockOverride {
+            Picker(selection: Binding(get: { override }, set: { vm.debugSetUnlockOverride($0) })) {
+                ForEach(UnlockOverride.allCases) { Text($0.title).tag($0) }
+            } label: {
+                SettingsLabel(icon: "lock.open", title: "Unlocked",
+                              detail: vm.debugStoreKitUnlocked == true ? "StoreKit: purchased" : "StoreKit: not purchased")
+            }
+            .pickerStyle(.menu)
+            .tint(DS.Palette.secondary)
+            .settingsRowPadding()
+            .accessibilityIdentifier("settings.debug.unlocked")
+        } else {
+            Toggle(isOn: Binding(get: { vm.isUnlocked }, set: { vm.debugSetUnlocked($0) })) {
+                SettingsLabel(icon: "lock.open", title: "Unlocked")
+            }
+            .tint(DS.Palette.ink)
+            .settingsRowPadding()
+            .accessibilityIdentifier("settings.debug.unlocked")
         }
     }
 

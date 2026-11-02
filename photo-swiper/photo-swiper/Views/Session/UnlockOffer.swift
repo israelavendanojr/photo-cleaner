@@ -137,6 +137,7 @@ struct UnlockOffer: View {
     private var message: String? {
         switch status {
         case .purchaseFailed: "The purchase didn't go through. You weren't charged."
+        case .purchasePending: "Waiting for approval. You'll be unlocked as soon as it's approved."
         case .nothingToRestore: "We couldn't find an earlier purchase to restore."
         case .restoreFailed: "Couldn't reach the App Store. Try again in a moment."
         default: nil

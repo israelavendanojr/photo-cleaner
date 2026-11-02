@@ -93,6 +93,59 @@ struct RestorePurchasesTests {
         #expect(vm.paywallStatus == .idle)
     }
 
+    @Test func cancellingSaysNothingAndStaysLocked() async {
+        entitlements.unlockResult = .cancelled
+        let vm = vm()
+        vm.presentWall()
+
+        #expect(await vm.purchaseUnlock() == false)
+
+        #expect(vm.paywallStatus == .idle)
+        #expect(!vm.isUnlocked)
+        #expect(vm.isWallPresented)
+    }
+
+    @Test func aFailedPurchaseSaysSo() async {
+        entitlements.unlockResult = .failed
+        let vm = vm()
+
+        #expect(await vm.purchaseUnlock() == false)
+
+        #expect(vm.paywallStatus == .purchaseFailed)
+        #expect(!vm.isUnlocked)
+    }
+
+    @Test func askToBuyWaitsThenUnlocksWhenApproved() async {
+        entitlements.unlockResult = .pending
+        let vm = vm()
+        vm.presentWall()
+
+        #expect(await vm.purchaseUnlock() == false)
+        #expect(vm.paywallStatus == .purchasePending)
+        #expect(!vm.isPurchaseBusy, "The wall can close while waiting")
+        #expect(vm.isWallPresented)
+
+        entitlements.isUnlocked = true
+        vm.entitlementChanged()
+
+        #expect(vm.isUnlocked)
+        #expect(!vm.isWallPresented)
+        #expect(vm.paywallStatus == .idle)
+        #expect(vm.purchasedThisLaunch)
+    }
+
+    @Test func aRefundRelocksWithoutTouchingTheWall() async {
+        entitlements.isUnlocked = true
+        let vm = vm()
+
+        entitlements.isUnlocked = false
+        vm.entitlementChanged()
+
+        #expect(!vm.isUnlocked)
+        #expect(!vm.isWallPresented)
+        #expect(vm.canSwipe, "Back on the free allowance")
+    }
+
     // MARK: Reminders switch
 
     @Test func turningRemindersOnAsksAndOptsIn() async {

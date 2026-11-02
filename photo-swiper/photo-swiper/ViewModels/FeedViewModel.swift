@@ -23,6 +23,8 @@ final class FeedViewModel {
 
     enum PaywallStatus: Equatable {
         case idle, purchasing, restoring, purchaseFailed
+        /// Ask to Buy: waiting for approval. Unlocks on its own if approved.
+        case purchasePending
         /// Restore outcomes. A restore that unlocks also closes the wall.
         case restored, nothingToRestore, restoreFailed
     }
@@ -646,18 +648,36 @@ final class FeedViewModel {
     var isPurchaseBusy: Bool { paywallStatus == .purchasing || paywallStatus == .restoring }
 
     /// Buys the unlock, from the wall or Settings. Closes the wall, so the current card can be swiped
-    /// straight away. False if it didn't go through.
+    /// straight away. False if it didn't go through; a cancel says nothing.
     @discardableResult
     func purchaseUnlock() async -> Bool {
         guard !isPurchaseBusy else { return false }
         paywallStatus = .purchasing
-        guard await entitlements.unlock(), entitlements.isUnlocked else {
+        switch await entitlements.unlock() {
+        case .purchased where entitlements.isUnlocked:
+            didUnlock()
+            paywallStatus = .idle
+            return true
+        case .cancelled:
+            paywallStatus = .idle
+        case .pending:
+            paywallStatus = .purchasePending
+        case .purchased, .failed:
             paywallStatus = .purchaseFailed
-            return false
         }
-        didUnlock()
-        paywallStatus = .idle
-        return true
+        return false
+    }
+
+    /// The unlock changed outside a purchase run here: Ask to Buy approved, bought on another
+    /// device, or refunded. Unlocking closes the wall; relocking needs nothing, gating reads it live.
+    func entitlementChanged() {
+        guard isUnlocked, !isPurchaseBusy else { return }
+        if paywallStatus == .purchasePending {
+            purchasedThisLaunch = true
+            paywallStatus = .idle
+        }
+        notifier?.cancelAll(now: now())
+        isWallPresented = false
     }
 
     /// Restores an earlier purchase, from the wall or Settings. True if the app is now unlocked;
@@ -1236,10 +1256,25 @@ extension FeedViewModel {
         allowanceStore.save(allowance)
     }
 
-    /// Flips the stand-in purchase. Only the debug store can.
+    /// Flips the stand-in purchase. Only the mock store can.
     func debugSetUnlocked(_ unlocked: Bool) {
         (entitlements as? DebugEntitlementStore)?.setUnlocked(unlocked)
         if unlocked { notifier?.cancelAll(now: now()) }
+    }
+
+    /// The override over the real StoreKit store. Nil on mocks, which use `debugSetUnlocked`.
+    var debugUnlockOverride: UnlockOverride? {
+        (entitlements as? DebugOverrideEntitlementStore)?.override
+    }
+
+    /// What StoreKit itself says, under the override. Nil on mocks.
+    var debugStoreKitUnlocked: Bool? {
+        (entitlements as? DebugOverrideEntitlementStore)?.base.isUnlocked
+    }
+
+    func debugSetUnlockOverride(_ override: UnlockOverride) {
+        (entitlements as? DebugOverrideEntitlementStore)?.setOverride(override)
+        if isUnlocked { notifier?.cancelAll(now: now()) }
     }
 
     /// Onboarding and the swipe hint show again on the next launch.

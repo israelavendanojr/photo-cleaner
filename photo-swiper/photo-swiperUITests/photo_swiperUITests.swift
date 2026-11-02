@@ -612,7 +612,7 @@ final class photo_swiperUITests: XCTestCase {
         XCTAssertTrue(element(app, containing: "Out of swipes").exists)
         XCTAssertTrue(element(app, containing: "+10 in").exists)
         XCTAssertTrue(element(app, containing: "Unlimited swipes").exists)
-        XCTAssertEqual(unlock.label, "Unlock for $12.99, one-time purchase")
+        XCTAssertEqual(unlock.label, "Unlock for $9.99, one-time purchase")
         sleep(1)
         attachScreenshot(app, "swipe wall")
 
@@ -762,9 +762,15 @@ final class photo_swiperUITests: XCTestCase {
         return XCTWaiter().wait(for: [XCTNSPredicateExpectation(predicate: predicate, object: element)], timeout: timeout) == .completed
     }
 
+    /// Polls every 0.1s; `XCTNSPredicateExpectation` checks about once a second, which can miss
+    /// a short-lived label like "Restoring…".
     private func waitForLabel(_ element: XCUIElement, containing text: String, timeout: TimeInterval) -> Bool {
-        let predicate = NSPredicate(format: "label CONTAINS %@", text)
-        return XCTWaiter().wait(for: [XCTNSPredicateExpectation(predicate: predicate, object: element)], timeout: timeout) == .completed
+        let deadline = Date.now.addingTimeInterval(timeout)
+        repeat {
+            if element.exists, element.label.contains(text) { return true }
+            RunLoop.current.run(until: .now.addingTimeInterval(0.1))
+        } while Date.now < deadline
+        return false
     }
 
     private func scrollTo(_ element: XCUIElement, in app: XCUIApplication) {

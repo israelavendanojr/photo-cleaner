@@ -28,8 +28,8 @@ private extension FeedViewModel {
     /// The real library and saved progress by default. In debug builds, `-mockLibrary YES` uses mock
     /// services, `-startAt similar|batch|video|pending|outOfSwipes|caughtUp|onboarding`
     /// jumps straight to a mock state, `-resetProgress YES` wipes saved progress first, and
-    /// `-resetOnboarding YES` shows onboarding and the swipe hint again. `-unlocked YES|NO` sets the
-    /// stand-in purchase (mocks start locked). Mocks never read or write the real saved progress and
+    /// `-resetOnboarding YES` shows onboarding and the swipe hint again. `-unlocked YES|NO` forces the
+    /// unlock on or off (saved for the real store; mocks start locked). Mocks never read or write the real saved progress and
     /// never start the feature index; `-mockProgress YES` gives them their own on-disk store, so a
     /// relaunch resumes the mock deck. `-logSimilarity YES` logs each session's similar groups and near misses
     /// (category "similar"). `-swipesLeft N` sets the free swipes left, and `-refillSoon YES` refills

@@ -70,6 +70,9 @@ struct RootView: View {
             if !vm.isWallPresented, !vm.isUnlocked { isUpsellPresented = true }
             vm.finishDeleteUpsell()
         }
+        .onChange(of: vm.isUnlocked) {
+            vm.entitlementChanged()
+        }
         .task(id: vm.isReviewPromptDue) {
             guard vm.isReviewPromptDue else { return }
             // Let the pile finish closing first.

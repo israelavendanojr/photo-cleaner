@@ -2,14 +2,8 @@ import Foundation
 import Observation
 import os
 
-// TODO(storekit): Replace this whole type with a StoreKit 2 store: load the product for
-// `displayPrice`, `Product.purchase()` in `unlock()`, `AppStore.sync()` plus
-// `Transaction.currentEntitlements` in `restore()` (a thrown sync is `.failed`, no entitlement is
-// `.nothingToRestore`), and listen to `Transaction.updates`.
-// Then pick it in `EntitlementServices.make(mock:)`.
-
-/// Stand-in purchases. Debug builds unlock after a short pause, so the loading states can be
-/// seen, and remember it in `UserDefaults`.
+/// Stand-in purchases for the mock library and previews. Debug builds unlock after a short pause,
+/// so the loading states can be seen, and remember it in `UserDefaults`.
 ///
 /// Release builds never unlock: `isUnlocked` is always false and `unlock()`/`restore()` fail
 /// with a log line, so a build can't ship with a free unlock.
@@ -19,7 +13,7 @@ final class DebugEntitlementStore: EntitlementStore {
     private static let log = Logger(subsystem: "com.israelavendanojr.photo-swiper", category: "entitlement")
 
     private(set) var isUnlocked: Bool
-    let displayPrice = "$12.99"
+    let displayPrice = "$9.99"
 
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private let delay: Duration
@@ -37,14 +31,14 @@ final class DebugEntitlementStore: EntitlementStore {
         #endif
     }
 
-    func unlock() async -> Bool {
+    func unlock() async -> PurchaseOutcome {
         try? await Task.sleep(for: delay)
         #if DEBUG
         grant()
-        return true
+        return .purchased
         #else
-        Self.log.error("Unlock requested, but purchases aren't wired up yet. Not unlocking.")
-        return false
+        Self.log.error("Unlock requested from the stand-in store. Not unlocking.")
+        return .failed
         #endif
     }
 
@@ -55,7 +49,7 @@ final class DebugEntitlementStore: EntitlementStore {
         grant()
         return .restored
         #else
-        Self.log.error("Restore requested, but purchases aren't wired up yet. Nothing restored.")
+        Self.log.error("Restore requested from the stand-in store. Nothing restored.")
         return .failed
         #endif
     }
