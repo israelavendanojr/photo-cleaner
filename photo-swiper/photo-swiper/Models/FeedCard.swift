@@ -6,6 +6,8 @@ enum FeedCard: Identifiable, Hashable, Sendable, Codable {
     case video(LibraryItem)
     case similar(SimilarGroup)
     case batch(ItemBatch)
+    /// Copies of one photo. Added after decks were first saved; old decks without it still decode.
+    case duplicates(DuplicateGroup)
 
     /// The single-item card for a photo or video.
     init(item: LibraryItem) {
@@ -17,6 +19,7 @@ enum FeedCard: Identifiable, Hashable, Sendable, Codable {
         case .photo(let item), .video(let item): "item-\(item.id)"
         case .similar(let group): group.id
         case .batch(let batch): batch.id
+        case .duplicates(let group): group.id
         }
     }
 
@@ -25,6 +28,7 @@ enum FeedCard: Identifiable, Hashable, Sendable, Codable {
         case .photo(let item), .video(let item): [item]
         case .similar(let group): group.items
         case .batch(let batch): batch.items
+        case .duplicates(let group): group.items
         }
     }
 }
@@ -41,6 +45,19 @@ struct SimilarGroup: Identifiable, Hashable, Sendable, Codable {
 
     var best: LibraryItem { items.first { $0.id == bestID } ?? items[0] }
     var others: [LibraryItem] { items.filter { $0.id != bestID } }
+}
+
+/// The same photo saved more than once, with the copy to keep.
+struct DuplicateGroup: Identifiable, Hashable, Sendable, Codable {
+    let id: String
+    /// The keeper first, then the other copies oldest first.
+    let items: [LibraryItem]
+    let keepID: LibraryItem.ID
+    /// Why that copy is the keeper, e.g. "Highest resolution".
+    let reason: String
+
+    var keep: LibraryItem { items.first { $0.id == keepID } ?? items[0] }
+    var others: [LibraryItem] { items.filter { $0.id != keepID } }
 }
 
 /// A group of low-value items cleared or kept together.
