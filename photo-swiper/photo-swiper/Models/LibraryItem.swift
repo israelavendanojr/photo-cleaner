@@ -11,14 +11,13 @@ struct LibraryItem: Identifiable, Hashable, Sendable, Codable {
 
     /// Why the app thinks an item might be worth clearing.
     enum Flag: String, Hashable, Sendable, Codable {
-        case blurry, accidental, screenshot, receipt
+        case blurry, accidental, screenshot
 
         var label: String {
             switch self {
             case .blurry: "Possibly blurry"
             case .accidental: "Accidental shot"
             case .screenshot: "Screenshot"
-            case .receipt: "Receipt or code"
             }
         }
     }
@@ -45,7 +44,25 @@ struct LibraryItem: Identifiable, Hashable, Sendable, Codable {
 
     /// The single flag worth surfacing on a photo card, if any.
     var reviewFlag: Flag? {
-        flags.first { [.blurry, .accidental, .receipt].contains($0) }
+        flags.first { [.blurry, .accidental].contains($0) }
+    }
+}
+
+extension LibraryItem {
+    /// Same as the synthesized decoder, except flags this build no longer knows (e.g. the removed
+    /// "receipt") are dropped instead of failing the whole item. Saved decks and progress hold
+    /// items as JSON, so one stale flag would otherwise lose them.
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(ID.self, forKey: .id)
+        kind = try container.decode(Kind.self, forKey: .kind)
+        date = try container.decode(Date.self, forKey: .date)
+        location = try container.decodeIfPresent(String.self, forKey: .location)
+        bytes = try container.decode(Int64.self, forKey: .bytes)
+        flags = try container.decode([String].self, forKey: .flags).compactMap(Flag.init(rawValue:))
+        isFavorite = try container.decode(Bool.self, forKey: .isFavorite)
+        image = try container.decode(ImageReference.self, forKey: .image)
+        features = try container.decodeIfPresent(AssetFeatures.self, forKey: .features)
     }
 }
 

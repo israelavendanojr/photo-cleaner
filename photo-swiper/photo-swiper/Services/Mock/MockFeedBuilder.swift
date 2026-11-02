@@ -72,14 +72,18 @@ private struct Factory {
 
     private mutating func photo() -> LibraryItem {
         let roll = rng.unit()
-        let flags: [LibraryItem.Flag] = roll < 0.14 ? [.blurry] : roll < 0.24 ? [.accidental] : roll < 0.29 ? [.receipt] : []
-        let image = switch flags.first {
-        case .accidental: "photo-pocket"
-        case .receipt: "photo-receipt"
-        default: Self.photoImages[Int(rng.unit() * Double(Self.photoImages.count))]
+        let flags: [LibraryItem.Flag] = roll < 0.14 ? [.blurry] : roll < 0.24 ? [.accidental] : []
+        // An untagged receipt-looking photo. Same odds and random draws as before, so the mock deck doesn't shift.
+        let isReceipt = (0.24..<0.29).contains(roll)
+        let image = if flags.first == .accidental {
+            "photo-pocket"
+        } else if isReceipt {
+            "photo-receipt"
+        } else {
+            Self.photoImages[Int(rng.unit() * Double(Self.photoImages.count))]
         }
         // Favorites only appear when the user hasn't asked to skip them.
-        let isFavorite = !options.skipFavorites && flags.isEmpty && rng.unit() < 0.15
+        let isFavorite = !options.skipFavorites && flags.isEmpty && !isReceipt && rng.unit() < 0.15
         return LibraryItem(
             id: nextID(),
             kind: .photo,
