@@ -29,8 +29,6 @@ struct FeedRanker: Sendable {
         var accidental = 2.0
         /// Reads as blurry. See `ImageFlags.isBlurry`.
         var blurry = 1.0
-        /// A receipt, document, or code: useful once, rarely worth keeping.
-        var utility = 0.8
         /// Per point of aesthetics score below zero, so -1 adds the full weight.
         var lowAesthetic = 1.0
         /// Aesthetics scores above `highAestheticFrom` sink, reaching this at a score of 1.
@@ -79,9 +77,6 @@ struct FeedRanker: Sendable {
             parts.append(Part(name: "accidental", value: w.accidental))
         } else if ImageFlags.isBlurry(features) {
             parts.append(Part(name: "blurry", value: w.blurry))
-        }
-        if features.isUtility == true {
-            parts.append(Part(name: "utility", value: w.utility))
         }
         if let aesthetic = features.aesthetic {
             if aesthetic < 0 {

@@ -128,10 +128,6 @@ struct FeedRankerImageSignalTests {
         #expect(ranker.score(analyzed(sharpness: 5), now: now).total > ranker.score(analyzed(), now: now).total)
     }
 
-    @Test func utilityRanksHigher() {
-        #expect(part("utility", of: analyzed(utility: true)) == FeedRanker.Weights().utility)
-    }
-
     @Test func lowAestheticRisesAndHighAestheticSinks() {
         #expect(part("low aesthetic", of: analyzed(aesthetic: -1)) == FeedRanker.Weights().lowAesthetic)
         #expect(part("low aesthetic", of: analyzed(aesthetic: -0.5)) == FeedRanker.Weights().lowAesthetic / 2)

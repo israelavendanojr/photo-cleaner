@@ -21,13 +21,12 @@ enum ImageFlags {
     static let junkAestheticBelow = -0.5
     static let junkSharpnessBelow = 40.0
 
-    /// Review flags in display order: accidental, then receipt, then blurry. Accidental and blurry
-    /// never both appear. `LibraryItem.reviewFlag` shows the first, so receipts are never blurred.
+    /// Review flags in display order: accidental, then blurry. They never both appear.
+    /// `LibraryItem.reviewFlag` shows the first.
     static func classify(_ features: AssetFeatures) -> [LibraryItem.Flag] {
         var flags: [LibraryItem.Flag] = []
         let accidental = isAccidental(features)
         if accidental { flags.append(.accidental) }
-        if features.isUtility == true { flags.append(.receipt) }
         if !accidental, isBlurry(features) { flags.append(.blurry) }
         return flags
     }
