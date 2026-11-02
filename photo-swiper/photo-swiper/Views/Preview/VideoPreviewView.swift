@@ -5,9 +5,11 @@ import SwiftUI
 /// and double-tap zoom like photos.
 ///
 /// Swiping the video left, right, or up decides like on the card; swiping down just closes.
-/// While zoomed, one finger pans instead.
+/// While zoomed, one finger pans instead. Pressing and holding plays at 2x until the finger
+/// lifts; VoiceOver gets an action for it instead.
 struct VideoPreviewView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let item: LibraryItem
     /// Overlay text for each direction.
     var label: (SwipeDirection) -> String = { _ in "" }
@@ -33,14 +35,33 @@ struct VideoPreviewView: View {
                 .onGeometryChange(for: CGSize.self, of: \.size) { size = $0 }
                 // The controls sit above, unzoomed, so their buttons and the timeline's own
                 // drag keep working.
-                .zoomable($zoom, content: videoSize, container: size, swipe: swipe, onSwipe: finish) {
+                .zoomable($zoom, content: videoSize, container: size, swipe: swipe, onSwipe: finish, onHold: hold) {
                     withAnimation(DS.Motion.calm) { showsControls.toggle() }
                 }
                 .accessibilityActions {
                     ForEach(SwipeDirection.allCases, id: \.self) { direction in
                         Button(label(direction)) { decide(direction) }
                     }
+                    if playback.isReady {
+                        // No holding under VoiceOver: 2x stays on until turned off, pausing, or scrubbing.
+                        if playback.isBoosted {
+                            Button("Play at normal speed") { setBoost(false, restoring: false) }
+                        } else {
+                            Button("Play at 2x speed") { setBoost(true) }
+                        }
+                    }
                 }
+        }
+        .overlay(alignment: .top) {
+            if playback.isBoosted {
+                Chip(text: "2x", systemImage: "forward.fill", style: .frosted)
+                    // Below the top bar, which may or may not be showing.
+                    .padding(.top, 76)
+                    .allowsHitTesting(false)
+                    .transition(reduceMotion ? .opacity : .scale(scale: 0.8).combined(with: .opacity))
+                    .accessibilityLabel("Playing at 2x speed")
+                    .accessibilityIdentifier("video.speedPill")
+            }
         }
         .overlay(alignment: .top) {
             if showsControls {
@@ -86,6 +107,23 @@ struct VideoPreviewView: View {
         let natural = playback.videoSize == .zero ? posterSize : playback.videoSize
         guard natural.width > 0, natural.height > 0 else { return size }
         return AVMakeRect(aspectRatio: natural, insideRect: CGRect(origin: .zero, size: size)).size
+    }
+
+    private func hold(_ isDown: Bool) {
+        guard playback.isReady || !isDown else { return }
+        setBoost(isDown)
+    }
+
+    private func setBoost(_ on: Bool, restoring: Bool = true) {
+        withAnimation(DS.Motion.calm) {
+            if on {
+                guard !playback.isBoosted else { return }
+                playback.beginBoost()
+                Haptics.advance()
+            } else {
+                playback.endBoost(restoring: restoring)
+            }
+        }
     }
 
     private func finish(_ outcome: PreviewDrag.Outcome) {
@@ -238,12 +276,15 @@ final class VideoPlayback {
     private(set) var duration: TimeInterval = 0
     private(set) var isPlaying = false
     private(set) var isReady = false
+    /// Playing at `boostRate` for a press-and-hold (or VoiceOver's 2x action).
+    private(set) var isBoosted = false
     /// The clip's display size, rotation applied. Zero until loaded.
     private(set) var videoSize = CGSize.zero
 
     @ObservationIgnored private var timeObserver: Any?
     @ObservationIgnored private var endObserver: (any NSObjectProtocol)?
     @ObservationIgnored private var wasPlayingBeforeScrub = false
+    @ObservationIgnored private var wasPlayingBeforeBoost = false
     @ObservationIgnored private var isScrubbing = false
     /// Seeks chase the finger: while one is in flight, only the latest target is kept.
     @ObservationIgnored private var isSeeking = false
@@ -277,16 +318,48 @@ final class VideoPlayback {
             currentTime = 0
             player.seek(to: .zero)
         }
+        // `play()` starts at the default rate, so a boost survives a play from paused.
+        player.defaultRate = isBoosted ? Self.boostRate : 1
         player.play()
         isPlaying = true
     }
 
+    /// Pausing also drops any boost: the next play is at normal speed.
     func pause() {
         player.pause()
         isPlaying = false
+        if isBoosted {
+            isBoosted = false
+            player.defaultRate = 1
+        }
+    }
+
+    static let boostRate: Float = 2
+
+    /// Plays at 2x, starting playback if it was paused. `endBoost` puts it back.
+    func beginBoost() {
+        guard !isBoosted else { return }
+        wasPlayingBeforeBoost = isPlaying
+        isBoosted = true
+        play()
+        player.rate = Self.boostRate
+    }
+
+    /// Back to normal speed. With `restoring`, a clip that was paused before the boost pauses
+    /// again; without, it keeps playing at 1x.
+    func endBoost(restoring: Bool = true) {
+        guard isBoosted else { return }
+        isBoosted = false
+        player.defaultRate = 1
+        if restoring, !wasPlayingBeforeBoost {
+            pause()
+        } else if isPlaying {
+            player.rate = 1
+        }
     }
 
     func beginScrubbing() {
+        endBoost()
         isScrubbing = true
         wasPlayingBeforeScrub = isPlaying
         pause()
@@ -307,6 +380,7 @@ final class VideoPlayback {
     }
 
     func stop() {
+        endBoost()
         pause()
         if let timeObserver { player.removeTimeObserver(timeObserver) }
         if let endObserver { NotificationCenter.default.removeObserver(endObserver) }
@@ -351,6 +425,8 @@ final class VideoPlayback {
             MainActor.assumeIsolated {
                 guard let self else { return }
                 self.isPlaying = false
+                self.isBoosted = false
+                self.player.defaultRate = 1
                 self.currentTime = self.duration
             }
         }
