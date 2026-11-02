@@ -33,7 +33,7 @@ final class InMemoryProgressStore: ProgressStoring {
     }
 
     func reviewedCount() -> Int {
-        records.values.filter { $0.decision != .later }.count
+        records.values.filter { $0.decision != .later && $0.isInLibrary }.count
     }
 
     func freedBytes() -> Int64 {

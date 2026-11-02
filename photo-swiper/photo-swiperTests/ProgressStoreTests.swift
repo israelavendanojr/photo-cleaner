@@ -68,7 +68,8 @@ struct ProgressStoreTests {
         // A later settlement doesn't overwrite the first.
         store.settle([items[0].id], as: .gone)
 
-        #expect(store.reviewedCount() == 3)
+        // Only the keep: the deleted and gone items aren't in the library anymore, and later isn't reviewed.
+        #expect(store.reviewedCount() == 1)
         #expect(store.freedBytes() == items[0].bytes)
     }
 
