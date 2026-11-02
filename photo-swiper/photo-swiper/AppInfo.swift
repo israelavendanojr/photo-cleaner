@@ -71,4 +71,6 @@ enum DefaultsKey {
     static let reviewPromptVersion = "reviewPromptVersion"
     /// How many deletes from the pile have gone through. The first never asks for a review.
     static let deleteCount = "deleteCount"
+    /// The confetti for a fully reviewed library has played. Cleared when progress drops below 100%.
+    static let celebratedComplete = "celebratedComplete"
 }
