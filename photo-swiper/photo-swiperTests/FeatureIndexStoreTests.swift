@@ -125,6 +125,29 @@ struct FeatureIndexStoreTests {
         await index.upsert([IndexEntry(id: "a", features: record.features, modifiedAt: date, version: 2, indexedAt: date, featurePrint: print.data)])
         #expect(await index.featurePrints(for: ["a"]) == ["a": print])
     }
+
+    /// The duplicate fields arrived without a version bump: an older store opens with them empty and
+    /// its photos queue for the hash-only pass.
+    @Test func recordsFromBeforeDuplicateHashesMigrateUnhashed() async throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let url = folder.appendingPathComponent("progress.store")
+        try IndexSchemaV1.writeStore(at: url, id: "a", createdAt: date, modifiedAt: date)
+
+        let index = FeatureIndex(container: try SwiftDataProgressStore.makeContainer(url: url))
+        let record = try #require(await index.indexed()["a"])
+        #expect(record.features.dHash == nil && record.features.pixelWidth == nil && record.features.pixelHeight == nil)
+        #expect(await index.unhashedPhotos() == ["a"])
+
+        await index.updateHashes([HashEntry(id: "a", pixelWidth: 4032, pixelHeight: 3024, dHash: .max, version: DHash.version)])
+        let hashed = try #require(await index.indexed()["a"])
+        #expect(hashed.features.dHash == .max, "All 64 bits survive the signed column")
+        #expect(hashed.features.aspectRatio == 4032.0 / 3024.0)
+        #expect(hashed.features.sharpness == 120)
+        #expect(hashed.stamp == record.stamp)
+        #expect(await index.unhashedPhotos().isEmpty)
+    }
 }
 
 /// The feature index as its first version stored it, to test migrating from it.
