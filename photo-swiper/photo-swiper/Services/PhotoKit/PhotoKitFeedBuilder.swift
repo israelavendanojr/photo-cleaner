@@ -8,7 +8,9 @@ import Photos
 ///
 /// `CandidatePool` decides who competes: every undecided item the feature index has fresh features
 /// for, plus the newest `poolSize` undecided items it doesn't, whose metadata is read live.
-/// `SimilarGrouper` and `BestPick` turn near-identical indexed photos into similar groups.
+/// `DuplicateGrouper` and `DuplicatePick` first find copies of one photo; `SimilarGrouper` and
+/// `BestPick` then turn the remaining near-identical indexed photos into similar groups, so a photo
+/// is never in both.
 /// `FeedRanker` scores the rest and `SessionPlanner` takes the top `photosPerSession`, batching
 /// screenshots by week. Items in `FeedOptions.excluding`, such as ones already decided, are skipped.
 actor PhotoKitFeedBuilder: FeedBuilding {
@@ -24,6 +26,7 @@ actor PhotoKitFeedBuilder: FeedBuilding {
     private let index: (any FeatureIndexReading)?
     private let places = PlaceNamer()
     private let grouper = SimilarGrouper()
+    private let duplicateGrouper = DuplicateGrouper()
     private let planner = SessionPlanner(
         limit: PhotoKitFeedBuilder.photosPerSession,
         minBatch: PhotoKitFeedBuilder.minBatch,
@@ -48,8 +51,9 @@ actor PhotoKitFeedBuilder: FeedBuilding {
     func makeSession(number: Int, options: FeedOptions) async -> Session {
         let started = Date.now
         let pool = await candidatePool(options)
-        let similar = await similarGroups(in: pool)
-        let slots = planner.plan(pool.candidates, groups: similar.planned, now: .now)
+        let duplicates = await duplicateGroups(in: pool)
+        let similar = await similarGroups(in: pool, excluding: duplicates.planned)
+        let slots = planner.plan(pool.candidates, groups: similar.planned, duplicates: duplicates.planned, now: .now)
         similarGroupsLeft = similar.planned.count - slots.filter(\.isSimilar).count
         #if DEBUG
         if UserDefaults.standard.bool(forKey: "logSimilarity") { logSimilarity(similar, session: number) }
@@ -81,6 +85,12 @@ actor PhotoKitFeedBuilder: FeedBuilding {
                     id: Self.similarID(shots.map(\.id)), items: shots, bestID: bestID, reason: reason,
                     maxDistance: similar.maxDistance[Self.similarID(ids)]
                 ))
+            case .duplicates(let ids, let keepID, let reason):
+                let copies = ids.compactMap(item)
+                guard copies.count > 1, copies.contains(where: { $0.id == keepID }) else { return nil }
+                return FeedCard.duplicates(DuplicateGroup(
+                    id: Self.duplicateID(copies.map(\.id)), items: copies, keepID: keepID, reason: reason
+                ))
             case .screenshots(let week, let ids):
                 let shots = ids.compactMap(item)
                 guard !shots.isEmpty else { return nil }
@@ -93,7 +103,7 @@ actor PhotoKitFeedBuilder: FeedBuilding {
                 ))
             }
         }
-        Self.log.info("Session \(number): \(pool.cachedCount) cached + \(pool.liveCount) live candidates, index \(pool.scanPercent.map { "\($0)%" } ?? "complete"), \(similar.planned.count) similar groups from \(similar.printCount) prints (\(similar.seconds, format: .fixed(precision: 2))s), built in \(Date.now.timeIntervalSince(started), format: .fixed(precision: 2))s")
+        Self.log.info("Session \(number): \(pool.cachedCount) cached + \(pool.liveCount) live candidates, index \(pool.scanPercent.map { "\($0)%" } ?? "complete"), \(similar.planned.count) similar groups from \(similar.printCount) prints (\(similar.seconds, format: .fixed(precision: 2))s), \(duplicates.planned.count) duplicate sets from \(duplicates.printCount) prints (\(duplicates.seconds, format: .fixed(precision: 2))s), built in \(Date.now.timeIntervalSince(started), format: .fixed(precision: 2))s")
         return Session(number: number, cards: cards, scanPercentAtStart: pool.scanPercent)
     }
 
@@ -140,14 +150,52 @@ actor PhotoKitFeedBuilder: FeedBuilding {
         var seconds = 0.0
     }
 
-    /// Groups indexed photos that have a neighbor in time or a burst. Groups with two or more
-    /// favorites are dropped, so those photos compete as singles.
-    private func similarGroups(in pool: Pool) async -> Similar {
+    private struct Duplicates {
+        /// Keeper first in each.
+        var planned: [PlannedGroup] = []
+        var printCount = 0
+        var seconds = 0.0
+    }
+
+    /// Copies of one photo among the indexed candidates, whenever they were saved. Sets with two or
+    /// more favorites are dropped, so those photos compete as usual.
+    private func duplicateGroups(in pool: Pool) async -> Duplicates {
+        guard let index else { return Duplicates() }
+        let started = Date.now
+        let candidates = duplicateGrouper.candidateIDs(pool.cached)
+        guard !candidates.isEmpty else { return Duplicates(seconds: Date.now.timeIntervalSince(started)) }
+        let prints = await index.featurePrints(for: Array(candidates))
+        let planned = Self.duplicatePlans(pool.cached.filter { candidates.contains($0.id) }, prints: prints, grouper: duplicateGrouper)
+        return Duplicates(planned: planned, printCount: prints.count, seconds: Date.now.timeIntervalSince(started))
+    }
+
+    /// Duplicate sets ready to plan, keeper first. Sets with two or more favorites are dropped.
+    static func duplicatePlans(_ candidates: [RankCandidate], prints: [LibraryItem.ID: FeaturePrint],
+                               grouper: DuplicateGrouper = DuplicateGrouper()) -> [PlannedGroup] {
+        let features = Dictionary(candidates.map { ($0.id, $0.features) }, uniquingKeysWith: { first, _ in first })
+        return grouper.group(candidates, prints: prints).compactMap { group in
+            let members = group.ids.compactMap { id in features[id].map { RankCandidate(id: id, features: $0) } }
+            guard let choice = DuplicatePick.choose(members) else { return nil }
+            let ids = [choice.keepID] + group.ids.filter { $0 != choice.keepID }
+            return PlannedGroup(ids: ids, bestID: choice.keepID, reason: choice.reason.rawValue)
+        }
+    }
+
+    /// What similar grouping may use: every candidate not already in a duplicate set.
+    static func similarCandidates(_ candidates: [RankCandidate], excluding duplicates: [PlannedGroup]) -> [RankCandidate] {
+        let excluded = Set(duplicates.flatMap(\.ids))
+        return excluded.isEmpty ? candidates : candidates.filter { !excluded.contains($0.id) }
+    }
+
+    /// Groups indexed photos that have a neighbor in time or a burst, leaving out `excluded` (photos
+    /// in a duplicate set). Groups with two or more favorites are dropped, so those photos compete as singles.
+    private func similarGroups(in pool: Pool, excluding duplicates: [PlannedGroup]) async -> Similar {
         guard let index else { return Similar() }
         let started = Date.now
-        let neighbors = grouper.neighborIDs(pool.cached)
+        let cached = Self.similarCandidates(pool.cached, excluding: duplicates)
+        let neighbors = grouper.neighborIDs(cached)
         let prints = await index.featurePrints(for: Array(neighbors))
-        var similar = Similar(result: grouper.group(pool.cached.filter { neighbors.contains($0.id) }, prints: prints), printCount: prints.count)
+        var similar = Similar(result: grouper.group(cached.filter { neighbors.contains($0.id) }, prints: prints), printCount: prints.count)
         for group in similar.result.groups {
             let members = group.ids.compactMap { id in pool.features[id].map { RankCandidate(id: id, features: $0) } }
             guard let choice = BestPick.choose(members) else { continue }
@@ -185,6 +233,12 @@ actor PhotoKitFeedBuilder: FeedBuilding {
     static func similarID(_ ids: [LibraryItem.ID]) -> SimilarGroup.ID {
         let digest = SHA256.hash(data: Data(ids.sorted().joined(separator: "\n").utf8))
         return "similar-" + digest.prefix(8).map { String(format: "%02x", $0) }.joined()
+    }
+
+    /// Like `similarID`, for a duplicate set.
+    static func duplicateID(_ ids: [LibraryItem.ID]) -> DuplicateGroup.ID {
+        let digest = SHA256.hash(data: Data(ids.sorted().joined(separator: "\n").utf8))
+        return "dup-" + digest.prefix(8).map { String(format: "%02x", $0) }.joined()
     }
 
     /// "this week", "last week", or "the week of Sep 22".

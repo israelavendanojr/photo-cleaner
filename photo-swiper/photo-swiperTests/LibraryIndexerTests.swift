@@ -23,7 +23,8 @@ private final class FakeAssetSource: IndexAssetSource, @unchecked Sendable {
     func metadata(for ids: [LibraryItem.ID]) async -> [LibraryItem.ID: AssetFeatures] {
         let present = Dictionary(assets.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         return Dictionary(uniqueKeysWithValues: ids.compactMap { id in
-            present[id].map { (id, AssetFeatures(createdAt: $0.createdAt, bytes: 1_000_000, isVideo: $0.kind == .video, isScreenshot: $0.kind == .screenshot)) }
+            present[id].map { (id, AssetFeatures(createdAt: $0.createdAt, bytes: 1_000_000, isVideo: $0.kind == .video, isScreenshot: $0.kind == .screenshot,
+                                                 pixelWidth: 4032, pixelHeight: 3024)) }
         })
     }
 
@@ -50,7 +51,8 @@ private final class FakeAnalyzer: ImageAnalyzing, @unchecked Sendable {
             return stopAfter.map { count >= $0 } ?? false
         }
         if shouldStop { withUnsafeCurrentTask { $0?.cancel() } }
-        return ImageSignals(sharpness: 300, exposure: ExposureStats(mean: 0.5, darkFraction: 0, brightFraction: 0), aesthetic: 0.1, isUtility: false)
+        return ImageSignals(sharpness: 300, exposure: ExposureStats(mean: 0.5, darkFraction: 0, brightFraction: 0), aesthetic: 0.1, isUtility: false,
+                            dHash: 0xD0D0)
     }
 }
 
@@ -164,6 +166,98 @@ struct LibraryIndexerTests {
         #expect(all.values.allSatisfy { $0.features.sharpness == nil && $0.features.aesthetic == nil })
         #expect(all["shot"]?.features.isScreenshot == true)
         #expect(all["clip"]?.features.isVideo == true)
+    }
+}
+
+/// Exact-duplicate hashes: from the normal pass for new photos, and a hash-only pass for records
+/// indexed before hashes existed, without a version bump.
+struct DuplicateHashIndexTests {
+    private let base = Date(timeIntervalSince1970: 1_800_000_000)
+    private let source = FakeAssetSource()
+    private let analyzer = FakeAnalyzer()
+    private let index: FeatureIndex
+
+    init() throws {
+        index = FeatureIndex(container: try SwiftDataProgressStore.makeContainer(inMemory: true))
+    }
+
+    private func indexer() -> LibraryIndexer {
+        LibraryIndexer(source: source, analyzer: analyzer, index: index, version: 1, batchSize: 2, now: { [base] in base })
+    }
+
+    private func asset(_ id: String, _ kind: IndexableAsset.Kind, minutesAgo: Double = 0) -> IndexableAsset {
+        IndexableAsset(id: id, createdAt: base.addingTimeInterval(-minutesAgo * 60), modifiedAt: base, kind: kind)
+    }
+
+    /// A current record written before hashes existed: analyzed, but no pixel size or hash.
+    private func oldRecord(_ asset: IndexableAsset) -> IndexEntry {
+        IndexEntry(id: asset.id, features: AssetFeatures(createdAt: asset.createdAt, bytes: 1_000_000, isVideo: asset.kind == .video,
+                                                         isScreenshot: asset.kind == .screenshot, sharpness: 120),
+                   modifiedAt: asset.modifiedAt, version: 1, indexedAt: base)
+    }
+
+    @Test func newPhotosAreHashedInTheNormalPass() async {
+        source.assets = [asset("p", .photo), asset("shot", .screenshot, minutesAgo: 1)]
+        await indexer().run()
+
+        let all = await index.indexed()
+        #expect(all["p"]?.features.dHash == 0xD0D0)
+        #expect(all["p"]?.features.pixelWidth == 4032 && all["p"]?.features.pixelHeight == 3024)
+        #expect(all["shot"]?.features.dHash == nil)
+        #expect(await index.unhashedPhotos().isEmpty)
+    }
+
+    @Test func olderRecordsGetAHashOnlyPassOnce() async {
+        let photos = [asset("p0", .photo), asset("p1", .photo, minutesAgo: 1), asset("p2", .photo, minutesAgo: 2)]
+        let others = [asset("shot", .screenshot, minutesAgo: 3), asset("clip", .video, minutesAgo: 4)]
+        source.assets = photos + others
+        await index.upsert((photos + others).map(oldRecord))
+        #expect(await index.unhashedPhotos() == ["p0", "p1", "p2"])
+
+        await indexer().run()
+
+        #expect(source.imageRequests == ["p0", "p1", "p2"], "Newest first; screenshots and videos aren't hashed")
+        let all = await index.indexed()
+        for photo in photos {
+            #expect(all[photo.id]?.features.dHash == 0, "A blank image hashes to zero")
+            #expect(all[photo.id]?.features.pixelWidth == 4032)
+            #expect(all[photo.id]?.features.sharpness == 120, "Other features stay")
+            #expect(all[photo.id]?.stamp == IndexStamp(modifiedAt: base, version: 1), "Not re-analyzed")
+        }
+        #expect(all["shot"]?.features.pixelWidth == nil)
+
+        source.clearRequests()
+        await indexer().run()
+        #expect(source.imageRequests.isEmpty)
+    }
+
+    @Test func aCloudOnlyPhotoIsTriedOnceAndLeftUnhashed() async {
+        let cloud = asset("cloud", .photo)
+        source.assets = [cloud]
+        source.cloudOnly = ["cloud"]
+        await index.upsert([oldRecord(cloud)])
+
+        await indexer().run()
+        #expect(source.imageRequests == ["cloud"])
+        #expect(await index.indexed()["cloud"]?.features.dHash == nil)
+        #expect(await index.indexed()["cloud"]?.features.pixelWidth == 4032, "The pixel size is metadata, so it's kept")
+
+        source.clearRequests()
+        await indexer().run()
+        #expect(source.imageRequests.isEmpty)
+    }
+
+    @Test func aNewerHashVersionRehashesWithoutReanalyzing() async {
+        source.assets = [asset("p", .photo)]
+        await indexer().run()
+        source.clearRequests()
+
+        let rehash = LibraryIndexer(source: source, analyzer: analyzer, index: index, version: 1, hashVersion: DHash.version + 1,
+                                    batchSize: 2, now: { [base] in base })
+        await rehash.run()
+        #expect(source.imageRequests == ["p"])
+        #expect(await index.indexed()["p"]?.features.sharpness == 300)
+        #expect(await index.unhashedPhotos(version: DHash.version + 1).isEmpty)
     }
 }
 

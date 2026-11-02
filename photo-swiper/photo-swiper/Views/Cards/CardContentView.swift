@@ -23,6 +23,12 @@ struct CardContentView: View {
                 onToggle: { vm.toggleMark($0, in: group) },
                 onOpen: { onOpenReview(ReviewSet(group: group, startingAt: $0)) }
             )
+        case .duplicates(let group):
+            DuplicatesCardView(
+                group: group,
+                marked: vm.markedForClearing(in: group),
+                onOpen: { onOpenReview(ReviewSet(duplicates: group, startingAt: $0)) }
+            )
         case .batch(let batch):
             ScreenshotBatchCardView(batch: batch) { onOpenReview(ReviewSet(batch: batch)) }
         }

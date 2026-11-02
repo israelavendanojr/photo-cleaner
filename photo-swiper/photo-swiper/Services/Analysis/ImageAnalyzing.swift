@@ -15,6 +15,8 @@ struct ImageSignals: Hashable, Sendable {
     var isUtility: Bool?
     /// A `FeaturePrint`'s bytes. Kept beside `AssetFeatures`, not in it, so it never reaches saved decisions.
     var featurePrint: Data?
+    /// The upright image's `DHash`.
+    var dHash: UInt64?
 }
 
 extension AssetFeatures {
@@ -23,5 +25,6 @@ extension AssetFeatures {
         exposure = signals.exposure
         aesthetic = signals.aesthetic
         isUtility = signals.isUtility
+        dHash = signals.dHash
     }
 }

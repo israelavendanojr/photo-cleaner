@@ -43,16 +43,14 @@ struct ImageFlagsTests {
         #expect(ImageFlags.classify(analyzed(sharpness: nil)).isEmpty)
     }
 
-    @Test func utilityIsAReceipt() {
-        #expect(ImageFlags.classify(analyzed(utility: true)) == [.receipt])
-    }
-
-    @Test func aBlurryReceiptShowsAsAReceiptSoItIsNotBlurredOnTheCard() {
+    /// Vision's utility signal no longer tags anything; only the image itself decides.
+    @Test func utilityShotsGetNoTagOfTheirOwn() {
+        #expect(ImageFlags.classify(analyzed(utility: true)).isEmpty)
         let flags = ImageFlags.classify(analyzed(sharpness: 5, utility: true))
-        #expect(flags == [.receipt, .blurry])
+        #expect(flags == [.blurry])
         var item = PreviewSamples.plainPhoto
         item.flags = flags
-        #expect(item.reviewFlag == .receipt)
+        #expect(item.reviewFlag == .blurry)
     }
 
     @Test func mostlyBlackAndSoftIsAccidental() {
@@ -102,6 +100,29 @@ struct AssetFeaturesCodingTests {
         json = json.replacingOccurrences(of: "\"bytes\":7", with: "\"bytes\":8")
         let decoded = try JSONDecoder().decode(LibraryItem.self, from: Data(json.utf8))
         #expect(decoded.features?.bytes == 8)
+    }
+
+    /// Items saved while the "receipt" flag existed still load; the unknown flag is dropped.
+    @Test func savedItemsWithTheRemovedReceiptFlagStillDecode() throws {
+        var item = PreviewSamples.plainPhoto
+        item.flags = [.blurry]
+        let json = try #require(String(data: JSONEncoder().encode(item), encoding: .utf8))
+        #expect(json.contains(#""flags":["blurry"]"#))
+        let old = json.replacingOccurrences(of: #""flags":["blurry"]"#, with: #""flags":["receipt","blurry"]"#)
+        let decoded = try JSONDecoder().decode(LibraryItem.self, from: Data(old.utf8))
+        #expect(decoded == item)
+        #expect(decoded.reviewFlag == .blurry)
+
+        let onlyReceipt = json.replacingOccurrences(of: #""flags":["blurry"]"#, with: #""flags":["receipt"]"#)
+        #expect(try JSONDecoder().decode(LibraryItem.self, from: Data(onlyReceipt.utf8)).flags.isEmpty)
+    }
+
+    @Test func libraryItemsRoundTrip() throws {
+        var item = PreviewSamples.plainPhoto
+        item.flags = [.accidental, .screenshot]
+        item.isFavorite = true
+        item.features = analyzed(aesthetic: 0.4, utility: true)
+        #expect(try JSONDecoder().decode(LibraryItem.self, from: JSONEncoder().encode(item)) == item)
     }
 
     @Test func imageSignalsRoundTrip() throws {

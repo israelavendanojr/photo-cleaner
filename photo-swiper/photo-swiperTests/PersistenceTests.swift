@@ -265,12 +265,13 @@ struct FeedViewModelPersistenceTests {
         // Synchronous swipes outrun paging, so the deck is saved with nothing ahead.
         while vm.currentCard != nil { vm.decide(.right) }
         #expect(vm.isFindingMore)
+        // Read before relaunching: the first model's page fetch can land meanwhile and append page two.
+        let firstPage = Set(vm.cards.map(\.id))
 
         let relaunched = await launch(store)
 
         #expect(relaunched.phase == .feed)
         #expect(relaunched.index == MockFeedBuilder.cardsPerSession)
-        let firstPage = Set(vm.cards.map(\.id))
         #expect(relaunched.currentCard.map { !firstPage.contains($0.id) } == true, "A new page, not the old one again")
         #expect(relaunched.cards.count == 2 * MockFeedBuilder.cardsPerSession)
     }

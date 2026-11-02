@@ -29,6 +29,18 @@ struct IndexEntry: Sendable {
     let indexedAt: Date
     /// A `FeaturePrint`'s bytes; nil when not analyzed or Vision failed.
     var featurePrint: Data? = nil
+    /// The `DHash.version` a hash was attempted with; nil when no hash was tried (screenshots, videos).
+    var hashVersion: Int? = nil
+}
+
+/// A hash-only pass's result for one photo: its pixel size and duplicate hash.
+struct HashEntry: Hashable, Sendable {
+    let id: LibraryItem.ID
+    var pixelWidth: Int?
+    var pixelHeight: Int?
+    /// Nil when the photo has no local image.
+    var dHash: UInt64?
+    let version: Int
 }
 
 /// The one rule for "this record can be used as is", shared by the indexer's work queue and the feed.

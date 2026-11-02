@@ -4,7 +4,7 @@ import ImageIO
 import OSLog
 import Vision
 
-/// Sharpness and exposure from Accelerate, plus Vision's aesthetics score, utility flag, and feature print.
+/// Sharpness, exposure, and the duplicate hash from one grayscale bitmap, plus Vision's aesthetics score, utility flag, and feature print.
 ///
 /// Everything runs on device with built-in models. If Vision fails (it can on the simulator), the
 /// Vision fields stay nil and the pixel signals are still kept. Each Vision request fails on its own.
@@ -20,6 +20,7 @@ struct VisionImageAnalyzer: ImageAnalyzing {
         if let gray = GrayscaleImage(image, longEdge: Sharpness.longEdge) {
             signals.sharpness = Sharpness.score(gray)
             signals.exposure = Exposure.stats(gray)
+            signals.dHash = DHash.hash(gray, orientation: orientation)
         }
         do {
             let observation = try await CalculateImageAestheticsScoresRequest().perform(on: image, orientation: orientation)

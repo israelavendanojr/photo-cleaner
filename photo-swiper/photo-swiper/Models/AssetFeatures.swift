@@ -34,6 +34,22 @@ struct AssetFeatures: Hashable, Sendable, Codable {
     var aesthetic: Double?
     /// Vision thinks it's a utility shot: a receipt, document, code, or similar.
     var isUtility: Bool?
+
+    // Exact-duplicate signals. Optional so items saved before they existed still decode.
+
+    /// `PHAsset.pixelWidth` and `pixelHeight`, from metadata. Nil for mock items and older records.
+    var pixelWidth: Int?
+    var pixelHeight: Int?
+    /// 64-bit difference hash of the upright image; see `DHash`. Nil when not hashed yet or no local image.
+    var dHash: UInt64?
+
+    /// Width over height, or nil without both dimensions.
+    var aspectRatio: Double? {
+        guard let pixelWidth, let pixelHeight, pixelWidth > 0, pixelHeight > 0 else { return nil }
+        return Double(pixelWidth) / Double(pixelHeight)
+    }
+
+    var pixelCount: Int { (pixelWidth ?? 0) * (pixelHeight ?? 0) }
 }
 
 /// How light or dark a frame is, from its luminance histogram.

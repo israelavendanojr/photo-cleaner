@@ -107,7 +107,11 @@ final class SwiftDataProgressStore: ProgressStoring {
 
     func reviewedCount() -> Int {
         let later = Decision.later.rawValue
-        let descriptor = FetchDescriptor<ItemProgress>(predicate: #Predicate { $0.decisionRaw != later })
+        // Rows are unique by item, so each asset counts once. Only undeletable items stay in the library once settled.
+        let undeletable: String? = Settlement.undeletable.rawValue
+        let descriptor = FetchDescriptor<ItemProgress>(predicate: #Predicate {
+            $0.decisionRaw != later && ($0.settlementRaw == nil || $0.settlementRaw == undeletable)
+        })
         do {
             return try context.fetchCount(descriptor)
         } catch {

@@ -8,15 +8,22 @@ extension View {
     ///
     /// Attach to the full-screen container the content is centered in. `content` is the
     /// content's fitted size and `container` the container's size.
+    ///
+    /// With `onHold`, pressing and holding still reports `true`, and `false` once the finger
+    /// lifts or a pinch or drag takes over. A hold doesn't count as a tap.
     func zoomable(
         _ zoom: Binding<ZoomTransform>,
         content: CGSize,
         container: CGSize,
         swipe: PreviewDrag,
         onSwipe: @escaping (PreviewDrag.Outcome) -> Void,
+        onHold: ((Bool) -> Void)? = nil,
         onTap: @escaping () -> Void
     ) -> some View {
-        modifier(Zoomable(zoom: zoom, content: content, container: container, swipe: swipe, onSwipe: onSwipe, onTap: onTap))
+        modifier(Zoomable(
+            zoom: zoom, content: content, container: container, swipe: swipe,
+            onSwipe: onSwipe, onHold: onHold, onTap: onTap
+        ))
     }
 }
 
@@ -26,6 +33,7 @@ private struct Zoomable: ViewModifier {
     let container: CGSize
     let swipe: PreviewDrag
     let onSwipe: (PreviewDrag.Outcome) -> Void
+    let onHold: ((Bool) -> Void)?
     let onTap: () -> Void
 
     /// What the current one-finger drag is doing, decided when it starts.
@@ -41,6 +49,12 @@ private struct Zoomable: ViewModifier {
     @State private var isPinching = false
     /// The fingers' last midpoint, so a pinch past the max settles back toward it.
     @State private var focal = CGPoint.zero
+    @State private var isHolding = false
+    /// When the last hold ended, so the lift that ends it isn't also taken as a tap.
+    @State private var holdEndedAt = Date.distantPast
+
+    /// How long a press must last before it counts as a hold.
+    static let holdDelay: TimeInterval = 0.35
 
     static let limits: ClosedRange<CGFloat> = 1...4
     private static let doubleTapScale: CGFloat = 2.5
@@ -50,8 +64,12 @@ private struct Zoomable: ViewModifier {
             .gesture(PinchGesture(action: pinch))
             // Alongside the pinch, so a one-finger drag follows the finger straight away.
             .simultaneousGesture(dragGesture)
+            .gesture(HoldGesture(minimumDuration: Self.holdDelay, action: hold))
             .onTapGesture(count: 2, coordinateSpace: .local) { toggleZoom(at: $0) }
-            .onTapGesture(perform: onTap)
+            .onTapGesture {
+                guard !isHolding, Date.now.timeIntervalSince(holdEndedAt) > 0.3 else { return }
+                onTap()
+            }
             // A new fitted size, like a video's real size replacing its poster's, moves the edges.
             .onChange(of: content) { if !isPinching { settle(animated: false) } }
             .onChange(of: container) { if !isPinching { settle(animated: false) } }
@@ -63,6 +81,7 @@ private struct Zoomable: ViewModifier {
         switch phase {
         case .began:
             isPinching = true
+            endHold()
             // Two fingers mean zoom, never a decision: drop any swipe the first finger began.
             if case .swipe = drag { swipe.cancel() }
             if drag != nil { drag = .ignored }
@@ -100,6 +119,8 @@ private struct Zoomable: ViewModifier {
                     : zoom.isZoomed ? .pan(offset: zoom.offset, translation: value.translation)
                     : .swipe)
                 drag = current
+                // Moving the finger means swiping or panning, not holding.
+                endHold()
                 switch current {
                 case .swipe:
                     swipe.track(value)
@@ -118,6 +139,25 @@ private struct Zoomable: ViewModifier {
                 guard case .swipe = drag, let outcome = swipe.end(value) else { return }
                 onSwipe(outcome)
             }
+    }
+
+    // MARK: Hold
+
+    private func hold(_ isDown: Bool) {
+        if isDown {
+            guard onHold != nil, !isPinching, drag == nil, !isHolding else { return }
+            isHolding = true
+            onHold?(true)
+        } else {
+            endHold()
+        }
+    }
+
+    private func endHold() {
+        guard isHolding else { return }
+        isHolding = false
+        holdEndedAt = .now
+        onHold?(false)
     }
 
     // MARK: Double tap
@@ -185,6 +225,44 @@ struct PinchGesture: UIGestureRecognizerRepresentable {
         var touches = 0
 
         /// Keeps the preview's own drag and taps working beside the pinch.
+        func gestureRecognizer(
+            _ gestureRecognizer: UIGestureRecognizer,
+            shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
+        ) -> Bool {
+            true
+        }
+    }
+}
+
+/// A one-finger press held in place for `minimumDuration`. Reports `true` when it starts and
+/// `false` when the finger lifts or the touch is cancelled. Runs alongside the preview's
+/// other gestures and never cancels their touches.
+struct HoldGesture: UIGestureRecognizerRepresentable {
+    let minimumDuration: TimeInterval
+    let action: (Bool) -> Void
+
+    func makeCoordinator(converter: CoordinateSpaceConverter) -> Coordinator {
+        Coordinator()
+    }
+
+    func makeUIGestureRecognizer(context: Context) -> UILongPressGestureRecognizer {
+        let recognizer = UILongPressGestureRecognizer()
+        recognizer.minimumPressDuration = minimumDuration
+        recognizer.allowableMovement = 10
+        recognizer.cancelsTouchesInView = false
+        recognizer.delegate = context.coordinator
+        return recognizer
+    }
+
+    func handleUIGestureRecognizerAction(_ recognizer: UILongPressGestureRecognizer, context: Context) {
+        switch recognizer.state {
+        case .began: action(true)
+        case .ended, .cancelled, .failed: action(false)
+        default: break
+        }
+    }
+
+    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
         func gestureRecognizer(
             _ gestureRecognizer: UIGestureRecognizer,
             shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer

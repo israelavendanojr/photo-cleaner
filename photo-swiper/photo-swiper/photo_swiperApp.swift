@@ -26,15 +26,29 @@ struct photo_swiperApp: App {
 
 private extension FeedViewModel {
     /// The real library and saved progress by default. In debug builds, `-mockLibrary YES` uses mock
-    /// services, `-startAt similar|batch|video|pending|outOfSwipes|caughtUp|onboarding`
+    /// services, `-startAt similar|batch|duplicates|video|pending|outOfSwipes|caughtUp|onboarding`
     /// jumps straight to a mock state, `-resetProgress YES` wipes saved progress first, and
     /// `-resetOnboarding YES` shows onboarding and the swipe hint again. `-unlocked YES|NO` forces the
     /// unlock on or off (saved for the real store; mocks start locked). Mocks never read or write the real saved progress and
     /// never start the feature index; `-mockProgress YES` gives them their own on-disk store, so a
     /// relaunch resumes the mock deck. `-logSimilarity YES` logs each session's similar groups and near misses
     /// (category "similar"). `-swipesLeft N` sets the free swipes left, and `-refillSoon YES` refills
-    /// every minute instead of every six hours. Release builds always run on the real library.
+    /// every minute instead of every six hours. `-simulateComplete YES` shows the library as 100% reviewed
+    /// (display only, nothing saved) and forgets that the confetti played, so it plays on the Library tab.
+    /// Release builds always run on the real library.
     static func launch() -> FeedViewModel {
+        let vm = launchServices()
+        #if DEBUG
+        if UserDefaults.standard.bool(forKey: "simulateComplete") {
+            vm.debugResetCelebration()
+            vm.debugSetSimulatesComplete(true)
+        }
+        #endif
+        return vm
+    }
+
+    /// The view model for `launch()`, before display-only debug overrides.
+    private static func launchServices() -> FeedViewModel {
         #if DEBUG
         if UserDefaults.standard.bool(forKey: "resetOnboarding") {
             UserDefaults.standard.removeObject(forKey: DefaultsKey.hasOnboarded)

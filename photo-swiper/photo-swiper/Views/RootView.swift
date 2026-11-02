@@ -99,7 +99,7 @@ struct RootView: View {
         ZStack {
             feedTab
                 .tabVisibility(tab == .feed)
-            LibraryView()
+            LibraryView(isActive: tab == .library)
                 .tabVisibility(tab == .library)
         }
         .onGeometryChange(for: CGFloat.self) { $0.safeAreaInsets.bottom } action: { tabBarInset = $0 }

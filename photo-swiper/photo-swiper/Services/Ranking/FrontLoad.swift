@@ -2,9 +2,9 @@ import Foundation
 
 /// Puts the most rewarding cards first right after a refill, so fresh swipes land on real wins.
 ///
-/// A small reordering of cards already dealt, not a ranker change: similar-shot sets, then large
-/// videos, move ahead of everything else, each keeping its order. Two similar cards are never left
-/// next to each other, as in `SessionPlanner`.
+/// A small reordering of cards already dealt, not a ranker change: similar-shot and duplicate sets,
+/// then large videos, move ahead of everything else, each keeping its order. Two such sets are never
+/// left next to each other, as in `SessionPlanner`.
 enum FrontLoad {
     /// Videos at least this big count as strong.
     static let minVideoBytes: Int64 = 50_000_000
@@ -37,8 +37,12 @@ enum FrontLoad {
         return arranged.count == rest.count && !hasAdjacentSimilar(head.suffix(1) + arranged) ? head + arranged : cards
     }
 
+    /// A similar or duplicate set.
     private static func isSimilar(_ card: FeedCard) -> Bool {
-        if case .similar = card { true } else { false }
+        switch card {
+        case .similar, .duplicates: true
+        case .photo, .video, .batch: false
+        }
     }
 
     private static func isLargeVideo(_ card: FeedCard) -> Bool {

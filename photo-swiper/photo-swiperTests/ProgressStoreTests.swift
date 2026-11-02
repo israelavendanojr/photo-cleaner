@@ -1,4 +1,5 @@
 import Foundation
+import SwiftData
 import Testing
 @testable import photo_swiper
 
@@ -68,7 +69,8 @@ struct ProgressStoreTests {
         // A later settlement doesn't overwrite the first.
         store.settle([items[0].id], as: .gone)
 
-        #expect(store.reviewedCount() == 3)
+        // Only the keep: the deleted and gone items aren't in the library anymore, and later isn't reviewed.
+        #expect(store.reviewedCount() == 1)
         #expect(store.freedBytes() == items[0].bytes)
     }
 
@@ -116,5 +118,46 @@ struct ProgressStoreTests {
         #expect(store.loadSession() == nil)
         #expect(store.lastSessionNumber() == 0)
         #expect(store.skipFavorites)
+    }
+}
+
+/// Decks and decisions saved while the "receipt" flag existed hold it inside their item JSON.
+/// They must still load: pending deletes stay in the pile, undo records stay, and the deck isn't dropped.
+@MainActor
+struct RemovedReceiptFlagStoreTests {
+    private static let blurry = #""flags":["blurry"]"#
+    private static let receiptAndBlurry = #""flags":["receipt","blurry"]"#
+
+    private let session = MockFeedBuilder().makeSessionNow(number: 3)
+
+    @Test func pileAndDecisionsSavedWithAReceiptFlagStillLoad() throws {
+        let container = try SwiftDataProgressStore.makeContainer(inMemory: true)
+        let store = SwiftDataProgressStore(container: container, defaults: nil)
+        let item = try #require(session.items.first { $0.flags == [.blurry] }, "The mock deck has a blurry photo")
+        store.save([item.id: StoredDecision(decision: .delete, decidedAt: .now, sessionNumber: session.number, item: item)])
+
+        let row = try #require(try container.mainContext.fetch(FetchDescriptor<ItemProgress>()).first)
+        let json = try #require(String(data: row.itemData, encoding: .utf8))
+        #expect(json.contains(Self.blurry))
+        row.itemData = Data(json.replacingOccurrences(of: Self.blurry, with: Self.receiptAndBlurry).utf8)
+        try container.mainContext.save()
+
+        #expect(store.pile() == [item])
+        #expect(store.decisions(for: [item.id])[item.id]?.item == item)
+    }
+
+    @Test func aSavedSessionWithAReceiptFlagStillLoads() throws {
+        let container = try SwiftDataProgressStore.makeContainer(inMemory: true)
+        let store = SwiftDataProgressStore(container: container, defaults: nil)
+        let saved = SavedSession(session: session, index: 2, marks: [:], finished: false)
+        store.saveSession(saved)
+
+        let row = try #require(try container.mainContext.fetch(FetchDescriptor<SessionProgress>()).first)
+        let json = try #require(String(data: row.snapshot, encoding: .utf8))
+        #expect(json.contains(Self.blurry))
+        row.snapshot = Data(json.replacingOccurrences(of: Self.blurry, with: Self.receiptAndBlurry).utf8)
+        try container.mainContext.save()
+
+        #expect(store.loadSession() == saved)
     }
 }

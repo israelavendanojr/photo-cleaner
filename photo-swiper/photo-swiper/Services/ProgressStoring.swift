@@ -18,7 +18,8 @@ protocol ProgressStoring: AnyObject {
     func pile() -> [LibraryItem]
     /// Items a new page must not offer. See `StoredDecision.blocksNewSession(asOf:)`.
     func excludedFromNewSession(asOf now: Date) -> Set<LibraryItem.ID>
-    /// Items decided keep or delete. "Later" doesn't count.
+    /// Items decided keep or delete that are still in the library, each counted once.
+    /// "Later" doesn't count, and neither do items settled as deleted or gone.
     func reviewedCount() -> Int
     /// Bytes of items this app actually deleted.
     func freedBytes() -> Int64
@@ -66,6 +67,8 @@ struct StoredDecision: Equatable, Sendable {
     }
 
     var isPending: Bool { decision == .delete && settlement == nil }
+    /// Not deleted by this app or gone some other way. Undeletable items are still there.
+    var isInLibrary: Bool { settlement != .deleted && settlement != .gone }
 }
 
 /// The deck, exactly as the user left it.

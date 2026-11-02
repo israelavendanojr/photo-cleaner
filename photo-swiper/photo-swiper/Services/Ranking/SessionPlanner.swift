@@ -6,7 +6,8 @@ struct RankCandidate: Hashable, Sendable {
     let features: AssetFeatures
 }
 
-/// A similar group ready to plan: its members, oldest first, and the keeper.
+/// A similar or duplicate group ready to plan: its members and the keeper. Similar groups list
+/// members oldest first; duplicate groups list the keeper first.
 struct PlannedGroup: Hashable, Sendable {
     let ids: [LibraryItem.ID]
     let bestID: LibraryItem.ID
@@ -17,8 +18,9 @@ struct PlannedGroup: Hashable, Sendable {
 ///
 /// Ranks the pool, takes the top `limit` items, and gathers screenshots into one batch per calendar
 /// week, placed where that week's best-ranked screenshot landed. Similar groups compete as one card,
-/// ranked by what clearing all but the keeper would free. A grouped photo never shows as a single
-/// card, even when its group waits for a later session. Pure, so it's testable without PhotoKit.
+/// ranked by what clearing all but the keeper would free; duplicate sets the same way, plus a bonus
+/// since clearing a copy loses nothing. A grouped photo never shows as a single card, even when its
+/// group waits for a later session. Pure, so it's testable without PhotoKit.
 struct SessionPlanner: Sendable {
     enum Slot: Hashable, Sendable {
         case single(LibraryItem.ID)
@@ -26,11 +28,13 @@ struct SessionPlanner: Sendable {
         case screenshots(week: Date, ids: [LibraryItem.ID])
         /// Near-identical photos, oldest first, with the one to keep.
         case similar(ids: [LibraryItem.ID], bestID: LibraryItem.ID, reason: String)
+        /// Copies of one photo, the keeper first.
+        case duplicates(ids: [LibraryItem.ID], keepID: LibraryItem.ID, reason: String)
 
         var ids: [LibraryItem.ID] {
             switch self {
             case .single(let id): [id]
-            case .screenshots(_, let ids), .similar(let ids, _, _): ids
+            case .screenshots(_, let ids), .similar(let ids, _, _), .duplicates(let ids, _, _): ids
             }
         }
 
@@ -45,6 +49,8 @@ struct SessionPlanner: Sendable {
         var size = 1.0
         /// Per shot beyond the keeper.
         var perExtraShot = 0.3
+        /// Added to a duplicate set's score, as much as a flagged blurry photo gets.
+        var duplicateBonus = 1.0
     }
 
     var ranker = FeedRanker()
@@ -59,12 +65,16 @@ struct SessionPlanner: Sendable {
     /// A session with any similar card shows one within this many cards.
     var similarWithin = 5
 
-    func plan(_ candidates: [RankCandidate], groups: [PlannedGroup] = [], now: Date) -> [Slot] {
-        let grouped = Set(groups.flatMap(\.ids))
+    /// Duplicate sets' photos should already be left out of `groups`; they never show as singles either.
+    func plan(_ candidates: [RankCandidate], groups: [PlannedGroup] = [], duplicates: [PlannedGroup] = [], now: Date) -> [Slot] {
+        let grouped = Set(groups.flatMap(\.ids)).union(duplicates.flatMap(\.ids))
         let features = Dictionary(candidates.map { ($0.id, $0.features) }, uniquingKeysWith: { first, _ in first })
         let singles = candidates.filter { !grouped.contains($0.id) }.map { Ranked.single($0, ranker.score($0.features, now: now).total) }
         let bundles = groups.compactMap { group in score(group, features).map { Ranked.group(group, $0, newest(group, features)) } }
-        let ranked = (singles + bundles).sorted { a, b in
+        let copies = duplicates.compactMap { group in
+            score(group, features).map { Ranked.duplicates(group, $0 + groupWeights.duplicateBonus, newest(group, features)) }
+        }
+        let ranked = (singles + bundles + copies).sorted { a, b in
             if a.score != b.score { return a.score > b.score }
             if a.createdAt != b.createdAt { return a.createdAt > b.createdAt }
             return a.id < b.id
@@ -81,6 +91,11 @@ struct SessionPlanner: Sendable {
                 // A group comes whole or waits for a later session.
                 guard count + group.ids.count <= limit else { continue }
                 slots.append(.similar(ids: group.ids, bestID: group.bestID, reason: group.reason))
+                count += group.ids.count
+                continue
+            case .duplicates(let group, _, _):
+                guard count + group.ids.count <= limit else { continue }
+                slots.append(.duplicates(ids: group.ids, keepID: group.bestID, reason: group.reason))
                 count += group.ids.count
                 continue
             case .single(let single, _):
@@ -119,24 +134,26 @@ struct SessionPlanner: Sendable {
         case single(RankCandidate, Double)
         /// A group, its score, and its newest member's date.
         case group(PlannedGroup, Double, Date)
+        /// A duplicate set, its score, and its newest copy's date.
+        case duplicates(PlannedGroup, Double, Date)
 
         var score: Double {
             switch self {
-            case .single(_, let score), .group(_, let score, _): score
+            case .single(_, let score), .group(_, let score, _), .duplicates(_, let score, _): score
             }
         }
 
         var createdAt: Date {
             switch self {
             case .single(let candidate, _): candidate.features.createdAt
-            case .group(_, _, let newest): newest
+            case .group(_, _, let newest), .duplicates(_, _, let newest): newest
             }
         }
 
         var id: LibraryItem.ID {
             switch self {
             case .single(let candidate, _): candidate.id
-            case .group(let group, _, _): group.ids.first ?? ""
+            case .group(let group, _, _), .duplicates(let group, _, _): group.ids.first ?? ""
             }
         }
     }

@@ -21,6 +21,10 @@ enum PreviewSamples {
         session.cards.lazy.compactMap { if case .similar(let group) = $0 { group } else { nil } }.first!
     }
 
+    static var duplicateGroup: DuplicateGroup {
+        session.cards.lazy.compactMap { if case .duplicates(let group) = $0 { group } else { nil } }.first!
+    }
+
     static var screenshotBatch: ItemBatch {
         session.cards.lazy.compactMap { if case .batch(let batch) = $0 { batch } else { nil } }.first!
     }

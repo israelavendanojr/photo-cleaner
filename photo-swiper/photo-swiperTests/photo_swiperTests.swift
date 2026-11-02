@@ -27,7 +27,9 @@ final class FakeLibrary: PhotoLibraryProviding, @unchecked Sendable {
         requestCount += 1
         return access
     }
-    func stats() async -> LibraryStats { LibraryStats(totalItems: 100, reviewedItems: 0, freedBytes: 0) }
+    /// What the library reports as its size. Tests shrink it to stand for deletions.
+    var totalItems = 100
+    func stats() async -> LibraryStats { LibraryStats(totalItems: totalItems, reviewedItems: 0, freedBytes: 0) }
     func delete(_ items: [LibraryItem]) async throws -> DeletionOutcome { try onDelete(items) }
     func vanishedItems() -> AsyncStream<Set<LibraryItem.ID>> {
         let (stream, continuation) = AsyncStream.makeStream(of: Set<LibraryItem.ID>.self)
