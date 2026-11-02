@@ -52,7 +52,7 @@ actor PhotoKitFeedBuilder: FeedBuilding {
         let started = Date.now
         let pool = await candidatePool(options)
         let duplicates = await duplicateGroups(in: pool)
-        let similar = await similarGroups(in: pool, excluding: Set(duplicates.planned.flatMap(\.ids)))
+        let similar = await similarGroups(in: pool, excluding: duplicates.planned)
         let slots = planner.plan(pool.candidates, groups: similar.planned, duplicates: duplicates.planned, now: .now)
         similarGroupsLeft = similar.planned.count - slots.filter(\.isSimilar).count
         #if DEBUG
@@ -165,23 +165,34 @@ actor PhotoKitFeedBuilder: FeedBuilding {
         let candidates = duplicateGrouper.candidateIDs(pool.cached)
         guard !candidates.isEmpty else { return Duplicates(seconds: Date.now.timeIntervalSince(started)) }
         let prints = await index.featurePrints(for: Array(candidates))
-        var duplicates = Duplicates(printCount: prints.count)
-        for group in duplicateGrouper.group(pool.cached.filter { candidates.contains($0.id) }, prints: prints) {
-            let members = group.ids.compactMap { id in pool.features[id].map { RankCandidate(id: id, features: $0) } }
-            guard let choice = DuplicatePick.choose(members) else { continue }
+        let planned = Self.duplicatePlans(pool.cached.filter { candidates.contains($0.id) }, prints: prints, grouper: duplicateGrouper)
+        return Duplicates(planned: planned, printCount: prints.count, seconds: Date.now.timeIntervalSince(started))
+    }
+
+    /// Duplicate sets ready to plan, keeper first. Sets with two or more favorites are dropped.
+    static func duplicatePlans(_ candidates: [RankCandidate], prints: [LibraryItem.ID: FeaturePrint],
+                               grouper: DuplicateGrouper = DuplicateGrouper()) -> [PlannedGroup] {
+        let features = Dictionary(candidates.map { ($0.id, $0.features) }, uniquingKeysWith: { first, _ in first })
+        return grouper.group(candidates, prints: prints).compactMap { group in
+            let members = group.ids.compactMap { id in features[id].map { RankCandidate(id: id, features: $0) } }
+            guard let choice = DuplicatePick.choose(members) else { return nil }
             let ids = [choice.keepID] + group.ids.filter { $0 != choice.keepID }
-            duplicates.planned.append(PlannedGroup(ids: ids, bestID: choice.keepID, reason: choice.reason.rawValue))
+            return PlannedGroup(ids: ids, bestID: choice.keepID, reason: choice.reason.rawValue)
         }
-        duplicates.seconds = Date.now.timeIntervalSince(started)
-        return duplicates
+    }
+
+    /// What similar grouping may use: every candidate not already in a duplicate set.
+    static func similarCandidates(_ candidates: [RankCandidate], excluding duplicates: [PlannedGroup]) -> [RankCandidate] {
+        let excluded = Set(duplicates.flatMap(\.ids))
+        return excluded.isEmpty ? candidates : candidates.filter { !excluded.contains($0.id) }
     }
 
     /// Groups indexed photos that have a neighbor in time or a burst, leaving out `excluded` (photos
     /// in a duplicate set). Groups with two or more favorites are dropped, so those photos compete as singles.
-    private func similarGroups(in pool: Pool, excluding excluded: Set<LibraryItem.ID>) async -> Similar {
+    private func similarGroups(in pool: Pool, excluding duplicates: [PlannedGroup]) async -> Similar {
         guard let index else { return Similar() }
         let started = Date.now
-        let cached = excluded.isEmpty ? pool.cached : pool.cached.filter { !excluded.contains($0.id) }
+        let cached = Self.similarCandidates(pool.cached, excluding: duplicates)
         let neighbors = grouper.neighborIDs(cached)
         let prints = await index.featurePrints(for: Array(neighbors))
         var similar = Similar(result: grouper.group(cached.filter { neighbors.contains($0.id) }, prints: prints), printCount: prints.count)
