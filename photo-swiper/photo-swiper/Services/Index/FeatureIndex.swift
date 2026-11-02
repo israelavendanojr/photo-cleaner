@@ -25,6 +25,7 @@ actor FeatureIndex: FeatureIndexReading {
             \.localIdentifier, \.createdAt, \.bytes, \.isVideo, \.duration, \.isScreenshot, \.isFavorite, \.isInBurst,
             \.isBurstPick, \.hasAdjustments, \.burstID, \.isUserBurstPick, \.sharpness, \.exposureMean, \.darkFraction,
             \.brightFraction, \.aesthetic, \.isUtility, \.modifiedAt, \.featureVersion, \.indexedAt,
+            \.pixelWidth, \.pixelHeight, \.dHash,
         ]
         return Dictionary(
             fetch(descriptor).map { ($0.localIdentifier, IndexedFeatures(features: $0.features, stamp: $0.stamp)) },
@@ -51,6 +52,29 @@ actor FeatureIndex: FeatureIndexReading {
             }
         }
         return prints
+    }
+
+    /// Photos (not screenshots or videos) never hashed with `version` or later.
+    func unhashedPhotos(version: Int = DHash.version) -> Set<LibraryItem.ID> {
+        var descriptor = FetchDescriptor<AssetFeatureRecord>(predicate: #Predicate { record in
+            !record.isVideo && !record.isScreenshot
+        })
+        descriptor.propertiesToFetch = [\.localIdentifier, \.dHashVersion]
+        return Set(fetch(descriptor).filter { ($0.dHashVersion ?? 0) < version }.map(\.localIdentifier))
+    }
+
+    /// Sets pixel sizes and hashes on existing records, leaving everything else as it is.
+    func updateHashes(_ entries: [HashEntry]) {
+        guard !entries.isEmpty else { return }
+        let byID = Dictionary(entries.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        for record in records(for: Array(byID.keys)) {
+            guard let entry = byID[record.localIdentifier] else { continue }
+            record.pixelWidth = entry.pixelWidth
+            record.pixelHeight = entry.pixelHeight
+            record.dHash = entry.dHash.map { Int64(bitPattern: $0) }
+            record.dHashVersion = entry.version
+        }
+        persist()
     }
 
     func count() -> Int {

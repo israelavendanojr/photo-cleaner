@@ -18,6 +18,10 @@ struct IndexProgress: Hashable, Sendable {
 /// the queue from that diff is what makes runs resumable: cancel at any point and the next run picks
 /// up where this one stopped, with no cursor to keep. Records for items that left the library are
 /// removed. Work is saved in batches; photos get image analysis, screenshots and videos metadata only.
+///
+/// After that, photos whose record has never been hashed for exact duplicates (indexed before
+/// `DHash` existed) get a hash-only pass: a small local image and its pixel size, no Vision, so
+/// adding the hash didn't need a version bump that would redo the whole library.
 actor LibraryIndexer {
     static let batchSize = 50
     private static let log = Logger(subsystem: "com.israelavendanojr.photo-swiper", category: "index")
@@ -26,6 +30,7 @@ actor LibraryIndexer {
     private let analyzer: any ImageAnalyzing
     private let index: FeatureIndex
     private let version: Int
+    private let hashVersion: Int
     private let batchSize: Int
     private let now: @Sendable () -> Date
 
@@ -37,6 +42,7 @@ actor LibraryIndexer {
         analyzer: any ImageAnalyzing,
         index: FeatureIndex,
         version: Int = IndexFreshness.currentVersion,
+        hashVersion: Int = DHash.version,
         batchSize: Int = LibraryIndexer.batchSize,
         now: @escaping @Sendable () -> Date = { Date() }
     ) {
@@ -44,6 +50,7 @@ actor LibraryIndexer {
         self.analyzer = analyzer
         self.index = index
         self.version = version
+        self.hashVersion = hashVersion
         self.batchSize = batchSize
         self.now = now
     }
@@ -89,7 +96,8 @@ actor LibraryIndexer {
                     print = signals.featurePrint
                 }
                 entries.append(IndexEntry(id: asset.id, features: features, modifiedAt: asset.modifiedAt, version: version,
-                                          indexedAt: now(), featurePrint: print))
+                                          indexedAt: now(), featurePrint: print,
+                                          hashVersion: asset.kind == .photo ? hashVersion : nil))
             }
             // Saved even when cancelled partway, so finished items aren't redone.
             await index.upsert(entries)
@@ -98,6 +106,37 @@ actor LibraryIndexer {
         }
         let elapsed = Date.now.timeIntervalSince(started)
         Self.log.info("Index run \(Task.isCancelled ? "paused" : "finished") at \(self.progress.indexed)/\(self.progress.total): \(done) items in \(elapsed, format: .fixed(precision: 1))s, \(done == 0 ? 0 : elapsed / Double(done) * 1000, format: .fixed(precision: 1)) ms each")
+        await backfillHashes(assets)
+    }
+
+    /// Hashes photos indexed before `DHash` existed (or with an older hash version), newest first.
+    /// Their other features stay as they are.
+    private func backfillHashes(_ assets: [IndexableAsset]) async {
+        guard !Task.isCancelled else { return }
+        let unhashed = await index.unhashedPhotos(version: hashVersion)
+        let queue = assets.filter { $0.kind == .photo && unhashed.contains($0.id) }
+        guard !queue.isEmpty else { return }
+        let started = Date.now
+        var done = 0
+        for start in stride(from: 0, to: queue.count, by: batchSize) {
+            guard !Task.isCancelled else { break }
+            let batch = queue[start..<min(start + batchSize, queue.count)]
+            let metadata = await source.metadata(for: batch.map(\.id))
+            var entries: [HashEntry] = []
+            for asset in batch {
+                guard !Task.isCancelled else { break }
+                guard let features = metadata[asset.id] else { continue }
+                var hash: UInt64?
+                if let image = await source.image(for: asset.id) {
+                    hash = DHash.compute(image.cgImage, orientation: image.orientation)
+                }
+                entries.append(HashEntry(id: asset.id, pixelWidth: features.pixelWidth, pixelHeight: features.pixelHeight,
+                                         dHash: hash, version: hashVersion))
+            }
+            await index.updateHashes(entries)
+            done += entries.count
+        }
+        Self.log.info("Hash backfill \(Task.isCancelled ? "paused" : "finished"): \(done) of \(queue.count) photos in \(Date.now.timeIntervalSince(started), format: .fixed(precision: 1))s")
     }
 
     /// Drops records for items removed from the library.
