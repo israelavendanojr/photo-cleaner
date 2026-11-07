@@ -27,6 +27,7 @@
 		40678EF0307748F700501306 /* photo-swiper.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "photo-swiper.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		40678EFD307748F900501306 /* photo-swiperTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "photo-swiperTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		40678F07307748F900501306 /* photo-swiperUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "photo-swiperUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
+		4067B15E0000000000000001 /* AppName.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = AppName.xcconfig; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -75,6 +76,7 @@
 		40678EE7307748F700501306 = {
 			isa = PBXGroup;
 			children = (
+				4067B15E0000000000000001 /* AppName.xcconfig */,
 				40678EF2307748F700501306 /* photo-swiper */,
 				40678F00307748F900501306 /* photo-swiperTests */,
 				40678F0A307748F900501306 /* photo-swiperUITests */,
@@ -271,6 +273,7 @@
 /* Begin XCBuildConfiguration section */
 		40678F0F307748F900501306 /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = 4067B15E0000000000000001 /* AppName.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
@@ -335,6 +338,7 @@
 		};
 		40678F10307748F900501306 /* Release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = 4067B15E0000000000000001 /* AppName.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
@@ -401,7 +405,8 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Info.plist;
-				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Photo Swiper looks through your library on this iPhone to find photos you may want to clear. Nothing is uploaded.";
+				INFOPLIST_KEY_CFBundleDisplayName = "$(APP_DISPLAY_NAME)";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "$(APP_DISPLAY_NAME) looks through your library on this iPhone to find photos you may want to clear. Nothing is uploaded.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
@@ -433,7 +438,8 @@
 				);
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Info.plist;
-				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Photo Swiper looks through your library on this iPhone to find photos you may want to clear. Nothing is uploaded.";
+				INFOPLIST_KEY_CFBundleDisplayName = "$(APP_DISPLAY_NAME)";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "$(APP_DISPLAY_NAME) looks through your library on this iPhone to find photos you may want to clear. Nothing is uploaded.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;

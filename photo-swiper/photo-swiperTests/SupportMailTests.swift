@@ -5,7 +5,7 @@ import Testing
 /// The "Contact support" email.
 struct SupportMailTests {
     private let url = SupportMail.url(
-        email: "help@example.com", appName: "Photo Swiper", version: "1.2", build: "34",
+        email: "help@example.com", appName: "Sample App", version: "1.2", build: "34",
         systemVersion: "18.4", model: "iPhone17,3"
     )
 
@@ -21,12 +21,12 @@ struct SupportMailTests {
     }
 
     @Test func subjectNamesTheApp() {
-        #expect(query("subject") == "Photo Swiper support")
+        #expect(query("subject") == "Sample App support")
     }
 
     @Test func bodyFooterHasVersionBuildSystemAndDevice() throws {
         let body = try #require(query("body"))
-        #expect(body.contains("Photo Swiper 1.2 (build 34)"))
+        #expect(body.contains("Sample App 1.2 (build 34)"))
         #expect(body.contains("iOS 18.4"))
         #expect(body.contains("iPhone17,3"))
         // The details sit under room to write.
@@ -37,6 +37,6 @@ struct SupportMailTests {
         let string = try #require(url?.absoluteString)
         #expect(!string.contains(" "))
         #expect(!string.contains("\n"))
-        #expect(string.contains("subject=Photo%20Swiper%20support"))
+        #expect(string.contains("subject=Sample%20App%20support"))
     }
 }
