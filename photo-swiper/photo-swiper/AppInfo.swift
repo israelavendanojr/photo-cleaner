@@ -1,11 +1,17 @@
 import Foundation
 
-/// App-wide names and launch links. The app name isn't final, so copy reads it from here.
+/// App-wide names and launch links.
 ///
 /// Settings hides a row whose value is nil (debug builds show it greyed out, "Not set yet"),
 /// and the wall's legal links follow the same values.
 enum AppInfo {
-    static let name = "Photo Swiper"
+    /// The display name, CFBundleDisplayName. Set it as `APP_DISPLAY_NAME` in AppName.xcconfig, not here.
+    /// All in-app copy that names the app reads this.
+    static let name: String = {
+        let name = Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
+        // Only for contexts without the app's Info.plist. `AppInfoTests` checks the real one is set.
+        return name.flatMap { $0.isEmpty ? nil : $0 } ?? "Bristle"
+    }()
 
     // MARK: Launch links
 
