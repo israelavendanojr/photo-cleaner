@@ -1,0 +1,3 @@
+// The app's display name: the home-screen label, permission prompts, and AppInfo.name in-app.
+// Change it here and only here. Bundle and product IDs are separate and permanent.
+APP_DISPLAY_NAME = Bristle
