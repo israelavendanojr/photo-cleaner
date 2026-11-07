@@ -11,9 +11,9 @@ enum AppInfo {
 
     /// Apple's standard EULA. Final.
     static let termsURL = URL(string: "https://www.apple.com/legal/internet-services/itunes/dev/stdeula/")!
-    static let privacyPolicyURL: URL? = nil // TODO(launch)
-    static let supportURL: URL? = nil // TODO(launch)
-    static let supportEmail: String? = nil // TODO(launch)
+    static let privacyPolicyURL: URL? = URL(string: "https://israelavendanojr.github.io/photo-swiper-site/privacy/")
+    static let supportURL: URL? = URL(string: "https://israelavendanojr.github.io/photo-swiper-site/support/")
+    static let supportEmail: String? = "support@bristle.app"
     /// The numeric App Store ID, e.g. "1234567890". Enables "Rate".
     static let appStoreID: String? = nil // TODO(launch)
 
@@ -43,11 +43,6 @@ enum AppInfo {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?"
     }
 }
-
-#if !DEBUG
-// Shows on every archive. Delete once the values above are set.
-#warning("TODO(launch): privacy policy, support URL and email not set")
-#endif
 
 /// `UserDefaults` keys shared by view models and `@AppStorage`.
 enum DefaultsKey {
