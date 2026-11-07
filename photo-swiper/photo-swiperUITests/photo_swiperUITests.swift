@@ -648,13 +648,13 @@ final class photo_swiperUITests: XCTestCase {
     }
 
     @MainActor
-    func testWallShowsTermsLink() throws {
+    func testWallShowsLegalLinks() throws {
         let app = launch("-startAt", "outOfSwipes", "-unlocked", "NO")
         XCTAssertTrue(app.buttons["paywall.unlock"].waitForExistence(timeout: 5))
         let terms = app.buttons["legal.terms"]
         XCTAssertTrue(terms.exists, "Terms sits under the unlock")
         XCTAssertEqual(terms.label, "Terms of use")
-        XCTAssertFalse(app.buttons["legal.privacy"].exists, "No privacy link until its URL is set")
+        XCTAssertEqual(app.buttons["legal.privacy"].label, "Privacy policy")
     }
 
     // MARK: Settings
@@ -718,13 +718,14 @@ final class photo_swiperUITests: XCTestCase {
     func testLegalRowsAndStubsInDebug() throws {
         let app = launch()
         openSettings(app)
-        XCTAssertTrue(app.buttons["settings.terms"].exists, "Terms is always set")
-        for id in ["settings.privacy", "settings.support", "settings.rate"] {
-            let row = app.descendants(matching: .any)[id]
-            XCTAssertTrue(row.exists, "\(id) shows in debug builds")
-            XCTAssertTrue(row.label.contains("Not set yet"), "\(id) reads \(row.label)")
-            XCTAssertFalse(app.buttons[id].exists, "\(id) isn't tappable while unset")
+        for id in ["settings.terms", "settings.privacy", "settings.support"] {
+            XCTAssertTrue(app.buttons[id].exists, "\(id) is set and tappable")
         }
+        // No App Store ID until the App Store Connect record exists.
+        let rate = app.descendants(matching: .any)["settings.rate"]
+        XCTAssertTrue(rate.exists, "Rate shows in debug builds")
+        XCTAssertTrue(rate.label.contains("Not set yet"), "Rate reads \(rate.label)")
+        XCTAssertFalse(app.buttons["settings.rate"].exists, "Rate isn't tappable while unset")
     }
 
     @MainActor
