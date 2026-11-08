@@ -1,12 +1,21 @@
 import Foundation
 import Observation
 
-/// Owns the deck: cards, decisions, undo, and the running totals.
+/// Owns the deck: cards, decisions, drafts, marks, undo, the pile, paging, and the running totals.
 ///
 /// The deck is endless. When few cards are left ahead, the next page is built in the background
 /// and appended; it only ends at caught up, when a page comes back empty.
 /// Views read from it and call its intents. Animation and haptics stay in the views.
 /// Every decision is written through to `store` as it happens, so relaunching resumes in place.
+///
+/// The rest is done by collaborators it owns and forwards to, so views still read everything here:
+/// - `SwipeGate`: the free allowance, the wall and the unlock purchase, and the free pile limit.
+/// - `OnboardingFlow`: first-launch onboarding, which can hold `phase` while the first deck is dealt.
+/// - `ReminderController`: refill reminders and the clutter estimate they quote.
+/// - `FollowUpCoordinator`: the review prompt or unlock offer a delete earns.
+/// Collaborators never reach each other; effects that span them (a refill front-loading the deck,
+/// an unlock cancelling reminders) are sequenced here. Settings' Admin Tools live in
+/// `FeedViewModel+AdminTools.swift`, previews and mocks in `FeedViewModel+Mock.swift`.
 @Observable
 @MainActor
 final class FeedViewModel {
@@ -67,11 +76,11 @@ final class FeedViewModel {
     // MARK: State
 
     private(set) var phase: Phase = .loading
-    private(set) var session: Session?
-    private(set) var index = 0
+    var session: Session? // internal for FeedViewModel+AdminTools
+    var index = 0 // internal for FeedViewModel+AdminTools and +Mock
     private(set) var decisions: [LibraryItem.ID: Decision] = [:]
     private(set) var deleteChip: DeleteChip?
-    private(set) var returningCard: ReturningCard?
+    var returningCard: ReturningCard? // internal for FeedViewModel+AdminTools
     private(set) var stats = LibraryStats(totalItems: 0, reviewedItems: 0, freedBytes: 0)
     private(set) var access = LibraryAccess.full
     /// The system access prompt is up.
@@ -79,47 +88,10 @@ final class FeedViewModel {
     /// Access was just granted from onboarding and the first session is being built.
     /// Onboarding stays up meanwhile instead of a loading screen.
     private(set) var isPreparingFirstSession = false
-    /// Photo access was granted from onboarding. The primer can't be left backward from here.
-    private(set) var isOnboardingAccessGranted = false
-    private(set) var onboardingStep = OnboardingStep.intro
-    /// Onboarding will offer reminders after photo access. Re-checked when it gets there.
-    private(set) var offersReminderStep = false
-    /// Onboarding stays up after access is granted until its last step, while the deck is dealt underneath.
-    private var holdsOnboarding = false
-    /// Where the deck stands while onboarding holds the screen. Becomes `phase` when onboarding finishes.
-    private var heldPhase: Phase?
-    /// Debug builds: this onboarding is a replay, so every step shows whatever was decided before.
-    private var isReplayingOnboarding = false
-    private(set) var paywallStatus = PaywallStatus.idle
-    /// The free swipes. Never spent or checked while unlocked.
-    private(set) var allowance: SwipeAllowance
-    /// "Out of swipes": the wall sheet over the feed, offering the unlock.
-    var isWallPresented = false
-    /// What's left to clear, worked out when the wall opens.
-    private(set) var clutterEstimate: ClutterEstimate?
-    /// The user tapped "Remind me" and the system said yes.
-    private(set) var isRemindersOptedIn = false
-    /// Notifications are turned off for the app, found on asking or by Settings checking.
-    private(set) var areRemindersDenied = false
-    /// Bought or restored since launch. The review prompt never follows a purchase.
-    private(set) var purchasedThisLaunch = false
-    /// RootView should ask for a review now. Set once the freed confirmation has closed.
-    private(set) var isReviewPromptDue = false
-    /// The last delete earned a review prompt; it waits for the pile to close.
-    private var isReviewPromptQueued = false
-    /// RootView should offer the unlock now: a free user's delete went through and the pile has closed.
-    private(set) var isDeleteUpsellDue = false
-    /// What the free user's last delete freed, for the offer's headline.
-    private(set) var upsellFreedBytes: Int64 = 0
-    /// A free user's delete earned the unlock offer; it waits for the pile to close.
-    private var isDeleteUpsellQueued = false
-    /// The wall has shown since launch. Every wall ends in a dismiss or an unlock, so the delete
-    /// offer stays away for the rest of the process.
-    private var wasWallShownThisSession = false
     /// Admin Tools asked for an upsell screen. RootView shows it and clears this.
-    private(set) var adminUpsellRequest: AdminUpsell?
+    var adminUpsellRequest: AdminUpsell? // internal for FeedViewModel+AdminTools
     /// Bumped when Admin Tools puts a mock card on the deck, so RootView switches to the feed.
-    private(set) var adminShowFeedRequest = 0
+    var adminShowFeedRequest = 0 // internal for FeedViewModel+AdminTools
     /// A free user's swipe was refused because the pile is full. FeedView shows it.
     var isPileFullNoticePresented = false
     /// Something about the last delete the user should know, e.g. items the system refused.
@@ -137,22 +109,20 @@ final class FeedViewModel {
     /// Pending deletes that are no longer in the deck: from earlier decks, or trimmed from behind this one.
     private var carriedPending: [LibraryItem] = []
     /// Items deleted, gone from the library, or undeletable. They stay decided but are no longer pending.
-    private var settledIDs: Set<LibraryItem.ID> = []
+    var settledIDs: Set<LibraryItem.ID> = [] // internal for FeedViewModel+AdminTools
     /// The "whole library reviewed" confetti has played for this 100%. Cleared when progress drops below it,
     /// so the next 100% celebrates again. Saved in `defaults`.
-    private(set) var hasCelebratedComplete = false
+    var hasCelebratedComplete = false // internal for FeedViewModel+AdminTools
     /// Bumped to play the confetti right away, whatever the progress. Only Settings' debug section does.
-    private(set) var celebrationRequest = 0
+    var celebrationRequest = 0 // internal for FeedViewModel+AdminTools
     /// Developer mode: progress reads 100% without any decision being saved. Off shows the real numbers again.
-    private(set) var debugSimulatesComplete = false
+    var debugSimulatesComplete = false // internal for FeedViewModel+AdminTools
     /// Totals the library reports itself. Reviewed counts come from saved progress.
     private var libraryStats = LibraryStats(totalItems: 0, reviewedItems: 0, freedBytes: 0)
     private var chipTask: Task<Void, Never>?
     private var changesTask: Task<Void, Never>?
     /// A refill landed while no deck could take the strongest cards first; the next one dealt does.
     private var refilledSinceDeal = false
-    /// Off while mocks play swipes through, so their setup doesn't spend the allowance.
-    private var chargesSwipes = true
     /// The next page being built, while one is.
     private var pageTask: Task<Void, Never>?
     /// The last page build came back empty. No more are tried until the deck runs out.
@@ -162,21 +132,25 @@ final class FeedViewModel {
 
     private let library: any PhotoLibraryProviding
     private let builder: any FeedBuilding
-    private let store: any ProgressStoring
-    private let entitlements: any EntitlementStore
+    let store: any ProgressStoring // internal for FeedViewModel+AdminTools
+    let entitlements: any EntitlementStore // internal for FeedViewModel+AdminTools
     /// Runs the background feature index on the real library. Nil for mocks, previews, and tests.
     private let indexScheduler: IndexScheduler?
     /// Holds whether onboarding is done.
-    private let defaults: UserDefaults
+    let defaults: UserDefaults // internal for FeedViewModel+AdminTools
     /// Shortest time onboarding shows its "preparing" state, so the step change can be read.
     private let firstSessionMinimum: Duration
     private let now: () -> Date
-    private let allowanceStore: SwipeAllowanceStore
     /// Where the free tier's limits come from: the swipe allowance and the pile limit.
     let freeTier: FreeTierTunables
-    var allowanceTunables: SwipeAllowance.Tunables { freeTier.limits.allowance }
-    /// Nil where reminders can't be offered (tests, previews).
-    private let notifier: RefillNotifier?
+    /// The allowance, the wall and the unlock purchase, and the free pile limit.
+    let gate: SwipeGate
+    /// The review prompt or unlock offer a delete earns.
+    let followUps: FollowUpCoordinator
+    /// Refill reminders and the clutter estimate they quote.
+    let reminders: ReminderController
+    /// First-launch onboarding, which can hold the screen while the first deck is dealt.
+    let onboarding: OnboardingFlow
 
     /// - Parameters:
     ///   - allowanceStore: Where the free swipes are saved. Nil keeps them in memory, starting full.
@@ -204,13 +178,12 @@ final class FeedViewModel {
         self.defaults = defaults
         self.firstSessionMinimum = firstSessionMinimum
         self.now = now
-        let allowanceStore = allowanceStore ?? SwipeAllowanceStore()
-        self.allowanceStore = allowanceStore
         let freeTier = freeTier ?? .fixed(FreeTierLimits(allowance: allowanceTunables))
         self.freeTier = freeTier
-        self.notifier = notifier
-        allowance = allowanceStore.load() ?? SwipeAllowance(tunables: freeTier.limits.allowance, now: now())
-        isRemindersOptedIn = notifier?.isOptedIn ?? false
+        followUps = FollowUpCoordinator(defaults: defaults, freeTier: freeTier, now: now)
+        onboarding = OnboardingFlow(defaults: defaults, notifier: notifier, library: library)
+        reminders = ReminderController(notifier: notifier, builder: builder, store: store, now: now)
+        gate = SwipeGate(entitlements: entitlements, allowanceStore: allowanceStore ?? SwipeAllowanceStore(), freeTier: freeTier, now: now)
         skipFavorites = store.skipFavorites
         hasCelebratedComplete = defaults.bool(forKey: DefaultsKey.celebratedComplete)
     }
@@ -236,19 +209,76 @@ final class FeedViewModel {
         defaults = .standard
         firstSessionMinimum = .zero
         now = Date.init
-        let allowanceStore = allowanceStore ?? SwipeAllowanceStore()
-        self.allowanceStore = allowanceStore
         let freeTier = freeTier ?? .fixed(FreeTierLimits(allowance: allowanceTunables))
         self.freeTier = freeTier
-        self.notifier = notifier
-        allowance = allowanceStore.load() ?? SwipeAllowance(tunables: freeTier.limits.allowance, now: .now)
-        isRemindersOptedIn = notifier?.isOptedIn ?? false
+        followUps = FollowUpCoordinator(defaults: defaults, freeTier: freeTier, now: now)
+        onboarding = OnboardingFlow(defaults: defaults, notifier: notifier, library: library)
+        reminders = ReminderController(notifier: notifier, builder: builder, store: store, now: now)
+        gate = SwipeGate(entitlements: entitlements, allowanceStore: allowanceStore ?? SwipeAllowanceStore(), freeTier: freeTier, now: now)
         skipFavorites = store.skipFavorites
         hasCelebratedComplete = defaults.bool(forKey: DefaultsKey.celebratedComplete)
         libraryStats = stats
         apply(session)
         refreshTotals()
     }
+
+    // MARK: Follow-ups
+
+    var isReviewPromptDue: Bool { followUps.isReviewPromptDue }
+    var isDeleteUpsellDue: Bool { followUps.isDeleteUpsellDue }
+    var upsellFreedBytes: Int64 { followUps.upsellFreedBytes }
+    func releaseReviewPrompt() { followUps.releaseReviewPrompt() }
+    func finishDeleteUpsell(shown: Bool) { followUps.finishDeleteUpsell(shown: shown) }
+    func finishReviewPrompt(asked: Bool) { followUps.finishReviewPrompt(asked: asked) }
+
+    // MARK: Reminders
+
+    var isRemindersOptedIn: Bool { reminders.isRemindersOptedIn }
+    var areRemindersDenied: Bool { reminders.areRemindersDenied }
+    var clutterEstimate: ClutterEstimate? { reminders.clutterEstimate }
+    var canRemind: Bool { reminders.canRemind }
+    var daysToFinish: Double? { reminders.daysToFinish(swipesPerDay: allowanceTunables.swipesPerDay) }
+    func remindWhenSwipesAreBack() async {
+        await reminders.remindWhenSwipesAreBack(state: { reminderAllowance }, similarAhead: { similarAhead })
+    }
+    func setRemindersEnabled(_ on: Bool) async {
+        await reminders.setRemindersEnabled(on, state: { reminderAllowance }, similarAhead: { similarAhead })
+    }
+    func refreshReminderPermission() async { await reminders.refreshReminderPermission() }
+    func scheduleReminders() async { // internal for FeedViewModel+AdminTools
+        await reminders.scheduleReminders(state: { reminderAllowance }, similarAhead: { similarAhead })
+    }
+    private var reminderAllowance: ReminderController.AllowanceState {
+        .init(allowance: allowance, tunables: allowanceTunables, isUnlocked: isUnlocked)
+    }
+    /// Similar sets still ahead in the deck, which the clutter estimate counts too.
+    private var similarAhead: Int {
+        cards.dropFirst(index).filter { if case .similar = $0 { true } else { false } }.count
+    }
+
+    // MARK: Swipe gate
+
+    var allowance: SwipeAllowance { gate.allowance }
+    var allowanceTunables: SwipeAllowance.Tunables { gate.allowanceTunables }
+    var paywallStatus: PaywallStatus { gate.paywallStatus }
+    var isWallPresented: Bool {
+        get { gate.isWallPresented }
+        set { gate.isWallPresented = newValue }
+    }
+    var purchasedThisLaunch: Bool { gate.purchasedThisLaunch }
+    var canSwipe: Bool { gate.canSwipe }
+    var swipesLeft: Int? { gate.swipesLeft }
+    var nextRefillAt: Date? { gate.nextRefillAt }
+    var isPurchaseBusy: Bool { gate.isPurchaseBusy }
+    var freeBinBytes: Int64 { gate.freeBinBytes }
+    var pileLimitBytes: Int64? { gate.pileLimitBytes }
+    /// What the pile counts toward its limit: `pendingBytes`, with unknown sizes counted as `unknownSizeBytes`.
+    var pileCountedBytes: Int64 { Self.countedBytes(pendingItems) }
+    var isPileFull: Bool { gate.isPileFull(counted: pileCountedBytes) }
+    static var unknownSizeBytes: Int64 { SwipeGate.unknownSizeBytes }
+    static func countedBytes(_ items: [LibraryItem]) -> Int64 { SwipeGate.countedBytes(items) }
+    func dismissWall() { gate.dismissWall() }
+    func resetPurchaseStatus() { gate.resetPurchaseStatus() }
 
     // MARK: Derived
 
@@ -293,32 +323,9 @@ final class FeedViewModel {
     var isUnlocked: Bool { entitlements.isUnlocked }
     var displayPrice: String { entitlements.displayPrice }
 
-    /// A card decision would go through. Unlocked, always.
-    var canSwipe: Bool { isUnlocked || allowance.remaining > 0 }
-    /// How much a free user's pile holds, e.g. 1 GB, unlocked or not.
-    var freeBinBytes: Int64 { freeTier.limits.freeBinBytes }
-    /// The most the pile holds before deleting, in bytes; nil when unlocked, where it has no limit.
-    var pileLimitBytes: Int64? { isUnlocked ? nil : freeBinBytes }
-    /// What the pile counts toward its limit: `pendingBytes`, with unknown sizes counted as `unknownSizeBytes`.
-    var pileCountedBytes: Int64 { Self.countedBytes(pendingItems) }
-    /// A free user's pile is at its limit, so only keeps and laters go through.
-    var isPileFull: Bool { pileLimitBytes.map { pileCountedBytes >= $0 } ?? false }
-    /// Free swipes left; nil when unlocked, where nothing is counted.
-    var swipesLeft: Int? { isUnlocked ? nil : allowance.remaining }
-    /// When the next refill lands; nil when unlocked or full.
-    var nextRefillAt: Date? { isUnlocked ? nil : allowance.nextRefillAt(allowanceTunables) }
-    /// Days of free swipes it would take to get through the likely clears.
-    var daysToFinish: Double? { clutterEstimate?.daysToFinish(swipesPerDay: allowanceTunables.swipesPerDay) }
-    /// "Remind me when swipes are back" can be offered.
-    var canRemind: Bool { notifier != nil }
-
-    /// Onboarding's last step is done but the first deck is still being built. The step shows progress meanwhile.
-    var isLeavingOnboarding: Bool { phase == .onboarding && isOnboardingAccessGranted && !holdsOnboarding }
-    /// Onboarding will end on the unlock offer.
-    var offersUpsellStep: Bool { !isUnlocked || isReplayingOnboarding }
     /// The deck's phase, even while onboarding holds the screen. Paging and reordering go by this;
     /// swiping still needs `phase` itself to be the feed.
-    private var deckPhase: Phase { heldPhase ?? phase }
+    var deckPhase: Phase { onboarding.heldPhase ?? phase } // internal for FeedViewModel+AdminTools
 
     /// The number the next page gets. Pages are numbered across decks, so saved decisions can tell them apart.
     private var nextPageNumber: Int { max(session?.number ?? 0, store.lastSessionNumber()) + 1 }
@@ -379,35 +386,40 @@ final class FeedViewModel {
     /// when the app returns from Settings. A first launch stops at onboarding without prompting.
     func start() async {
         guard phase == .loading || phase == .noAccess || phase == .onboarding, !isRequestingAccess,
-              !isOnboardingAccessGranted else { return }
-        if phase == .loading, needsOnboarding {
-            // Only Developer mode's "Reset onboarding" (or debug builds' `-resetOnboarding`) sets it.
-            isReplayingOnboarding = defaults.bool(forKey: DefaultsKey.debugShowOnboarding)
+              !onboarding.isOnboardingAccessGranted else { return }
+        if phase == .loading, onboarding.needsOnboarding {
+            onboarding.enter()
             phase = .onboarding
             // Settled long before the page dots fade in, without holding up onboarding at launch.
-            offersReminderStep = await reminderStepApplies()
+            await onboarding.settleReminderOffer()
             return
         }
         let fromOnboarding = phase == .onboarding
-        if fromOnboarding {
-            // Written before access is asked for, so a relaunch from any later step opens the feed.
-            defaults.set(true, forKey: DefaultsKey.hasOnboarded)
-            defaults.removeObject(forKey: DefaultsKey.debugShowOnboarding)
-        }
+        if fromOnboarding { onboarding.markOnboarded() }
+        guard await requestAccess(fromOnboarding: fromOnboarding) else { return }
+        await loadDeck(fromOnboarding: fromOnboarding)
+    }
+
+    /// Asks for photo access. False if denied, which shows the no-access screen.
+    private func requestAccess(fromOnboarding: Bool) async -> Bool {
         isRequestingAccess = true
         access = await library.requestAccess()
         isRequestingAccess = false
         guard access != .denied else {
             phase = .noAccess
-            return
+            return false
         }
         if fromOnboarding {
             isPreparingFirstSession = true
-            isOnboardingAccessGranted = true
-            holdsOnboarding = true
+            onboarding.accessGranted()
         } else {
             phase = .loading
         }
+        return true
+    }
+
+    /// Brings back the saved deck, or deals a fresh one, once access is granted.
+    private func loadDeck(fromOnboarding: Bool) async {
         indexScheduler?.accessGranted()
         let clock = ContinuousClock()
         let started = clock.now
@@ -434,78 +446,55 @@ final class FeedViewModel {
         refreshTotals()
         // Credits refills from time away, which also puts the strongest cards first.
         refreshAllowance()
-        if isUnlocked { notifier?.cancelAll(now: now()) }
+        if isUnlocked { reminders.cancelAll() }
         fillIfNeeded()
     }
 
-    /// Only before the user has been asked for photo access, unless a debug reset asked for it again.
-    private var needsOnboarding: Bool {
-        guard !defaults.bool(forKey: DefaultsKey.hasOnboarded) else { return false }
-        // Set only by Developer mode's "Reset onboarding" (or debug builds' `-resetOnboarding`). Read
-        // without asking Developer mode, whose environment check may not have answered this early.
-        if defaults.bool(forKey: DefaultsKey.debugShowOnboarding) { return true }
-        return library.needsAccessPrompt()
-    }
+    // MARK: Onboarding
+
+    var onboardingStep: OnboardingStep { onboarding.onboardingStep }
+    var offersReminderStep: Bool { onboarding.offersReminderStep }
+    var isOnboardingAccessGranted: Bool { onboarding.isOnboardingAccessGranted }
+    /// Onboarding will end on the unlock offer.
+    var offersUpsellStep: Bool { onboarding.offersUpsellStep(isUnlocked: isUnlocked) }
+    /// Onboarding's last step is done but the first deck is still being built. The step shows progress meanwhile.
+    var isLeavingOnboarding: Bool { phase == .onboarding && onboarding.isOnboardingAccessGranted && !onboarding.holdsOnboarding }
 
     /// Moves onboarding past photo access to the next step that applies, or finishes it.
-    /// Each step is checked as it's reached, so e.g. a restore that lands meanwhile skips the offer.
     func advanceOnboarding() async {
-        guard phase == .onboarding, isOnboardingAccessGranted else { return }
-        if onboardingStep == .intro {
-            // Once offered it stays, so coming back through after answering iOS still shows it.
-            if !offersReminderStep { offersReminderStep = await reminderStepApplies() }
-            if offersReminderStep {
-                onboardingStep = .notifications
-                return
-            }
-        }
-        if onboardingStep != .upsell, offersUpsellStep {
-            onboardingStep = .upsell
-            return
-        }
-        finishOnboarding()
+        guard phase == .onboarding, onboarding.isOnboardingAccessGranted else { return }
+        if await onboarding.advance(isUnlocked: { isUnlocked }) { finishOnboarding() }
     }
 
     /// Back one step after photo access: the offer to reminders where they were shown, either to the primer.
     func goBackInOnboarding() {
         guard canGoBackInOnboarding else { return }
-        onboardingStep = onboardingStep == .upsell && offersReminderStep ? .notifications : .intro
+        onboarding.goBack()
     }
 
     /// Onboarding can step back from where it is. Not mid-purchase, nor once the user has finished.
     var canGoBackInOnboarding: Bool {
-        phase == .onboarding && holdsOnboarding && onboardingStep != .intro && !isPurchaseBusy
+        phase == .onboarding && onboarding.canGoBack && !isPurchaseBusy
     }
 
     /// Lets the feed replace onboarding. If the first deck is still being built, `start()` shows it
     /// once it's ready, and `isLeavingOnboarding` holds meanwhile.
     private func finishOnboarding() {
-        guard holdsOnboarding else { return }
-        holdsOnboarding = false
-        isReplayingOnboarding = false
-        guard let held = heldPhase else { return }
-        heldPhase = nil
+        guard let held = onboarding.finish() else { return }
         phase = held
         fillIfNeeded()
     }
 
-    /// Reminders can be offered and the system hasn't asked yet, since iOS only asks once.
-    /// A debug replay offers them regardless.
-    private func reminderStepApplies() async -> Bool {
-        guard let notifier else { return false }
-        return isReplayingOnboarding ? true : await notifier.canAsk()
-    }
-
     /// Sets the deck's phase, or holds it while onboarding is still up.
-    private func enterDeckPhase(_ next: Phase) {
-        if holdsOnboarding { heldPhase = next } else { phase = next }
+    func enterDeckPhase(_ next: Phase) { // internal for FeedViewModel+AdminTools
+        if let next = onboarding.route(next) { phase = next }
     }
 
     /// Whether swiping the current card this way would go through. The deck asks before letting a card fly.
     /// False out of swipes, or for a free user when it would take the pile past its limit.
     func canDecide(_ direction: SwipeDirection) -> Bool {
         if currentCard?.isAdminMock == true { return true }
-        guard canSwipe || !chargesSwipes else { return false }
+        guard gate.admitsSwipe else { return false }
         guard let card = currentCard else { return true }
         return fitsInPile(itemDecisions(for: card, direction: direction), card: card)
     }
@@ -513,7 +502,7 @@ final class FeedViewModel {
     /// Whether a finished one-by-one review of the current card would go through, like `canDecide`.
     func canDecideIndividually(_ outcome: [LibraryItem.ID: Decision]) -> Bool {
         if currentCard?.isAdminMock == true { return true }
-        guard canSwipe || !chargesSwipes else { return false }
+        guard gate.admitsSwipe else { return false }
         guard let card = currentCard, let complete = completed(outcome, for: card) else { return true }
         return fitsInPile(complete, card: card)
     }
@@ -521,7 +510,7 @@ final class FeedViewModel {
     /// The deck refused a swipe: opens the wall when out of swipes, or says the pile is full.
     func refuse(_ direction: SwipeDirection) {
         refreshAllowance()
-        if !canSwipe, chargesSwipes {
+        if !gate.admitsSwipe {
             presentWall()
         } else if !isUnlocked {
             isPileFullNoticePresented = true
@@ -587,10 +576,7 @@ final class FeedViewModel {
         marks = last.marks
         drafts = last.drafts
         store.save(last.stored)
-        if last.charged {
-            allowance.refund(at: now(), allowanceTunables)
-            allowanceStore.save(allowance)
-        }
+        if last.charged { gate.refund() }
         returningCard = ReturningCard(cardID: last.cardID, direction: last.direction)
         dismissChip()
         phase = .feed
@@ -645,41 +631,8 @@ final class FeedViewModel {
         saveProgress()
         await refreshLibraryTotal()
         let freed = deletedItems.reduce(0) { $0 + $1.bytes }
-        queueFollowUp(freed: freed)
+        followUps.queueFollowUp(freed: freed, isUnlocked: isUnlocked, isWallPresented: isWallPresented, purchasedThisLaunch: purchasedThisLaunch)
         return freed
-    }
-
-    /// The pile's freed confirmation has closed: the review prompt or unlock offer the delete earned may show now.
-    func releaseReviewPrompt() {
-        if isDeleteUpsellQueued {
-            isDeleteUpsellQueued = false
-            isDeleteUpsellDue = true
-        }
-        if isReviewPromptQueued {
-            isReviewPromptQueued = false
-            isReviewPromptDue = true
-        }
-    }
-
-    /// RootView showed the unlock offer after a delete, or decided not to. Only a shown offer
-    /// starts the wait before the next one.
-    func finishDeleteUpsell(shown: Bool) {
-        isDeleteUpsellDue = false
-        if shown { defaults.set(now(), forKey: DefaultsKey.deleteUpsellShownAt) }
-    }
-
-    /// The delete offer shows after the first delete, then at most once per `postDeleteUpsellInterval`,
-    /// and never once the wall has shown this session.
-    private var isDeleteUpsellAllowed: Bool {
-        guard !wasWallShownThisSession else { return false }
-        guard let last = defaults.object(forKey: DefaultsKey.deleteUpsellShownAt) as? Date else { return true }
-        return now().timeIntervalSince(last) >= freeTier.limits.postDeleteUpsellInterval
-    }
-
-    /// RootView handled the due prompt. `asked` records this version, so it won't ask again until the next.
-    func finishReviewPrompt(asked: Bool) {
-        isReviewPromptDue = false
-        if asked { defaults.set(AppInfo.version, forKey: DefaultsKey.reviewPromptVersion) }
     }
 
     /// "Check again" from caught up: deals a fresh deck if anything turned up, e.g. new photos
@@ -696,114 +649,37 @@ final class FeedViewModel {
     /// Opens the wall: the countdown, what's left, and the unlock. The deck stays underneath.
     func presentWall() {
         refreshAllowance()
-        if !isWallPresented { paywallStatus = .idle }
-        isWallPresented = true
-        wasWallShownThisSession = true
-        Task { await refreshEstimate() }
+        gate.openWall()
+        followUps.wallShown()
+        Task { await reminders.refreshEstimate(similarAhead: { similarAhead }) }
     }
 
-    /// "Not now". The next refused swipe opens it again.
-    func dismissWall() {
-        guard !isPurchaseBusy else { return }
-        isWallPresented = false
-    }
-
-    /// A purchase or restore is running. The wall and the Settings unlock can't close meanwhile.
-    var isPurchaseBusy: Bool { paywallStatus == .purchasing || paywallStatus == .restoring }
-
-    /// Buys the unlock, from the wall or Settings. Closes the wall, so the current card can be swiped
-    /// straight away. False if it didn't go through; a cancel says nothing.
+    /// Buys the unlock, from the wall or Settings. See `SwipeGate.purchaseUnlock()`.
+    /// Bought: reminders are moot.
     @discardableResult
     func purchaseUnlock() async -> Bool {
-        guard !isPurchaseBusy else { return false }
-        paywallStatus = .purchasing
-        switch await entitlements.unlock() {
-        case .purchased where entitlements.isUnlocked:
-            didUnlock()
-            paywallStatus = .idle
-            return true
-        case .cancelled:
-            paywallStatus = .idle
-        case .pending:
-            paywallStatus = .purchasePending
-        case .purchased, .failed:
-            paywallStatus = .purchaseFailed
-        }
-        return false
+        guard await gate.purchaseUnlock() else { return false }
+        reminders.cancelAll()
+        return true
     }
 
-    /// The unlock changed outside a purchase run here: Ask to Buy approved, bought on another
-    /// device, or refunded. Unlocking closes the wall; relocking needs nothing, gating reads it live.
+    /// The unlock changed outside a purchase run here. See `SwipeGate.entitlementChanged()`.
     func entitlementChanged() {
-        guard isUnlocked, !isPurchaseBusy else { return }
-        if paywallStatus == .purchasePending {
-            purchasedThisLaunch = true
-            paywallStatus = .idle
-        }
-        notifier?.cancelAll(now: now())
-        isWallPresented = false
+        if gate.entitlementChanged() { reminders.cancelAll() }
     }
 
-    /// Restores an earlier purchase, from the wall or Settings. True if the app is now unlocked;
-    /// `paywallStatus` says what was found either way.
+    /// Restores an earlier purchase, from the wall or Settings. See `SwipeGate.restorePurchases()`.
     @discardableResult
     func restorePurchases() async -> Bool {
-        guard !isPurchaseBusy else { return false }
-        paywallStatus = .restoring
-        switch await entitlements.restore() {
-        case .restored where entitlements.isUnlocked:
-            didUnlock()
-            paywallStatus = .restored
-            return true
-        case .nothingToRestore:
-            paywallStatus = .nothingToRestore
-        case .restored, .failed:
-            paywallStatus = .restoreFailed
-        }
-        return false
-    }
-
-    /// Clears a finished purchase or restore message, e.g. when Settings opens. Not while one runs.
-    func resetPurchaseStatus() {
-        guard !isPurchaseBusy else { return }
-        paywallStatus = .idle
+        guard await gate.restorePurchases() else { return false }
+        reminders.cancelAll()
+        return true
     }
 
     /// Credits any refills owed by now. Called on returning to the app and while a countdown shows.
     /// When a refill lands, the strongest cards waiting move to the front.
     func refreshAllowance() {
-        guard !isUnlocked else { return }
-        var settled = allowance
-        let refilled = settled.settle(at: now(), allowanceTunables)
-        guard settled != allowance else { return }
-        allowance = settled
-        allowanceStore.save(settled)
-        if refilled { frontLoad() }
-    }
-
-    /// "Remind me when swipes are back". Asks for notification permission, then schedules if already out.
-    func remindWhenSwipesAreBack() async {
-        guard let notifier else { return }
-        isRemindersOptedIn = await notifier.optIn()
-        areRemindersDenied = !isRemindersOptedIn
-        if isRemindersOptedIn, allowance.remaining == 0 { await scheduleReminders() }
-    }
-
-    /// The Settings switch. On asks for permission the same way the wall does; off cancels what's scheduled.
-    func setRemindersEnabled(_ on: Bool) async {
-        guard let notifier else { return }
-        if on {
-            await remindWhenSwipesAreBack()
-        } else {
-            notifier.optOut(now: now())
-            isRemindersOptedIn = false
-        }
-    }
-
-    /// Reads whether notifications are off in the Settings app, which can change while the app is away.
-    func refreshReminderPermission() async {
-        guard let notifier else { return }
-        areRemindersDenied = await notifier.isDenied()
+        if gate.creditRefills() { frontLoad() }
     }
 
     func clearReturningCard() {
@@ -812,41 +688,10 @@ final class FeedViewModel {
 
     // MARK: Internals
 
-    /// Counts the delete and queues what follows it once the pile closes: the unlock offer for a free
-    /// user (throttled, see `isDeleteUpsellAllowed`), or a review prompt if the delete earned one (see `ReviewPrompt`). Never both.
-    private func queueFollowUp(freed: Int64) {
-        let prior = defaults.integer(forKey: DefaultsKey.deleteCount)
-        defaults.set(prior + 1, forKey: DefaultsKey.deleteCount)
-        isReviewPromptQueued = false
-        isDeleteUpsellQueued = false
-        guard !isWallPresented else { return }
-        if !isUnlocked {
-            // Free users never get the review prompt, offer or not.
-            guard isDeleteUpsellAllowed else { return }
-            upsellFreedBytes = freed
-            isDeleteUpsellQueued = true
-            return
-        }
-        guard !purchasedThisLaunch else { return }
-        isReviewPromptQueued = ReviewPrompt.isEligible(
-            freedBytes: freed,
-            priorDeletes: prior,
-            lastAskedVersion: defaults.string(forKey: DefaultsKey.reviewPromptVersion),
-            currentVersion: AppInfo.version
-        )
-    }
-
-    /// Bought or restored: reminders are moot and the wall, if up, closes.
-    private func didUnlock() {
-        notifier?.cancelAll(now: now())
-        purchasedThisLaunch = true
-        isWallPresented = false
-    }
-
     /// Lets a card decision through, or refuses it and opens the wall when no swipes are left.
     private func admitSwipe() -> Bool {
         refreshAllowance()
-        guard canSwipe || !chargesSwipes else {
+        guard gate.admitsSwipe else {
             presentWall()
             return false
         }
@@ -855,33 +700,13 @@ final class FeedViewModel {
 
     /// Spends one swipe for a card decision. Unlocked, nothing is counted. True if one was spent.
     private func spendSwipe() -> Bool {
-        guard chargesSwipes, !isUnlocked, allowance.spend(at: now(), allowanceTunables) else { return false }
-        allowanceStore.save(allowance)
+        guard gate.spend() else { return false }
         // Back and swiping before a reminder fired: it's no longer needed.
-        notifier?.cancelAll(now: now())
+        reminders.cancelAll()
         if allowance.remaining == 0, isRemindersOptedIn {
             Task { await scheduleReminders() }
         }
         return true
-    }
-
-    private func scheduleReminders() async {
-        guard let notifier, !isUnlocked, let next = allowance.nextRefillAt(allowanceTunables) else { return }
-        if clutterEstimate == nil { await refreshEstimate() }
-        await notifier.scheduleOnEmpty(
-            nextRefillAt: next,
-            fullAt: allowance.fullAt(allowanceTunables),
-            tunables: allowanceTunables,
-            estimate: clutterEstimate,
-            now: now()
-        )
-    }
-
-    private func refreshEstimate() async {
-        guard var estimate = await builder.clutterEstimate(excluding: store.excludedFromNewSession(asOf: now()), now: now()) else { return }
-        // Similar sets still ahead in the deck count too.
-        estimate.similarGroupCount += cards.dropFirst(index).filter { if case .similar = $0 { true } else { false } }.count
-        clutterEstimate = estimate
     }
 
     /// Moves the strongest cards still to come to the front, or leaves it to the next deck dealt.
@@ -937,7 +762,7 @@ final class FeedViewModel {
     }
 
     /// Starts building the next page once few undecided cards are left ahead.
-    private func fillIfNeeded() {
+    func fillIfNeeded() { // internal for FeedViewModel+AdminTools
         guard deckPhase == .feed, session != nil, pageTask == nil, cards.count - index <= Self.pageAhead else { return }
         // An empty build isn't retried while cards remain; running out tries once more.
         guard !isLibraryExhausted || currentCard == nil else { return }
@@ -1052,18 +877,11 @@ final class FeedViewModel {
     /// Groups go in whole or not at all.
     private func fitsInPile(_ outcome: [LibraryItem.ID: Decision], card: FeedCard) -> Bool {
         guard !card.isAdminMock else { return true }
-        guard let limit = pileLimitBytes, chargesSwipes else { return true }
+        guard gate.isPileLimited else { return true }
         let pending = pendingItems
         let pendingIDs = Set(pending.map(\.id))
         let added = card.items.filter { outcome[$0.id] == .delete && !pendingIDs.contains($0.id) }
-        guard !added.isEmpty, !pending.isEmpty else { return true }
-        return Self.countedBytes(pending) + Self.countedBytes(added) <= limit
-    }
-
-    /// Sizes toward the pile limit. An unknown (zero) size counts as `unknownSizeBytes`, so a pile of
-    /// them still fills up.
-    static func countedBytes(_ items: [LibraryItem]) -> Int64 {
-        items.reduce(0) { $0 + ($1.bytes > 0 ? $1.bytes : unknownSizeBytes) }
+        return gate.pileTakes(added, onto: pending)
     }
 
     /// Asks the library to delete these and settles the ones that can't be. Returns what was
@@ -1126,13 +944,13 @@ final class FeedViewModel {
     }
 
     /// - Parameter placeBudget: Overrides how long to wait on place names; nil keeps the default.
-    private func makeSession(number: Int, placeBudget: Duration? = nil) async -> Session {
+    func makeSession(number: Int, placeBudget: Duration? = nil) async -> Session { // internal for FeedViewModel+AdminTools
         var options = FeedOptions(skipFavorites: skipFavorites, excluding: store.excludedFromNewSession(asOf: now()))
         if let placeBudget { options.placeBudget = placeBudget }
         return await builder.makeSession(number: number, options: options)
     }
 
-    private func apply(_ next: Session) {
+    func apply(_ next: Session) { // internal for FeedViewModel+AdminTools and +Mock
         var next = next
         if refilledSinceDeal {
             next.cards = FrontLoad.reordered(next.cards, from: 0)
@@ -1202,13 +1020,13 @@ final class FeedViewModel {
         if !gone.isEmpty || saved.finished { saveProgress() }
     }
 
-    private func saveProgress() {
+    func saveProgress() { // internal for FeedViewModel+AdminTools
         guard let session else { return }
         store.saveSession(SavedSession(session: session, index: index, marks: marks, finished: false, drafts: drafts))
     }
 
     /// Recomputes library totals from saved progress. The freed sum only changes on confirm.
-    private func refreshTotals(includingFreed: Bool = true) {
+    func refreshTotals(includingFreed: Bool = true) { // internal for FeedViewModel+AdminTools
         stats.totalItems = libraryStats.totalItems
         // Each item counts once. The real library reports no baseline; debug mocks report a pretend one,
         // which stands until real decisions pass it, so it's never added to them.
@@ -1224,7 +1042,7 @@ final class FeedViewModel {
     }
 
     /// Below 100% again, so reaching it next time celebrates again.
-    private func updateCelebration() {
+    func updateCelebration() { // internal for FeedViewModel+AdminTools
         guard stats.totalItems > 0, !isLibraryComplete, hasCelebratedComplete else { return }
         hasCelebratedComplete = false
         defaults.removeObject(forKey: DefaultsKey.celebratedComplete)
@@ -1241,7 +1059,7 @@ final class FeedViewModel {
         }
     }
 
-    private func dismissChip() {
+    func dismissChip() { // internal for FeedViewModel+Mock
         chipTask?.cancel()
         deleteChip = nil
     }
@@ -1281,280 +1099,4 @@ extension FeedViewModel {
     static let pageAhead = 5
     /// Decided cards kept behind the current one, for undo. Older ones are trimmed when a page lands.
     static let keptBehind = 30
-    /// What an item of unknown size (zero bytes) counts as toward the free pile limit: a typical photo.
-    static let unknownSizeBytes: Int64 = 3_000_000
 }
-
-// MARK: - Mock setup
-
-#if DEBUG
-extension FeedViewModel {
-    /// Named starting points for previews and `-startAt` launch arguments.
-    enum MockStart: String {
-        case first, video, similar, batch, duplicates, onboarding
-        /// Partway through the first page with a few deletes pending.
-        case pending
-        /// Locked with no swipes left, the wall up over the deck.
-        case outOfSwipes
-        case caughtUp
-    }
-
-    /// Mocks start locked unless `entitlements` says otherwise (or `-unlocked YES` in debug builds),
-    /// with a full allowance unless `allowance` says otherwise.
-    static func mock(
-        startingAt start: MockStart = .first,
-        entitlements: (any EntitlementStore)? = nil,
-        allowance: SwipeAllowance? = nil,
-        allowanceTunables: SwipeAllowance.Tunables = .standard,
-        freeTier: FreeTierTunables? = nil,
-        notifier: RefillNotifier? = nil
-    ) -> FeedViewModel {
-        let entitlements = entitlements ?? EntitlementServices.make(mock: true)
-        if start == .onboarding {
-            // Unstarted, on a library that hasn't been asked yet, with nothing remembered.
-            // Previews get a stand-in notification center that hasn't asked, so the reminders step shows.
-            let suite = "mock.onboarding"
-            let defaults = UserDefaults(suiteName: suite) ?? .standard
-            defaults.removePersistentDomain(forName: suite)
-            return FeedViewModel(
-                library: MockPhotoLibrary(needsPrompt: true),
-                builder: MockFeedBuilder(),
-                entitlements: entitlements,
-                defaults: defaults,
-                firstSessionMinimum: onboardingPreparingMinimum,
-                allowanceTunables: allowanceTunables,
-                freeTier: freeTier,
-                notifier: notifier ?? RefillNotifier(center: PreviewNotificationCenter(), defaults: defaults)
-            )
-        }
-        let builder = MockFeedBuilder()
-        let library = MockPhotoLibrary()
-        let vm = FeedViewModel(
-            library: library,
-            builder: builder,
-            entitlements: entitlements,
-            session: builder.makeSessionNow(number: 1),
-            stats: LibraryStats(totalItems: library.totalItems, reviewedItems: library.reviewedItems, freedBytes: 0),
-            allowanceStore: SwipeAllowanceStore(initial: allowance),
-            allowanceTunables: allowanceTunables,
-            freeTier: freeTier,
-            notifier: notifier
-        )
-        switch start {
-        case .first:
-            break
-        case .video:
-            vm.index = vm.cards.firstIndex { if case .video = $0 { true } else { false } } ?? 0
-        case .similar:
-            vm.index = vm.cards.firstIndex { if case .similar = $0 { true } else { false } } ?? 0
-        case .batch:
-            vm.index = vm.cards.firstIndex { if case .batch = $0 { true } else { false } } ?? 0
-        case .duplicates:
-            vm.index = vm.cards.firstIndex { if case .duplicates = $0 { true } else { false } } ?? 0
-        case .pending:
-            vm.simulateSwipes(10)
-        case .outOfSwipes:
-            vm.index = 4
-            vm.allowance = SwipeAllowance(balance: 0, tunables: allowanceTunables, now: .now)
-            vm.presentWall()
-        case .caughtUp:
-            vm.apply(Session(number: 2, cards: []))
-        case .onboarding:
-            break
-        }
-        return vm
-    }
-}
-#endif
-
-// MARK: - Settings' Admin Tools
-
-/// Settings' Admin Tools section, shown in Developer mode (see `DevMode`).
-extension FeedViewModel {
-    /// Replaces the free swipes left. Nil fills them to the cap.
-    func debugSetSwipes(_ balance: Int?) {
-        allowance = balance.map { SwipeAllowance(balance: $0, tunables: allowanceTunables, now: now()) }
-            ?? SwipeAllowance(tunables: allowanceTunables, now: now())
-        allowanceStore.save(allowance)
-    }
-
-    #if DEBUG
-    /// Flips the stand-in purchase. Only the mock store can, and mocks are debug-only.
-    func debugSetUnlocked(_ unlocked: Bool) {
-        (entitlements as? DebugEntitlementStore)?.setUnlocked(unlocked)
-        if unlocked { notifier?.cancelAll(now: now()) }
-    }
-    #endif
-
-    /// The override over the real StoreKit store. Nil on mocks, which use `debugSetUnlocked`.
-    var debugUnlockOverride: UnlockOverride? {
-        (entitlements as? DebugOverrideEntitlementStore)?.override
-    }
-
-    /// What StoreKit itself says, under the override. Nil on mocks.
-    var debugStoreKitUnlocked: Bool? {
-        (entitlements as? DebugOverrideEntitlementStore)?.base.isUnlocked
-    }
-
-    func debugSetUnlockOverride(_ override: UnlockOverride) {
-        (entitlements as? DebugOverrideEntitlementStore)?.setOverride(override)
-        if isUnlocked { notifier?.cancelAll(now: now()) }
-    }
-
-    /// Onboarding and the swipe hint show again on the next launch.
-    func debugResetOnboarding() {
-        defaults.removeObject(forKey: DefaultsKey.hasOnboarded)
-        defaults.removeObject(forKey: DefaultsKey.hasSeenSwipeHint)
-        // Access is usually granted by now, which on its own skips onboarding.
-        defaults.set(true, forKey: DefaultsKey.debugShowOnboarding)
-    }
-
-    /// Forgets every saved decision, the pile, and preferences, then deals a fresh first deck.
-    func debugClearAllDecisions() async {
-        store.reset()
-        settledIDs = []
-        skipFavorites = store.skipFavorites
-        apply(await makeSession(number: 1))
-        refreshTotals()
-    }
-
-    /// Progress reads 100% while on. Only what's shown changes; nothing is saved.
-    func debugSetSimulatesComplete(_ on: Bool) {
-        debugSimulatesComplete = on
-        updateCelebration()
-    }
-
-    /// Plays the 100% confetti now.
-    func debugPlayCelebration() {
-        celebrationRequest += 1
-    }
-
-    /// Forgets that the 100% confetti played, so it plays again at 100%.
-    func debugResetCelebration() {
-        hasCelebratedComplete = false
-        defaults.removeObject(forKey: DefaultsKey.celebratedComplete)
-    }
-
-    // MARK: Upsell
-
-    /// The next delete offers the unlock again: forgets when it last showed and that the wall showed this session.
-    func adminResetDeleteUpsell() {
-        defaults.removeObject(forKey: DefaultsKey.deleteUpsellShownAt)
-        wasWallShownThisSession = false
-    }
-
-    /// Asks RootView to show an upsell screen now, once Settings has closed.
-    func adminRaiseUpsell(_ screen: AdminUpsell) {
-        if screen == .postDelete {
-            upsellFreedBytes = Int64.random(in: 20_000_000...3_000_000_000)
-        }
-        adminUpsellRequest = screen
-    }
-
-    /// RootView showed the requested upsell.
-    func finishAdminUpsell() {
-        adminUpsellRequest = nil
-    }
-
-    // MARK: Mock cards
-
-    /// Puts an Admin Tools mock card on top of the deck, even from caught up.
-    func adminInsertMockCard(_ card: FeedCard) {
-        guard var current = session else { return }
-        current.cards.insert(card, at: min(index, current.cards.count))
-        session = current
-        returningCard = nil
-        if deckPhase == .caughtUp { enterDeckPhase(.feed) }
-        saveProgress()
-        adminShowFeedRequest += 1
-    }
-
-    /// Takes the mock cards still ahead out of the deck. Swiped ones stay behind until trimmed.
-    func adminRemoveMockCards() {
-        guard var current = session, current.cards[index...].contains(where: \.isAdminMock) else { return }
-        current.cards = Array(current.cards[..<index]) + current.cards[index...].filter { !$0.isAdminMock }
-        session = current
-        returningCard = nil
-        saveProgress()
-        fillIfNeeded()
-    }
-
-    // MARK: Developer mode
-
-    /// Settings' Developer mode switch. Turning it off also drops the unlock override and the
-    /// simulated 100%, and the free tier goes back to its defaults.
-    func setDevModeEnabled(_ enabled: Bool) {
-        let before = allowanceTunables
-        DevMode.shared.setEnabled(enabled)
-        devModeChanged(from: before)
-    }
-
-    /// A tap on Settings' version row. Returns the toast to show when it flipped Developer mode.
-    func registerVersionTap() -> String? {
-        let before = allowanceTunables
-        guard let toast = DevMode.shared.registerVersionTap() else { return nil }
-        devModeChanged(from: before)
-        return toast
-    }
-
-    /// Changes one free-tier limit; it applies right away.
-    func setFreeTierValue(_ tunable: FreeTierTunable, _ value: Int) {
-        let before = allowanceTunables
-        freeTier.set(tunable, value)
-        freeTierChanged(from: before)
-    }
-
-    func resetFreeTierToDefaults() {
-        let before = allowanceTunables
-        freeTier.resetToDefaults()
-        freeTierChanged(from: before)
-    }
-
-    private func devModeChanged(from before: SwipeAllowance.Tunables) {
-        if !DevMode.shared.isEnabled {
-            (entitlements as? DebugOverrideEntitlementStore)?.setOverride(.off)
-            if debugSimulatesComplete { debugSetSimulatesComplete(false) }
-        }
-        freeTierChanged(from: before)
-    }
-
-    /// Fits the saved allowance to new swipe tunables, and re-times a pending refill reminder.
-    private func freeTierChanged(from before: SwipeAllowance.Tunables) {
-        let after = allowanceTunables
-        guard after != before else { return }
-        allowance.adjust(from: before, to: after, at: now())
-        allowanceStore.save(allowance)
-        if !isUnlocked, allowance.remaining == 0, isRemindersOptedIn {
-            notifier?.cancelAll(now: now())
-            Task { await scheduleReminders() }
-        }
-    }
-}
-
-#if DEBUG
-extension FeedViewModel {
-
-    /// Shows a wall state without going through a purchase, for previews.
-    func previewWall(status: PaywallStatus) {
-        isWallPresented = true
-        paywallStatus = status
-    }
-
-    /// Decides the next `count` cards with a plausible mix of deletes, keeps, and laters.
-    private func simulateSwipes(_ count: Int) {
-        chargesSwipes = false
-        defer { chargesSwipes = true }
-        for _ in 0..<count where phase == .feed && currentCard != nil {
-            let isVideo = if case .video = currentCard { true } else { false }
-            let direction: SwipeDirection = switch index % 9 {
-            case _ where isVideo: .right
-            case 2, 6: .right
-            case 4 where index < 20: .up
-            default: .left
-            }
-            decide(direction)
-        }
-        dismissChip()
-    }
-}
-#endif
