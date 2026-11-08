@@ -15,7 +15,7 @@ extension FeedViewModel {
     /// Flips the stand-in purchase. Only the mock store can, and mocks are debug-only.
     func debugSetUnlocked(_ unlocked: Bool) {
         (entitlements as? DebugEntitlementStore)?.setUnlocked(unlocked)
-        if unlocked { notifier?.cancelAll(now: now()) }
+        if unlocked { reminders.cancelAll() }
     }
     #endif
 
@@ -31,7 +31,7 @@ extension FeedViewModel {
 
     func debugSetUnlockOverride(_ override: UnlockOverride) {
         (entitlements as? DebugOverrideEntitlementStore)?.setOverride(override)
-        if isUnlocked { notifier?.cancelAll(now: now()) }
+        if isUnlocked { reminders.cancelAll() }
     }
 
     /// Onboarding and the swipe hint show again on the next launch.
@@ -157,7 +157,7 @@ extension FeedViewModel {
         allowance.adjust(from: before, to: after, at: now())
         allowanceStore.save(allowance)
         if !isUnlocked, allowance.remaining == 0, isRemindersOptedIn {
-            notifier?.cancelAll(now: now())
+            reminders.cancelAll()
             Task { await scheduleReminders() }
         }
     }

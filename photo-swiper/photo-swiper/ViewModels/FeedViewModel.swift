@@ -95,12 +95,6 @@ final class FeedViewModel {
     var allowance: SwipeAllowance // internal for FeedViewModel+AdminTools and +Mock
     /// "Out of swipes": the wall sheet over the feed, offering the unlock.
     var isWallPresented = false
-    /// What's left to clear, worked out when the wall opens.
-    private(set) var clutterEstimate: ClutterEstimate?
-    /// The user tapped "Remind me" and the system said yes.
-    private(set) var isRemindersOptedIn = false
-    /// Notifications are turned off for the app, found on asking or by Settings checking.
-    private(set) var areRemindersDenied = false
     /// Bought or restored since launch. The review prompt never follows a purchase.
     private(set) var purchasedThisLaunch = false
     /// Admin Tools asked for an upsell screen. RootView shows it and clears this.
@@ -164,8 +158,10 @@ final class FeedViewModel {
     var allowanceTunables: SwipeAllowance.Tunables { freeTier.limits.allowance }
     /// The review prompt or unlock offer a delete earns.
     let followUps: FollowUpCoordinator
+    /// Refill reminders and the clutter estimate they quote.
+    let reminders: ReminderController
     /// Nil where reminders can't be offered (tests, previews).
-    let notifier: RefillNotifier? // internal for FeedViewModel+AdminTools
+    private let notifier: RefillNotifier?
 
     /// - Parameters:
     ///   - allowanceStore: Where the free swipes are saved. Nil keeps them in memory, starting full.
@@ -199,8 +195,8 @@ final class FeedViewModel {
         self.freeTier = freeTier
         followUps = FollowUpCoordinator(defaults: defaults, freeTier: freeTier, now: now)
         self.notifier = notifier
+        reminders = ReminderController(notifier: notifier, builder: builder, store: store, now: now)
         allowance = allowanceStore.load() ?? SwipeAllowance(tunables: freeTier.limits.allowance, now: now())
-        isRemindersOptedIn = notifier?.isOptedIn ?? false
         skipFavorites = store.skipFavorites
         hasCelebratedComplete = defaults.bool(forKey: DefaultsKey.celebratedComplete)
     }
@@ -232,8 +228,8 @@ final class FeedViewModel {
         self.freeTier = freeTier
         followUps = FollowUpCoordinator(defaults: defaults, freeTier: freeTier, now: now)
         self.notifier = notifier
+        reminders = ReminderController(notifier: notifier, builder: builder, store: store, now: now)
         allowance = allowanceStore.load() ?? SwipeAllowance(tunables: freeTier.limits.allowance, now: .now)
-        isRemindersOptedIn = notifier?.isOptedIn ?? false
         skipFavorites = store.skipFavorites
         hasCelebratedComplete = defaults.bool(forKey: DefaultsKey.celebratedComplete)
         libraryStats = stats
@@ -249,6 +245,31 @@ final class FeedViewModel {
     func releaseReviewPrompt() { followUps.releaseReviewPrompt() }
     func finishDeleteUpsell(shown: Bool) { followUps.finishDeleteUpsell(shown: shown) }
     func finishReviewPrompt(asked: Bool) { followUps.finishReviewPrompt(asked: asked) }
+
+    // MARK: Reminders
+
+    var isRemindersOptedIn: Bool { reminders.isRemindersOptedIn }
+    var areRemindersDenied: Bool { reminders.areRemindersDenied }
+    var clutterEstimate: ClutterEstimate? { reminders.clutterEstimate }
+    var canRemind: Bool { reminders.canRemind }
+    var daysToFinish: Double? { reminders.daysToFinish(swipesPerDay: allowanceTunables.swipesPerDay) }
+    func remindWhenSwipesAreBack() async {
+        await reminders.remindWhenSwipesAreBack(state: { reminderAllowance }, similarAhead: { similarAhead })
+    }
+    func setRemindersEnabled(_ on: Bool) async {
+        await reminders.setRemindersEnabled(on, state: { reminderAllowance }, similarAhead: { similarAhead })
+    }
+    func refreshReminderPermission() async { await reminders.refreshReminderPermission() }
+    func scheduleReminders() async { // internal for FeedViewModel+AdminTools
+        await reminders.scheduleReminders(state: { reminderAllowance }, similarAhead: { similarAhead })
+    }
+    private var reminderAllowance: ReminderController.AllowanceState {
+        .init(allowance: allowance, tunables: allowanceTunables, isUnlocked: isUnlocked)
+    }
+    /// Similar sets still ahead in the deck, which the clutter estimate counts too.
+    private var similarAhead: Int {
+        cards.dropFirst(index).filter { if case .similar = $0 { true } else { false } }.count
+    }
 
     // MARK: Derived
 
@@ -307,10 +328,6 @@ final class FeedViewModel {
     var swipesLeft: Int? { isUnlocked ? nil : allowance.remaining }
     /// When the next refill lands; nil when unlocked or full.
     var nextRefillAt: Date? { isUnlocked ? nil : allowance.nextRefillAt(allowanceTunables) }
-    /// Days of free swipes it would take to get through the likely clears.
-    var daysToFinish: Double? { clutterEstimate?.daysToFinish(swipesPerDay: allowanceTunables.swipesPerDay) }
-    /// "Remind me when swipes are back" can be offered.
-    var canRemind: Bool { notifier != nil }
 
     /// Onboarding's last step is done but the first deck is still being built. The step shows progress meanwhile.
     var isLeavingOnboarding: Bool { phase == .onboarding && isOnboardingAccessGranted && !holdsOnboarding }
@@ -434,7 +451,7 @@ final class FeedViewModel {
         refreshTotals()
         // Credits refills from time away, which also puts the strongest cards first.
         refreshAllowance()
-        if isUnlocked { notifier?.cancelAll(now: now()) }
+        if isUnlocked { reminders.cancelAll() }
         fillIfNeeded()
     }
 
@@ -666,7 +683,7 @@ final class FeedViewModel {
         if !isWallPresented { paywallStatus = .idle }
         isWallPresented = true
         followUps.wallShown()
-        Task { await refreshEstimate() }
+        Task { await reminders.refreshEstimate(similarAhead: { similarAhead }) }
     }
 
     /// "Not now". The next refused swipe opens it again.
@@ -707,7 +724,7 @@ final class FeedViewModel {
             purchasedThisLaunch = true
             paywallStatus = .idle
         }
-        notifier?.cancelAll(now: now())
+        reminders.cancelAll()
         isWallPresented = false
     }
 
@@ -748,31 +765,6 @@ final class FeedViewModel {
         if refilled { frontLoad() }
     }
 
-    /// "Remind me when swipes are back". Asks for notification permission, then schedules if already out.
-    func remindWhenSwipesAreBack() async {
-        guard let notifier else { return }
-        isRemindersOptedIn = await notifier.optIn()
-        areRemindersDenied = !isRemindersOptedIn
-        if isRemindersOptedIn, allowance.remaining == 0 { await scheduleReminders() }
-    }
-
-    /// The Settings switch. On asks for permission the same way the wall does; off cancels what's scheduled.
-    func setRemindersEnabled(_ on: Bool) async {
-        guard let notifier else { return }
-        if on {
-            await remindWhenSwipesAreBack()
-        } else {
-            notifier.optOut(now: now())
-            isRemindersOptedIn = false
-        }
-    }
-
-    /// Reads whether notifications are off in the Settings app, which can change while the app is away.
-    func refreshReminderPermission() async {
-        guard let notifier else { return }
-        areRemindersDenied = await notifier.isDenied()
-    }
-
     func clearReturningCard() {
         returningCard = nil
     }
@@ -781,7 +773,7 @@ final class FeedViewModel {
 
     /// Bought or restored: reminders are moot and the wall, if up, closes.
     private func didUnlock() {
-        notifier?.cancelAll(now: now())
+        reminders.cancelAll()
         purchasedThisLaunch = true
         isWallPresented = false
     }
@@ -801,30 +793,11 @@ final class FeedViewModel {
         guard chargesSwipes, !isUnlocked, allowance.spend(at: now(), allowanceTunables) else { return false }
         allowanceStore.save(allowance)
         // Back and swiping before a reminder fired: it's no longer needed.
-        notifier?.cancelAll(now: now())
+        reminders.cancelAll()
         if allowance.remaining == 0, isRemindersOptedIn {
             Task { await scheduleReminders() }
         }
         return true
-    }
-
-    func scheduleReminders() async { // internal for FeedViewModel+AdminTools
-        guard let notifier, !isUnlocked, let next = allowance.nextRefillAt(allowanceTunables) else { return }
-        if clutterEstimate == nil { await refreshEstimate() }
-        await notifier.scheduleOnEmpty(
-            nextRefillAt: next,
-            fullAt: allowance.fullAt(allowanceTunables),
-            tunables: allowanceTunables,
-            estimate: clutterEstimate,
-            now: now()
-        )
-    }
-
-    private func refreshEstimate() async {
-        guard var estimate = await builder.clutterEstimate(excluding: store.excludedFromNewSession(asOf: now()), now: now()) else { return }
-        // Similar sets still ahead in the deck count too.
-        estimate.similarGroupCount += cards.dropFirst(index).filter { if case .similar = $0 { true } else { false } }.count
-        clutterEstimate = estimate
     }
 
     /// Moves the strongest cards still to come to the front, or leaves it to the next deck dealt.
