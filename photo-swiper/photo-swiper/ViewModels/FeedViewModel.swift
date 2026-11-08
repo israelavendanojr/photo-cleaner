@@ -662,12 +662,12 @@ final class FeedViewModel {
         if shown { defaults.set(now(), forKey: DefaultsKey.deleteUpsellShownAt) }
     }
 
-    /// The delete offer shows after the first delete, then at most once per `deleteUpsellInterval`,
+    /// The delete offer shows after the first delete, then at most once per `postDeleteUpsellInterval`,
     /// and never once the wall has shown this session.
     private var isDeleteUpsellAllowed: Bool {
         guard !wasWallShownThisSession else { return false }
         guard let last = defaults.object(forKey: DefaultsKey.deleteUpsellShownAt) as? Date else { return true }
-        return now().timeIntervalSince(last) >= Self.deleteUpsellInterval
+        return now().timeIntervalSince(last) >= freeTier.limits.postDeleteUpsellInterval
     }
 
     /// RootView handled the due prompt. `asked` records this version, so it won't ask again until the next.
@@ -1268,8 +1268,6 @@ extension FeedViewModel {
     static let keptBehind = 30
     /// What an item of unknown size (zero bytes) counts as toward the free pile limit: a typical photo.
     static let unknownSizeBytes: Int64 = 3_000_000
-    /// Least time between two unlock offers after a delete. Read only by `isDeleteUpsellAllowed`.
-    static let deleteUpsellInterval: TimeInterval = 24 * 60 * 60
 }
 
 // MARK: - Mock setup

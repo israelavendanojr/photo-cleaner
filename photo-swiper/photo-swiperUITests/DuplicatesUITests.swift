@@ -48,7 +48,7 @@ final class DuplicatesUITests: XCTestCase {
 
     private func launch(_ arguments: String...) -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchArguments = ["-mockLibrary", "YES", "-hasSeenSwipeHint", "YES"] + arguments
+        app.launchArguments = ["-mockLibrary", "YES", "-hasSeenSwipeHint", "YES", "-resetTunables", "YES"] + arguments
         app.launch()
         return app
     }

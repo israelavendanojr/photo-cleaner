@@ -427,6 +427,25 @@ struct PileCapTests {
         #expect(try await deleteOne(vm), "Due again a full interval later")
     }
 
+    @Test func theWaitFollowsTheFreeTierTunables() async throws {
+        defaults.set(1, forKey: DefaultsKey.deleteCount)
+        let clock = TestClock()
+        let vm = FeedViewModel(library: FakeLibrary(), builder: MockFeedBuilder(), entitlements: TestEntitlements(isUnlocked: false), defaults: defaults,
+                               freeTier: .fixed(FreeTierLimits(freeBinBytes: 10_000_000_000, postDeleteUpsellInterval: 2 * 3600)),
+                               now: { clock.now })
+        await vm.start()
+        for _ in 0..<6 { vm.decide(.left) }
+
+        #expect(try await deleteOne(vm), "The first delete offers it")
+        vm.finishDeleteUpsell(shown: true)
+
+        clock.advance(hours: 1)
+        #expect(try await deleteOne(vm) == false, "Not within the tuned 2 hours")
+
+        clock.advance(hours: 1)
+        #expect(try await deleteOne(vm), "Due again after the tuned interval")
+    }
+
     @Test func anOfferNotShownDoesNotStartTheWait() async throws {
         let clock = TestClock()
         let (vm, _) = try await started(unlocked: false, clock: clock)

@@ -63,7 +63,7 @@ final class VideoBoostUITests: XCTestCase {
 
     private func launch() -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchArguments = ["-mockLibrary", "YES", "-hasSeenSwipeHint", "YES", "-startAt", "video"]
+        app.launchArguments = ["-mockLibrary", "YES", "-hasSeenSwipeHint", "YES", "-startAt", "video", "-resetTunables", "YES"]
         app.launch()
         return app
     }

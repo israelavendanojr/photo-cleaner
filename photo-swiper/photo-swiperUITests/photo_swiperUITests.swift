@@ -998,7 +998,7 @@ final class photo_swiperUITests: XCTestCase {
         // Always the mock library, so tests never hit the photo permission prompt. The swipe
         // hint's nudge would move the card under a drag, so it counts as already seen. The unlock
         // offer after a delete shows once a day, so each launch starts with it due.
-        app.launchArguments = ["-mockLibrary", "YES", "-hasSeenSwipeHint", "YES", "-resetUpsell", "YES"] + arguments
+        app.launchArguments = ["-mockLibrary", "YES", "-hasSeenSwipeHint", "YES", "-resetUpsell", "YES", "-resetTunables", "YES"] + arguments
         app.launch()
         return app
     }

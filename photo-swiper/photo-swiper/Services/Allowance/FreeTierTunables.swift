@@ -6,6 +6,8 @@ struct FreeTierLimits: Equatable, Sendable {
     var allowance = SwipeAllowance.Tunables.standard
     /// How much a free user's pile holds before they have to delete it, e.g. 1 GB.
     var freeBinBytes: Int64 = 1_000_000_000
+    /// Least time between two unlock offers after a delete.
+    var postDeleteUpsellInterval: TimeInterval = 24 * 60 * 60
 
     static let standard = FreeTierLimits()
 
@@ -26,6 +28,7 @@ enum FreeTierTunable: String, CaseIterable, Identifiable, Sendable {
     case refillAmount
     case refillIntervalMinutes
     case freeBinMB
+    case postDeleteUpsellHours
 
     var id: Self { self }
 
@@ -35,6 +38,7 @@ enum FreeTierTunable: String, CaseIterable, Identifiable, Sendable {
         case .refillAmount: "Refill amount"
         case .refillIntervalMinutes: "Refill every"
         case .freeBinMB: "Free bin size"
+        case .postDeleteUpsellHours: "Post-delete upsell every"
         }
     }
 
@@ -44,6 +48,7 @@ enum FreeTierTunable: String, CaseIterable, Identifiable, Sendable {
         case .swipeCap, .refillAmount: "swipes"
         case .refillIntervalMinutes: "min"
         case .freeBinMB: "MB"
+        case .postDeleteUpsellHours: "hours"
         }
     }
 
@@ -52,6 +57,7 @@ enum FreeTierTunable: String, CaseIterable, Identifiable, Sendable {
         case .swipeCap, .refillAmount: 1...500
         case .refillIntervalMinutes: 1...1440
         case .freeBinMB: 10...10_000
+        case .postDeleteUpsellHours: 1...168
         }
     }
 
@@ -61,6 +67,7 @@ enum FreeTierTunable: String, CaseIterable, Identifiable, Sendable {
         case .swipeCap, .refillAmount: 1
         case .refillIntervalMinutes: 5
         case .freeBinMB: 50
+        case .postDeleteUpsellHours: 1
         }
     }
 
@@ -73,6 +80,7 @@ enum FreeTierTunable: String, CaseIterable, Identifiable, Sendable {
         case .refillAmount: limits.allowance.refillAmount
         case .refillIntervalMinutes: max(1, Int((limits.allowance.refillInterval / 60).rounded()))
         case .freeBinMB: Int(limits.freeBinBytes / 1_000_000)
+        case .postDeleteUpsellHours: max(1, Int((limits.postDeleteUpsellInterval / 3600).rounded()))
         }
     }
 
@@ -82,11 +90,13 @@ enum FreeTierTunable: String, CaseIterable, Identifiable, Sendable {
         case .refillAmount: limits.allowance.refillAmount = value
         case .refillIntervalMinutes: limits.allowance.refillInterval = TimeInterval(value) * 60
         case .freeBinMB: limits.freeBinBytes = Int64(value) * 1_000_000
+        case .postDeleteUpsellHours: limits.postDeleteUpsellInterval = TimeInterval(value) * 3600
         }
     }
 }
 
-/// The one place the free tier's limits come from. `SwipeAllowance` and the pile limit read `limits`.
+/// The one place the free tier's limits come from. `SwipeAllowance`, the pile limit and the
+/// post-delete unlock offer read `limits`.
 ///
 /// Developer mode can override any `FreeTierTunable`; overrides are saved in `UserDefaults` and apply
 /// live. With Developer mode off they're kept but ignored, so the app runs on `baseline`.

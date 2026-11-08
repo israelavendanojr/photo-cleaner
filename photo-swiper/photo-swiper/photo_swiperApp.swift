@@ -59,6 +59,10 @@ private extension FeedViewModel {
         if UserDefaults.standard.bool(forKey: "resetUpsell") {
             UserDefaults.standard.removeObject(forKey: DefaultsKey.deleteUpsellShownAt)
         }
+        // `-resetTunables YES` drops Developer mode's saved free-limit overrides, so UI tests run on the defaults.
+        if UserDefaults.standard.bool(forKey: "resetTunables") {
+            FreeTierTunables.shared.resetToDefaults()
+        }
         if LibraryServices.usesMock {
             let entitlements = EntitlementServices.make(mock: true)
             let suite = "mock.reminders"

@@ -243,6 +243,18 @@ struct FreeTierTunablesTests {
         #expect(tier.value(.swipeCap) == 50)
     }
 
+    @Test func thePostDeleteUpsellIntervalIsTunedInHours() {
+        let devMode = devMode(on: true)
+        let tier = FreeTierTunables(defaults: freshDefaults(), devMode: devMode)
+        #expect(tier.defaultValue(.postDeleteUpsellHours) == 24)
+
+        tier.set(.postDeleteUpsellHours, 6)
+        #expect(tier.limits.postDeleteUpsellInterval == 6 * 3600)
+
+        devMode.setEnabled(false)
+        #expect(tier.limits.postDeleteUpsellInterval == 24 * 3600, "Developer mode off uses the default")
+    }
+
     @Test func resetGoesBackToTheDefaults() {
         let defaults = freshDefaults()
         let tier = FreeTierTunables(defaults: defaults, devMode: devMode(on: true))
