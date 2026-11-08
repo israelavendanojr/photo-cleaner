@@ -1,9 +1,9 @@
 import SwiftUI
 
-/// Rounded label used for flags, card kinds, and the "Best pick" badge.
+/// Rounded label: the "Best pick" and "Keep" markers, a video's length, swipes left.
 struct Chip: View {
     enum Style {
-        /// Brick text on tint. Flags and card kinds.
+        /// Brick text on tint, e.g. swipes left.
         case brick
         /// Ink text on card. Neutral labels over imagery.
         case plain
@@ -57,10 +57,9 @@ struct Chip: View {
 
 #Preview {
     VStack(spacing: 16) {
-        Chip(text: "Possibly blurry", systemImage: "exclamationmark.circle")
-        Chip(text: "6 similar shots")
+        Chip(text: "3 left", size: .caption)
         Chip(text: "Best pick", systemImage: "star.fill", style: .plain)
-        Chip(text: "Video · 4:12", style: .frosted)
+        Chip(text: "4:12", style: .frosted)
             .padding()
             .background(DS.Palette.ink.opacity(0.6))
     }
