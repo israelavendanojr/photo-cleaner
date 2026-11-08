@@ -113,6 +113,9 @@ final class FeedViewModel {
     private(set) var upsellFreedBytes: Int64 = 0
     /// A free user's delete earned the unlock offer; it waits for the pile to close.
     private var isDeleteUpsellQueued = false
+    /// The wall has shown since launch. Every wall ends in a dismiss or an unlock, so the delete
+    /// offer stays away for the rest of the process.
+    private var wasWallShownThisSession = false
     /// A free user's swipe was refused because the pile is full. FeedView shows it.
     var isPileFullNoticePresented = false
     /// Something about the last delete the user should know, e.g. items the system refused.
@@ -644,9 +647,19 @@ final class FeedViewModel {
         }
     }
 
-    /// RootView showed the unlock offer after a delete, or decided not to.
-    func finishDeleteUpsell() {
+    /// RootView showed the unlock offer after a delete, or decided not to. Only a shown offer
+    /// starts the wait before the next one.
+    func finishDeleteUpsell(shown: Bool) {
         isDeleteUpsellDue = false
+        if shown { defaults.set(now(), forKey: DefaultsKey.deleteUpsellShownAt) }
+    }
+
+    /// The delete offer shows after the first delete, then at most once per `deleteUpsellInterval`,
+    /// and never once the wall has shown this session.
+    private var isDeleteUpsellAllowed: Bool {
+        guard !wasWallShownThisSession else { return false }
+        guard let last = defaults.object(forKey: DefaultsKey.deleteUpsellShownAt) as? Date else { return true }
+        return now().timeIntervalSince(last) >= Self.deleteUpsellInterval
     }
 
     /// RootView handled the due prompt. `asked` records this version, so it won't ask again until the next.
@@ -671,6 +684,7 @@ final class FeedViewModel {
         refreshAllowance()
         if !isWallPresented { paywallStatus = .idle }
         isWallPresented = true
+        wasWallShownThisSession = true
         Task { await refreshEstimate() }
     }
 
@@ -785,7 +799,7 @@ final class FeedViewModel {
     // MARK: Internals
 
     /// Counts the delete and queues what follows it once the pile closes: the unlock offer for a free
-    /// user, or a review prompt if the delete earned one (see `ReviewPrompt`). Never both.
+    /// user (throttled, see `isDeleteUpsellAllowed`), or a review prompt if the delete earned one (see `ReviewPrompt`). Never both.
     private func queueFollowUp(freed: Int64) {
         let prior = defaults.integer(forKey: DefaultsKey.deleteCount)
         defaults.set(prior + 1, forKey: DefaultsKey.deleteCount)
@@ -793,6 +807,8 @@ final class FeedViewModel {
         isDeleteUpsellQueued = false
         guard !isWallPresented else { return }
         if !isUnlocked {
+            // Free users never get the review prompt, offer or not.
+            guard isDeleteUpsellAllowed else { return }
             upsellFreedBytes = freed
             isDeleteUpsellQueued = true
             return
@@ -1235,6 +1251,8 @@ extension FeedViewModel {
     static let keptBehind = 30
     /// Items a free user's pile holds before they have to delete. Unlocked, there's no limit.
     static let freePileCap = 50
+    /// Least time between two unlock offers after a delete. Read only by `isDeleteUpsellAllowed`.
+    static let deleteUpsellInterval: TimeInterval = 24 * 60 * 60
 }
 
 // MARK: - Mock setup
