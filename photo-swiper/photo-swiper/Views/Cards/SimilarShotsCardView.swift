@@ -19,7 +19,7 @@ struct SimilarShotsCardView: View {
             header
             hero
                 .padding(.top, DS.Spacing.s)
-            Text(group.reason)
+            Text("\(group.items.count) similar shots")
                 .dsSerif(22, relativeTo: .title3, italic: true)
                 .foregroundStyle(DS.Palette.ink)
                 .padding(.top, DS.Spacing.s)
@@ -39,14 +39,11 @@ struct SimilarShotsCardView: View {
     }
 
     private var header: some View {
-        HStack {
-            Chip(text: "\(group.items.count) similar shots")
-            Spacer(minLength: DS.Spacing.xs)
-            Text("\(Format.shortDay(group.best.date)) · \(Format.size(totalBytes))")
-                .font(.subheadline)
-                .foregroundStyle(DS.Palette.secondary)
-                .lineLimit(1)
-        }
+        Text("\(Format.shortDay(group.best.date)) · \(Format.size(totalBytes))")
+            .font(.subheadline)
+            .foregroundStyle(DS.Palette.secondary)
+            .lineLimit(1)
+            .frame(maxWidth: .infinity, alignment: .trailing)
     }
 
     private var hero: some View {
@@ -68,7 +65,7 @@ struct SimilarShotsCardView: View {
                 }
             }
             .accessibilityElement()
-            .accessibilityLabel("Best pick. \(group.reason)")
+            .accessibilityLabel("Best pick")
             .accessibilityValue(marked.contains(group.bestID) ? "Marked to clear" : "")
             .accessibilityAddTraits(.isButton)
             .accessibilityIdentifier("similar.hero")

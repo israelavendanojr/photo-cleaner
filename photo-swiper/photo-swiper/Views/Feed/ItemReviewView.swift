@@ -44,11 +44,19 @@ struct ItemReviewView: View {
                 returning: returning,
                 label: vm.swipeLabel,
                 onDecide: decide,
-                request: $request,
-                bestPickReason: bestPickReason
+                request: $request
             )
         }
+        #if DEBUG
+        .overlay(alignment: .top) { BestPickMarker(isBestPick: isOnBestPick) }
+        #endif
         .background(DS.Palette.paper)
+    }
+
+    /// Whether the top card is the set's suggested keeper.
+    private var isOnBestPick: Bool {
+        guard let bestID = set.bestID, items.indices.contains(index) else { return false }
+        return items[index].id == bestID
     }
 
     private var topBar: some View {
@@ -68,11 +76,6 @@ struct ItemReviewView: View {
             ToClearCounter(bytes: clearBytes, addedBytes: addedBytes, addedID: index)
                 .frame(maxWidth: .infinity, alignment: .trailing)
         }
-    }
-
-    private func bestPickReason(for card: FeedCard) -> String? {
-        guard let bestID = set.bestID, card.items.first?.id == bestID else { return nil }
-        return set.reason ?? ""
     }
 
     private func decide(_ direction: SwipeDirection, card: FeedCard) {
@@ -110,6 +113,22 @@ struct ItemReviewView: View {
 }
 
 #if DEBUG
+/// Tells UI tests whether the review is on the best pick, now that the card doesn't say.
+/// Only with the mock library.
+private struct BestPickMarker: View {
+    let isBestPick: Bool
+
+    var body: some View {
+        if LibraryServices.usesMock {
+            Color.clear
+                .frame(width: 1, height: 1)
+                .accessibilityElement()
+                .accessibilityLabel(isBestPick ? "best pick" : "other")
+                .accessibilityIdentifier("review.bestPick")
+        }
+    }
+}
+
 #Preview("Batch") {
     ItemReviewView(set: ReviewSet(batch: PreviewSamples.screenshotBatch)) { print($0) }
         .environment(FeedViewModel.mock())

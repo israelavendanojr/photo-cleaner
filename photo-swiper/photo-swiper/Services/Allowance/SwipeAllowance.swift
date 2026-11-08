@@ -84,6 +84,18 @@ struct SwipeAllowance: Codable, Equatable, Sendable {
         return true
     }
 
+    /// Follows a change of tunables (Developer mode): credits refills owed under the old ones first,
+    /// then trims the balance to a lower cap, or starts the refill timer below a higher one.
+    mutating func adjust(from old: Tunables, to new: Tunables, at now: Date) {
+        settle(at: now, old)
+        balance = min(balance, new.cap)
+        if balance >= new.cap {
+            anchor = nil
+        } else if anchor == nil {
+            anchor = max(now, lastSeen)
+        }
+    }
+
     /// Gives back a swipe (undo), up to the cap.
     mutating func refund(at now: Date, _ t: Tunables) {
         settle(at: now, t)

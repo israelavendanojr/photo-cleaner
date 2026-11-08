@@ -55,6 +55,14 @@ private extension FeedViewModel {
             UserDefaults.standard.removeObject(forKey: DefaultsKey.hasSeenSwipeHint)
             UserDefaults.standard.set(true, forKey: DefaultsKey.debugShowOnboarding)
         }
+        // `-resetUpsell YES` forgets when the delete offer last showed, so it's due again.
+        if UserDefaults.standard.bool(forKey: "resetUpsell") {
+            UserDefaults.standard.removeObject(forKey: DefaultsKey.deleteUpsellShownAt)
+        }
+        // `-resetTunables YES` drops Developer mode's saved free-limit overrides, so UI tests run on the defaults.
+        if UserDefaults.standard.bool(forKey: "resetTunables") {
+            FreeTierTunables.shared.resetToDefaults()
+        }
         if LibraryServices.usesMock {
             let entitlements = EntitlementServices.make(mock: true)
             let suite = "mock.reminders"
@@ -64,11 +72,11 @@ private extension FeedViewModel {
             let allowance = debugSwipesLeft.map { SwipeAllowance(balance: $0, tunables: allowanceTunables, now: .now) }
             if let raw = UserDefaults.standard.string(forKey: "startAt"), let start = MockStart(rawValue: raw) {
                 return .mock(startingAt: start, entitlements: entitlements, allowance: allowance,
-                             allowanceTunables: allowanceTunables, notifier: notifier)
+                             freeTier: .shared, notifier: notifier)
             }
             return FeedViewModel(
                 library: MockPhotoLibrary(), builder: MockFeedBuilder(), store: mockProgressStore(), entitlements: entitlements,
-                allowanceStore: SwipeAllowanceStore(initial: allowance), allowanceTunables: allowanceTunables, notifier: notifier
+                allowanceStore: SwipeAllowanceStore(initial: allowance), freeTier: .shared, notifier: notifier
             )
         }
         if let left = debugSwipesLeft {
@@ -89,7 +97,7 @@ private extension FeedViewModel {
             assertionFailure("Couldn't open saved progress: \(error)")
             return FeedViewModel(
                 library: library, builder: PhotoKitFeedBuilder(), store: InMemoryProgressStore(), entitlements: entitlements,
-                allowanceStore: SwipeAllowanceStore(defaults: .standard), allowanceTunables: allowanceTunables
+                allowanceStore: SwipeAllowanceStore(defaults: .standard), freeTier: .shared
             )
         }
         let store = SwiftDataProgressStore(container: container)
@@ -106,17 +114,14 @@ private extension FeedViewModel {
             indexScheduler: IndexScheduler(indexer: indexer, library: library),
             firstSessionMinimum: FeedViewModel.onboardingPreparingMinimum,
             allowanceStore: SwipeAllowanceStore(defaults: .standard),
-            allowanceTunables: allowanceTunables,
+            freeTier: .shared,
             notifier: RefillNotifier(center: SystemNotificationCenter(), defaults: .standard)
         )
     }
 
-    static var allowanceTunables: SwipeAllowance.Tunables {
-        #if DEBUG
-        if UserDefaults.standard.bool(forKey: "refillSoon") { return .refillSoon }
-        #endif
-        return .standard
-    }
+    /// The live free-tier tunables (`-refillSoon YES` is applied in `FreeTierLimits.launch`).
+    static var allowanceTunables: SwipeAllowance.Tunables { FreeTierTunables.shared.limits.allowance }
+
 
     #if DEBUG
     /// `-mockProgress YES`: saved mock progress in its own file, apart from the real one. Otherwise in memory.

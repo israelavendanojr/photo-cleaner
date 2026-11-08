@@ -171,6 +171,50 @@ final class photo_swiperUITests: XCTestCase {
         XCTAssertFalse(emptyPile(app).exists)
     }
 
+    // MARK: Card labels
+
+    @MainActor
+    func testFlaggedPhotoCardShowsNoFlag() throws {
+        let app = launch("-startAt", "similar")
+        XCTAssertTrue(similarHero(app).waitForExistence(timeout: 5))
+        // Card 12, a blurry photo (see MockDeckTests), is six keeps past the similar card.
+        for _ in 0..<6 {
+            let card = topCard(app)
+            tapAndWait(onScreen(app, "Keep"))
+            XCTAssertTrue(waitForTopCard(app, not: card))
+        }
+        XCTAssertTrue(waitForTopCard(app, containing: "s1-i30"), "On the blurry photo")
+        XCTAssertFalse(element(app, containing: "Possibly blurry").exists)
+        XCTAssertFalse(element(app, containing: "Best pick").exists)
+        XCTAssertTrue(element(app, containing: "Photo, ").exists, "Date, place and size stay")
+        attachScreenshot(app, "flagged photo card")
+    }
+
+    @MainActor
+    func testSimilarCardHeadlinesTheCount() throws {
+        let app = launch("-startAt", "similar")
+        XCTAssertTrue(similarHero(app).waitForExistence(timeout: 5))
+        XCTAssertTrue(element(app, containing: "6 similar shots").exists)
+        XCTAssertTrue(element(app, containing: "The other five can go.").exists)
+        XCTAssertFalse(element(app, containing: "Sharpest of the set").exists, "The pick's reason isn't shown")
+        XCTAssertEqual(similarHero(app).label, "Best pick")
+    }
+
+    @MainActor
+    func testBatchCardHasNoKindChip() throws {
+        let app = launch("-startAt", "batch")
+        let title = element(app, containing: "14 screenshots from last week")
+        XCTAssertTrue(title.waitForExistence(timeout: 5))
+        XCTAssertTrue(title.label.hasPrefix("14 screenshots from last week"), "The title leads, with no chip before it")
+    }
+
+    @MainActor
+    func testVideoCardShowsJustTheDuration() throws {
+        let app = launch("-startAt", "video")
+        XCTAssertTrue(element(app, containing: "Video, 4:12").waitForExistence(timeout: 5))
+        XCTAssertFalse(element(app, containing: "Video ·").exists)
+    }
+
     @MainActor
     func testSimilarHeroOpensReviewOnTheBestPick() throws {
         let app = launch("-startAt", "similar")
@@ -182,7 +226,8 @@ final class photo_swiperUITests: XCTestCase {
 
         XCTAssertTrue(element(app, containing: "Similar shots").waitForExistence(timeout: 3))
         XCTAssertTrue(element(app, containing: "1 of 6").exists)
-        XCTAssertTrue(element(app, containing: "Photo, Best pick. Sharpest of the set").exists, "The best pick shows its chip")
+        XCTAssertEqual(bestPickMarker(app).label, "best pick", "It opens on the best pick")
+        XCTAssertFalse(element(app, containing: "Best pick.").exists, "No reason is read out")
         attachScreenshot(app, "similar review on best pick")
     }
 
@@ -196,11 +241,11 @@ final class photo_swiperUITests: XCTestCase {
 
         XCTAssertTrue(element(app, containing: "1 of 6").waitForExistence(timeout: 3))
         sleep(1)
-        XCTAssertFalse(element(app, containing: "Photo, Best pick").exists, "It opens on shot 3, not the best pick")
+        XCTAssertEqual(bestPickMarker(app).label, "other", "It opens on shot 3, not the best pick")
         // Shots 3 to 6, then it wraps to the best pick and shot 2.
         for _ in 0..<4 { tapAndWait(onScreen(app, "Keep")) }
         XCTAssertTrue(element(app, containing: "5 of 6").waitForExistence(timeout: 3))
-        XCTAssertTrue(element(app, containing: "Photo, Best pick").exists, "It wraps around to the best pick")
+        XCTAssertEqual(bestPickMarker(app).label, "best pick", "It wraps around to the best pick")
     }
 
     @MainActor
@@ -351,7 +396,7 @@ final class photo_swiperUITests: XCTestCase {
     @MainActor
     func testVideoPreviewPlaysScrubsAndClosesWithoutDeciding() throws {
         let app = launch("-startAt", "video")
-        XCTAssertTrue(element(app, containing: "Video ·").waitForExistence(timeout: 5))
+        XCTAssertTrue(element(app, containing: "Video, ").waitForExistence(timeout: 5))
         let position = topCard(app)
 
         // The play button sits in the middle of the card.
@@ -461,7 +506,7 @@ final class photo_swiperUITests: XCTestCase {
     @MainActor
     func testVideoPreviewSwipeRightKeeps() throws {
         let app = launch("-startAt", "video")
-        XCTAssertTrue(element(app, containing: "Video ·").waitForExistence(timeout: 5))
+        XCTAssertTrue(element(app, containing: "Video, ").waitForExistence(timeout: 5))
         let position = topCard(app)
 
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
@@ -525,11 +570,31 @@ final class photo_swiperUITests: XCTestCase {
     }
 
     @MainActor
+    func testAFullPileOffersNoUnlock() throws {
+        // The first video is 1.2 GB: bigger than the whole free bin, so it only fits an empty pile.
+        let app = launch("-startAt", "video", "-unlocked", "NO")
+        let video = topCard(app)
+        drag(app, to: CGVector(dx: 0.02, dy: 0.5))
+        XCTAssertTrue(waitForTopCard(app, not: video), "An empty pile takes it")
+        XCTAssertTrue(element(app, containing: "of 1 GB").waitForExistence(timeout: 3), "The counter shows the limit")
+
+        let next = topCard(app)
+        drag(app, to: CGVector(dx: 0.02, dy: 0.5))
+        let alert = app.alerts["Your pile is full"]
+        XCTAssertTrue(alert.waitForExistence(timeout: 3))
+        XCTAssertTrue(alert.buttons["Review pile"].exists)
+        XCTAssertFalse(alert.buttons["Unlock"].exists, "Free users clear the pile; the pitch comes after the delete")
+        attachScreenshot(app, "pile full")
+        alert.buttons["Not now"].tap()
+        XCTAssertEqual(topCard(app), next, "Nothing was decided")
+    }
+
+    @MainActor
     func testFreeDeleteOffersTheUnlockAfterThePileCloses() throws {
         let app = launch("-startAt", "pending", "-showPile", "YES", "-unlocked", "NO")
         let limit = app.descendants(matching: .any)["pile.limit"]
         XCTAssertTrue(limit.waitForExistence(timeout: 5), "Free users see how full the pile is")
-        XCTAssertTrue(limit.label.contains("of 50 photos"))
+        XCTAssertTrue(limit.label.contains("of 1 GB"), "The free pile is capped by storage")
         deleteAllInPile(app)
 
         let unlock = app.buttons["paywall.unlock"]
@@ -610,7 +675,9 @@ final class photo_swiperUITests: XCTestCase {
         let unlock = app.buttons["paywall.unlock"]
         XCTAssertTrue(unlock.waitForExistence(timeout: 5), "The swipe is refused and the wall opens")
         XCTAssertTrue(element(app, containing: "Out of swipes").exists)
-        XCTAssertTrue(element(app, containing: "+10 in").exists)
+        let countdown = app.descendants(matching: .any)["wall.countdown"]
+        XCTAssertTrue(countdown.exists, "The wall says when swipes come back")
+        XCTAssertTrue(countdown.label.hasPrefix("+10 in "), "Plainly: \(countdown.label)")
         XCTAssertTrue(element(app, containing: "Unlimited swipes").exists)
         XCTAssertEqual(unlock.label, "Unlock for $9.99, one-time purchase")
         sleep(1)
@@ -619,6 +686,10 @@ final class photo_swiperUITests: XCTestCase {
         app.buttons["paywall.notNow"].tap()
         XCTAssertTrue(unlock.waitForNonExistence(timeout: 3))
         XCTAssertEqual(cardMarker(app).label, second, "Nothing was committed; the deck stays")
+        let pill = app.buttons["feed.swipesLeft"]
+        XCTAssertTrue(pill.isHittable)
+        XCTAssertEqual(pill.label, "0 swipes left", "At zero the pill says 0 left, no countdown")
+        XCTAssertFalse(element(app, containing: "+10 in").exists)
 
         tapCenter(onScreen(app, "Delete"))
         XCTAssertTrue(unlock.waitForExistence(timeout: 5), "The next swipe asks again")
@@ -741,6 +812,67 @@ final class photo_swiperUITests: XCTestCase {
         XCTAssertEqual(left.label, "Swipes left, 0")
     }
 
+    @MainActor
+    func testDeveloperModeSwitchesOffAndSevenTapsBringItBack() throws {
+        let app = launch()
+        openSettings(app)
+        let devMode = app.switches["settings.debug.devMode"]
+        scrollTo(devMode, in: app)
+        XCTAssertEqual(devMode.value as? String, "1", "Debug builds start in Developer mode")
+        // The panel sits below, in the same scroll view, so it's in the tree without scrolling.
+        let binSize = app.textFields["settings.tuning.freeBinMB"]
+        XCTAssertTrue(binSize.exists)
+        XCTAssertEqual(binSize.value as? String, "1000", "The free bin defaults to 1 GB")
+        XCTAssertTrue(element(app, containing: "swipes/day").exists, "The derived per-day line shows")
+        XCTAssertTrue(app.descendants(matching: .any)["settings.tuning.countdown"].exists)
+
+        flip(devMode)
+        XCTAssertTrue(devMode.waitForNonExistence(timeout: 3), "Off hides the Admin Tools section")
+        XCTAssertFalse(binSize.exists)
+
+        let version = app.descendants(matching: .any)["settings.version"]
+        for _ in 0..<6 where !(version.exists && version.isHittable) { app.swipeDown() }
+        XCTAssertTrue(version.isHittable)
+        for _ in 0..<7 { version.tap() }
+        XCTAssertTrue(app.descendants(matching: .any)["settings.devModeToast"].waitForExistence(timeout: 2))
+        XCTAssertTrue(devMode.waitForExistence(timeout: 3), "Seven taps turn it back on")
+    }
+
+    // MARK: Admin Tools
+
+    @MainActor
+    func testAddingAMockSimilarCardPutsItOnTopOfTheFeed() throws {
+        let app = launch()
+        let before = topCard(app)
+        openSettings(app)
+        XCTAssertTrue(element(app, containing: "Admin Tools").exists, "The section is called Admin Tools")
+        let add = app.buttons["settings.admin.mock.similar"]
+        scrollTo(add, in: app)
+        add.tap()
+
+        XCTAssertTrue(waitForTopCard(app, containing: "admin-"), "Back on the feed with the mock card on top")
+        XCTAssertTrue(similarHero(app).waitForExistence(timeout: 3), "It's a similar shots card")
+        attachScreenshot(app, "mock similar card")
+
+        swipe(app, forward: false)
+        XCTAssertTrue(waitForTopCard(app, is: before), "The card that was on top is next")
+    }
+
+    @MainActor
+    func testRaisingThePostDeleteUpsellShowsIt() throws {
+        // A pick saved from an earlier run would change what's raised.
+        let app = launch("-unlocked", "NO", "-admin.upsellScreen", "postDelete")
+        openSettings(app)
+        let raise = app.buttons["settings.admin.raiseUpsell"]
+        scrollTo(raise, in: app)
+        XCTAssertTrue(raise.label.contains("Post-delete sheet"), "The default pick, read \(raise.label)")
+        raise.tap()
+
+        let title = app.descendants(matching: .any)["unlock.title"]
+        XCTAssertTrue(title.waitForExistence(timeout: 5), "The offer comes up once Settings closes")
+        XCTAssertTrue(title.label.hasPrefix("Freed "), "Read \(title.label)")
+    }
+
     // MARK: Progress
 
     @MainActor
@@ -811,6 +943,13 @@ final class photo_swiperUITests: XCTestCase {
     }
 
     /// The debug marker naming the top card by id, "none" while the deck waits on more.
+    /// The debug marker saying whether the one-by-one review is on the best pick.
+    private func bestPickMarker(_ app: XCUIApplication) -> XCUIElement {
+        let marker = app.descendants(matching: .any)["review.bestPick"]
+        XCTAssertTrue(marker.waitForExistence(timeout: 3), "The review shows")
+        return marker
+    }
+
     private func similarHero(_ app: XCUIApplication) -> XCUIElement {
         app.descendants(matching: .any)["similar.hero"]
     }
@@ -892,8 +1031,9 @@ final class photo_swiperUITests: XCTestCase {
     private func launch(_ arguments: String...) -> XCUIApplication {
         let app = XCUIApplication()
         // Always the mock library, so tests never hit the photo permission prompt. The swipe
-        // hint's nudge would move the card under a drag, so it counts as already seen.
-        app.launchArguments = ["-mockLibrary", "YES", "-hasSeenSwipeHint", "YES"] + arguments
+        // hint's nudge would move the card under a drag, so it counts as already seen. The unlock
+        // offer after a delete shows once a day, so each launch starts with it due.
+        app.launchArguments = ["-mockLibrary", "YES", "-hasSeenSwipeHint", "YES", "-resetUpsell", "YES", "-resetTunables", "YES"] + arguments
         app.launch()
         return app
     }

@@ -76,6 +76,18 @@ struct RefillNotifierTests {
         #expect(RefillReminderPlanner.refillBody(amount: 10, estimate: ClutterEstimate()) == "10 swipes are back")
     }
 
+    @Test func remindersNeverPitchTheUnlock() {
+        let plan = RefillReminderPlanner.plan(
+            nextRefillAt: at(15), fullAt: at(day: 11, 15), tunables: t,
+            estimate: ClutterEstimate(likelyClearBytes: 1_000_000_000, similarGroupCount: 2), log: [], calendar: calendar
+        )
+        #expect(plan.count == 2)
+        for reminder in plan {
+            let body = reminder.body.lowercased()
+            #expect(!body.contains("unlock") && !body.contains("upgrade") && !body.contains("purchase"))
+        }
+    }
+
     // MARK: Notifier
 
     @Test func nothingIsScheduledWithoutOptingIn() async {

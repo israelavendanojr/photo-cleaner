@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// Settings' "Unlock": the same offer as the swipe wall, without the countdown. Closes itself once unlocked.
-/// Also offered after a free user's delete and from a full pile, with its own headline.
+/// Also offered after a free user's delete (at most once a day), with its own headline.
 struct UnlockSheet: View {
     @Environment(FeedViewModel.self) private var vm
     @Environment(\.dismiss) private var dismiss

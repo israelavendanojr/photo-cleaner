@@ -171,7 +171,7 @@ final class SwipeRewindUITests: XCTestCase {
     private func launch(_ arguments: String...) -> XCUIApplication {
         let app = XCUIApplication()
         // The mock library, and the swipe demo counted as seen so it can't move the card.
-        app.launchArguments = ["-mockLibrary", "YES", "-hasSeenSwipeHint", "YES"] + arguments
+        app.launchArguments = ["-mockLibrary", "YES", "-hasSeenSwipeHint", "YES", "-resetTunables", "YES"] + arguments
         app.launch()
         return app
     }

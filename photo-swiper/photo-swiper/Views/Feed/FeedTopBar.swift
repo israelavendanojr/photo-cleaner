@@ -26,14 +26,14 @@ struct FeedTopBar: View {
         }
     }
 
-    /// Free users see how full the pile is, e.g. "12/50 photos", instead of "to clear".
+    /// Free users see how full the pile is, e.g. "320 MB" over "of 1 GB", instead of "to clear".
     private var counter: some View {
-        let count = vm.pendingItems.count
-        let limit = vm.pileLimit
+        let limit = vm.pileLimitBytes.map(Format.limit)
         return ToClearCounter(
             bytes: vm.pendingBytes,
-            label: limit.map { "\(count)/\($0) photos" } ?? "to clear",
-            accessibilityText: limit.map { "to clear, \(count) of \($0) photos" },
+            label: limit.map { "of \($0)" } ?? "to clear",
+            accessibilityText: limit.map { "to clear, of \($0) free pile" },
+
             isLabelEmphasized: vm.isPileFull,
             addedBytes: vm.deleteChip?.bytes,
             addedID: vm.deleteChip?.id
@@ -49,7 +49,7 @@ struct FeedTopBar: View {
     @ViewBuilder
     private var status: some View {
         if let left = vm.swipesLeft, left <= Self.lowSwipes {
-            SwipesLeftPill(left: left, nextRefillAt: vm.nextRefillAt, refillAmount: vm.allowanceTunables.refillAmount) {
+            SwipesLeftPill(left: left) {
                 vm.presentWall()
             }
             .fixedSize()
@@ -69,26 +69,17 @@ struct FeedTopBar: View {
     }
 }
 
-/// "3 left", or the countdown to the next refill at zero. Opens the wall.
+/// "3 left", down to "0 left". Opens the wall.
 private struct SwipesLeftPill: View {
     let left: Int
-    let nextRefillAt: Date?
-    let refillAmount: Int
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
-            if left == 0, let nextRefillAt {
-                TimelineView(.periodic(from: .now, by: 1)) { context in
-                    Chip(text: "+\(refillAmount) in \(Format.countdown(nextRefillAt.timeIntervalSince(context.date)))", size: .caption)
-                        .monospacedDigit()
-                }
-            } else {
-                Chip(text: "\(left) left", size: .caption)
-            }
+            Chip(text: "\(left) left", size: .caption)
         }
         .buttonStyle(PressScaleStyle())
-        .accessibilityLabel(left == 0 ? "Out of swipes" : "\(left) swipes left")
+        .accessibilityLabel("\(left) swipes left")
         .accessibilityHint("Shows when more swipes arrive")
         .accessibilityIdentifier("feed.swipesLeft")
     }

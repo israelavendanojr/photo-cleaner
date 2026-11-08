@@ -39,7 +39,7 @@ final class PreviewZoomUITests: XCTestCase {
     @MainActor
     func testPinchedVideoKeepsPlayingAndPansInsteadOfDeciding() throws {
         let app = launch("-startAt", "video")
-        XCTAssertTrue(element(app, containing: "Video ·").waitForExistence(timeout: 5))
+        XCTAssertTrue(element(app, containing: "Video, ").waitForExistence(timeout: 5))
         let position = topCard(app)
 
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
@@ -90,7 +90,7 @@ final class PreviewZoomUITests: XCTestCase {
 
     private func launch(_ arguments: String...) -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchArguments = ["-mockLibrary", "YES", "-hasSeenSwipeHint", "YES"] + arguments
+        app.launchArguments = ["-mockLibrary", "YES", "-hasSeenSwipeHint", "YES", "-resetTunables", "YES"] + arguments
         app.launch()
         return app
     }

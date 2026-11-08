@@ -153,4 +153,154 @@ struct SwipeAllowanceTests {
     @Test func swipesPerDayFollowsTheTunables() {
         #expect(t.swipesPerDay == 40)
     }
+
+    // MARK: Changing tunables (Developer mode)
+
+    @Test func aLowerCapTrimsTheBalanceAndStopsTheTimer() {
+        var allowance = spent(5)
+        allowance.adjust(from: t, to: SwipeAllowance.Tunables(cap: 10), at: start)
+        #expect(allowance.remaining == 10)
+        #expect(allowance.nextRefillAt(t) == nil)
+    }
+
+    @Test func aHigherCapStartsTheTimerFromFull() {
+        var allowance = SwipeAllowance(tunables: t, now: start)
+        let higher = SwipeAllowance.Tunables(cap: 30)
+        allowance.adjust(from: t, to: higher, at: hours(1))
+        #expect(allowance.remaining == 20)
+        #expect(allowance.nextRefillAt(higher) == hours(7))
+        allowance.settle(at: hours(7), higher)
+        #expect(allowance.remaining == 30)
+    }
+
+    @Test func refillsOwedUnderTheOldTunablesAreCreditedFirst() {
+        var allowance = spent(20)
+        allowance.adjust(from: t, to: SwipeAllowance.Tunables(refillInterval: 60), at: hours(6))
+        #expect(allowance.remaining == 10)
+    }
+}
+
+/// The one place the free tier's limits come from, and Developer mode's overrides of them.
+@MainActor
+struct FreeTierTunablesTests {
+    private func devMode(on: Bool) -> DevMode {
+        let devMode = DevMode(environment: .testFlight, defaults: freshDefaults())
+        devMode.setEnabled(on)
+        return devMode
+    }
+
+    @Test func theDefaultsAreTheHardcodedValues() {
+        let tier = FreeTierTunables(defaults: freshDefaults(), devMode: devMode(on: true))
+        #expect(tier.limits == .standard)
+        #expect(tier.value(.swipeCap) == 20)
+        #expect(tier.value(.refillAmount) == 10)
+        #expect(tier.value(.refillIntervalMinutes) == 360)
+        #expect(tier.value(.freeBinMB) == 1_000)
+        #expect(!tier.isCustomized)
+    }
+
+    @Test func overridesApplyLiveAndAreSaved() {
+        let defaults = freshDefaults()
+        let devMode = devMode(on: true)
+        let tier = FreeTierTunables(defaults: defaults, devMode: devMode)
+
+        tier.set(.swipeCap, 50)
+        tier.set(.refillAmount, 5)
+        tier.set(.refillIntervalMinutes, 60)
+        tier.set(.freeBinMB, 250)
+
+        #expect(tier.limits.allowance == SwipeAllowance.Tunables(cap: 50, refillAmount: 5, refillInterval: 3600))
+        #expect(tier.limits.freeBinBytes == 250_000_000)
+        #expect(tier.limits.allowance.swipesPerDay == 120)
+        #expect(tier.defaultValue(.swipeCap) == 20, "Defaults stay beside the fields")
+        let relaunched = FreeTierTunables(defaults: defaults, devMode: devMode)
+        #expect(relaunched.limits == tier.limits)
+    }
+
+    @Test func valuesAreClampedToTheirRanges() {
+        let tier = FreeTierTunables(defaults: freshDefaults(), devMode: devMode(on: true))
+        tier.set(.swipeCap, 0)
+        tier.set(.refillAmount, 9_999)
+        tier.set(.refillIntervalMinutes, 2_000)
+        tier.set(.freeBinMB, 1)
+        #expect(tier.value(.swipeCap) == 1)
+        #expect(tier.value(.refillAmount) == 500)
+        #expect(tier.value(.refillIntervalMinutes) == 1_440)
+        #expect(tier.value(.freeBinMB) == 10)
+    }
+
+    @Test func developerModeOffIgnoresSavedOverrides() {
+        let defaults = freshDefaults()
+        let devMode = devMode(on: true)
+        let tier = FreeTierTunables(defaults: defaults, devMode: devMode)
+        tier.set(.swipeCap, 50)
+
+        devMode.setEnabled(false)
+        #expect(tier.limits == .standard)
+        #expect(defaults.integer(forKey: FreeTierTunable.swipeCap.defaultsKey) == 50, "Kept for next time")
+
+        devMode.setEnabled(true)
+        #expect(tier.value(.swipeCap) == 50)
+    }
+
+    @Test func thePostDeleteUpsellIntervalIsTunedInHours() {
+        let devMode = devMode(on: true)
+        let tier = FreeTierTunables(defaults: freshDefaults(), devMode: devMode)
+        #expect(tier.defaultValue(.postDeleteUpsellHours) == 24)
+
+        tier.set(.postDeleteUpsellHours, 6)
+        #expect(tier.limits.postDeleteUpsellInterval == 6 * 3600)
+
+        devMode.setEnabled(false)
+        #expect(tier.limits.postDeleteUpsellInterval == 24 * 3600, "Developer mode off uses the default")
+    }
+
+    @Test func resetGoesBackToTheDefaults() {
+        let defaults = freshDefaults()
+        let tier = FreeTierTunables(defaults: defaults, devMode: devMode(on: true))
+        tier.set(.freeBinMB, 300)
+        tier.set(.swipeCap, 7)
+        #expect(tier.isCustomized)
+
+        tier.resetToDefaults()
+
+        #expect(tier.limits == .standard)
+        #expect(!tier.isCustomized)
+        #expect(defaults.object(forKey: FreeTierTunable.freeBinMB.defaultsKey) == nil)
+    }
+
+    @Test func refillSoonIsTheBaselineAndShowsAsOneMinute() {
+        let tier = FreeTierTunables(baseline: FreeTierLimits(allowance: .refillSoon), defaults: freshDefaults(), devMode: devMode(on: true))
+        #expect(tier.limits.allowance.refillInterval == 60)
+        #expect(tier.defaultValue(.refillIntervalMinutes) == 1)
+    }
+
+    @Test func fixedTunablesNeverChange() {
+        let tier = FreeTierTunables.fixed(FreeTierLimits(allowance: SwipeAllowance.Tunables(cap: 1_000)))
+        tier.set(.swipeCap, 3)
+        #expect(tier.limits.allowance.cap == 1_000)
+    }
+
+    @Test func theViewModelFollowsATunedCap() {
+        let devMode = devMode(on: true)
+        let tier = FreeTierTunables(defaults: freshDefaults(), devMode: devMode)
+        let builder = MockFeedBuilder()
+        let vm = FeedViewModel(
+            library: FakeLibrary(), builder: builder, entitlements: TestEntitlements(isUnlocked: false),
+            session: builder.makeSessionNow(number: 1),
+            stats: LibraryStats(totalItems: 500, reviewedItems: 0, freedBytes: 0), freeTier: tier
+        )
+        #expect(vm.swipesLeft == 20)
+
+        vm.setFreeTierValue(.swipeCap, 5)
+        #expect(vm.swipesLeft == 5)
+        #expect(vm.allowanceTunables.cap == 5)
+
+        vm.setFreeTierValue(.swipeCap, 8)
+        #expect(vm.swipesLeft == 5)
+        #expect(vm.nextRefillAt != nil, "Below the new cap, the refill timer runs")
+
+        vm.resetFreeTierToDefaults()
+        #expect(vm.allowanceTunables == .standard)
+    }
 }

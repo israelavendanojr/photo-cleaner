@@ -8,6 +8,9 @@ struct RootView: View {
     @State private var isPilePresented = false
     /// The unlock offered after a free user's delete.
     @State private var isUpsellPresented = false
+    /// Admin Tools' "Raise upsell": the onboarding pitch on its own, or the plain unlock sheet.
+    @State private var isAdminPitchPresented = false
+    @State private var isAdminUnlockPresented = false
     /// The tabs' bottom safe area, tab bar included.
     @State private var tabBarInset: CGFloat = 0
     /// The feed is about to replace onboarding, so its first deck deals in.
@@ -48,6 +51,10 @@ struct RootView: View {
             // A refill reminder was tapped.
             tab = .feed
         }
+        .onChange(of: vm.adminShowFeedRequest) {
+            // Admin Tools put a mock card on the deck.
+            tab = .feed
+        }
         .sheet(isPresented: $isPilePresented) {
             PendingPileView(showsDone: true)
                 .presentationDetents([.large])
@@ -67,8 +74,34 @@ struct RootView: View {
             try? await Task.sleep(for: .seconds(0.6))
             guard !Task.isCancelled, vm.isDeleteUpsellDue else { return }
             // Never over the wall, or once unlocked meanwhile.
-            if !vm.isWallPresented, !vm.isUnlocked { isUpsellPresented = true }
-            vm.finishDeleteUpsell()
+            let shows = !vm.isWallPresented && !vm.isUnlocked
+            if shows { isUpsellPresented = true }
+            vm.finishDeleteUpsell(shown: shows)
+        }
+        .sheet(isPresented: $isAdminUnlockPresented) {
+            UnlockSheet()
+                .presentationDragIndicator(.visible)
+                .presentationBackground(DS.Palette.paper)
+                .presentationCornerRadius(DS.Radius.card)
+        }
+        .fullScreenCover(isPresented: $isAdminPitchPresented) {
+            UpsellView { isAdminPitchPresented = false }
+                .background(DS.Palette.paper)
+        }
+        .task(id: vm.adminUpsellRequest) {
+            guard let screen = vm.adminUpsellRequest else { return }
+            // Let Settings finish closing first.
+            try? await Task.sleep(for: .seconds(0.6))
+            guard !Task.isCancelled else { return }
+            switch screen {
+            case .postDelete: isUpsellPresented = true
+            case .wall:
+                tab = .feed
+                vm.presentWall()
+            case .onboarding: isAdminPitchPresented = true
+            case .unlockSheet: isAdminUnlockPresented = true
+            }
+            vm.finishAdminUpsell()
         }
         .onChange(of: vm.isUnlocked) {
             vm.entitlementChanged()
