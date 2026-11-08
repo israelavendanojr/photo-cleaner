@@ -39,20 +39,27 @@ struct SwipeWallView: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: DS.Spacing.xs) {
-            Text("Out of swipes")
+            Text(vm.canSwipe ? "Ready to swipe" : "Out of swipes")
                 .font(.subheadline)
                 .foregroundStyle(DS.Palette.secondary)
                 .accessibilityAddTraits(.isHeader)
-            if let next = vm.nextRefillAt {
-                TimelineView(.periodic(from: .now, by: 1)) { context in
-                    Text("+\(vm.allowanceTunables.refillAmount) in \(Format.countdown(next.timeIntervalSince(context.date)))")
-                        .dsSerif(34, relativeTo: .largeTitle, weight: .medium)
-                        .foregroundStyle(DS.Palette.ink)
-                        .monospacedDigit()
-                }
-                .accessibilityIdentifier("wall.countdown")
+            // Always says when swipes come back; the top bar no longer does.
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+                Text(refillLine(at: context.date))
+                    .dsSerif(34, relativeTo: .largeTitle, weight: .medium)
+                    .foregroundStyle(DS.Palette.ink)
+                    .monospacedDigit()
             }
+            .accessibilityIdentifier("wall.countdown")
         }
+    }
+
+    /// "+10 in 2h 14m". Once the refill is due, or has landed while the wall is up, says so plainly.
+    private func refillLine(at date: Date) -> String {
+        let amount = vm.allowanceTunables.refillAmount
+        if vm.canSwipe { return "Swipes are back" }
+        guard let next = vm.nextRefillAt, next.timeIntervalSince(date) > 0 else { return "+\(amount) any moment now" }
+        return "+\(amount) in \(Format.countdown(next.timeIntervalSince(date)))"
     }
 
     private func whatsLeft(_ estimate: ClutterEstimate) -> some View {
