@@ -5,7 +5,8 @@ enum EntitlementServices {
     /// The real library gets StoreKit. Mocks get a store that forgets on every launch and starts
     /// locked, so the paywall is reachable.
     ///
-    /// Debug builds wrap StoreKit in Settings' unlock override, and `-unlocked YES|NO` sets it
+    /// The real store is wrapped in Developer mode's unlock override, which only counts while Developer
+    /// mode is on (never in App Store builds). In debug builds `-unlocked YES|NO` sets it
     /// (saved, so it outlives the launch). For mocks, `-unlocked YES|NO` sets the starting state
     /// and `-restoreFails YES` makes Restore come back empty.
     @MainActor
@@ -27,7 +28,7 @@ enum EntitlementServices {
         }
         return DebugEntitlementStore(defaults: defaults, restoreSucceeds: !arguments.bool(forKey: "restoreFails"))
         #else
-        return mock ? DebugEntitlementStore() : StoreKitEntitlementStore()
+        return mock ? DebugEntitlementStore() : DebugOverrideEntitlementStore(base: StoreKitEntitlementStore())
         #endif
     }
 }

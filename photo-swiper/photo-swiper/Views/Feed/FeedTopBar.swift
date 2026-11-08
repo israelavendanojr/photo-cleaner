@@ -26,14 +26,14 @@ struct FeedTopBar: View {
         }
     }
 
-    /// Free users see how full the pile is, e.g. "12/50 photos", instead of "to clear".
+    /// Free users see how full the pile is, e.g. "320 MB" over "of 1 GB", instead of "to clear".
     private var counter: some View {
-        let count = vm.pendingItems.count
-        let limit = vm.pileLimit
+        let limit = vm.pileLimitBytes.map(Format.limit)
         return ToClearCounter(
             bytes: vm.pendingBytes,
-            label: limit.map { "\(count)/\($0) photos" } ?? "to clear",
-            accessibilityText: limit.map { "to clear, \(count) of \($0) photos" },
+            label: limit.map { "of \($0)" } ?? "to clear",
+            accessibilityText: limit.map { "to clear, of \($0) free pile" },
+
             isLabelEmphasized: vm.isPileFull,
             addedBytes: vm.deleteChip?.bytes,
             addedID: vm.deleteChip?.id

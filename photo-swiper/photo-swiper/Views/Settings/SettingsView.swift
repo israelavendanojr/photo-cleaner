@@ -6,6 +6,9 @@ import UIKit
 ///
 /// Rows for launch values still unset in `AppInfo` are hidden. Debug builds show them greyed out
 /// with "Not set yet", so the layout can be checked.
+///
+/// In Developer mode (`DevMode`) a Debug section and the free-tier tuning panel follow. Tapping the
+/// version row `DevMode.tapsToToggle` times turns Developer mode on or off where the build allows it.
 struct SettingsView: View {
     @Environment(FeedViewModel.self) private var vm
     @Environment(\.dismiss) private var dismiss
@@ -16,10 +19,10 @@ struct SettingsView: View {
     @State private var isUnlockPresented = false
     /// "Email address copied", shown briefly when mail can't open.
     @State private var copiedNotice = false
-    #if DEBUG
+    /// "Developer mode on/off", shown briefly after the version row's taps.
+    @State private var devModeToast: String?
     @State private var isConfirmingClear = false
     @State private var didResetOnboarding = false
-    #endif
 
     var body: some View {
         @Bindable var vm = vm
@@ -68,15 +71,17 @@ struct SettingsView: View {
                         }
                     }
                     about
-                    #if DEBUG
-                    debugSection
-                    #endif
+                    if DevMode.shared.isEnabled {
+                        debugSection
+                        FreeLimitsPanel()
+                    }
                 }
                 .padding(.horizontal, DS.Spacing.l)
                 .padding(.top, DS.Spacing.s)
                 .padding(.bottom, DS.Spacing.xxl)
             }
             .scrollBounceBehavior(.basedOnSize)
+            .scrollDismissesKeyboard(.interactively)
             .background(DS.Palette.paper)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -106,6 +111,16 @@ struct SettingsView: View {
                         .padding(.bottom, DS.Spacing.l)
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                         .accessibilityIdentifier("settings.copied")
+                } else if let devModeToast {
+                    Text(devModeToast)
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, DS.Spacing.m)
+                        .padding(.vertical, DS.Spacing.s)
+                        .background(DS.Palette.ink, in: Capsule())
+                        .padding(.bottom, DS.Spacing.l)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                        .accessibilityIdentifier("settings.devModeToast")
                 }
             }
         }
@@ -196,13 +211,21 @@ struct SettingsView: View {
                 .settingsRowPadding()
             SettingsLabel(icon: "info.circle", title: "Version \(AppInfo.version) (build \(AppInfo.build))")
                 .settingsRowPadding()
+                .contentShape(Rectangle())
+                .onTapGesture(perform: versionTapped)
                 .accessibilityIdentifier("settings.version")
         }
     }
 
-    #if DEBUG
     private var debugSection: some View {
         SettingsSection("Debug") {
+            Toggle(isOn: Binding(get: { DevMode.shared.isEnabled }, set: { vm.setDevModeEnabled($0) })) {
+                SettingsLabel(icon: "hammer", title: "Developer mode",
+                              detail: "Off hides this section and puts the free limits back to their defaults. Tap the version \(DevMode.tapsToToggle) times to turn it on again.")
+            }
+            .tint(DS.Palette.ink)
+            .settingsRowPadding()
+            .accessibilityIdentifier("settings.debug.devMode")
             SettingsLabel(icon: "hand.draw", title: "Swipes left",
                           value: vm.swipesLeft.map { "\($0)" } ?? "Unlimited")
                 .settingsRowPadding()
@@ -273,12 +296,14 @@ struct SettingsView: View {
             .settingsRowPadding()
             .accessibilityIdentifier("settings.debug.unlocked")
         } else {
+            #if DEBUG
             Toggle(isOn: Binding(get: { vm.isUnlocked }, set: { vm.debugSetUnlocked($0) })) {
                 SettingsLabel(icon: "lock.open", title: "Unlocked")
             }
             .tint(DS.Palette.ink)
             .settingsRowPadding()
             .accessibilityIdentifier("settings.debug.unlocked")
+            #endif
         }
     }
 
@@ -290,7 +315,6 @@ struct SettingsView: View {
         .buttonStyle(.plain)
         .accessibilityIdentifier(id)
     }
-    #endif
 
     // MARK: Rows
 
@@ -331,7 +355,20 @@ struct SettingsView: View {
         }
     }
 
+    /// Counts toward Developer mode's hidden switch, and says so when it flips.
+    private func versionTapped() {
+        guard let message = vm.registerVersionTap() else { return }
+        Haptics.confirm()
+        AccessibilityNotification.Announcement(message).post()
+        withAnimation(DS.Motion.calm) { devModeToast = message }
+        Task {
+            try? await Task.sleep(for: .seconds(2))
+            withAnimation(DS.Motion.calm) { if devModeToast == message { devModeToast = nil } }
+        }
+    }
+
     private func copy(_ email: String) {
+
         UIPasteboard.general.string = email
         AccessibilityNotification.Announcement("Email address copied").post()
         withAnimation(DS.Motion.calm) { copiedNotice = true }

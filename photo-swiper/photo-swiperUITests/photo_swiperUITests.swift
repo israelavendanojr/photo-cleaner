@@ -570,11 +570,31 @@ final class photo_swiperUITests: XCTestCase {
     }
 
     @MainActor
+    func testAFullPileOffersNoUnlock() throws {
+        // The first video is 1.2 GB: bigger than the whole free bin, so it only fits an empty pile.
+        let app = launch("-startAt", "video", "-unlocked", "NO")
+        let video = topCard(app)
+        drag(app, to: CGVector(dx: 0.02, dy: 0.5))
+        XCTAssertTrue(waitForTopCard(app, not: video), "An empty pile takes it")
+        XCTAssertTrue(element(app, containing: "of 1 GB").waitForExistence(timeout: 3), "The counter shows the limit")
+
+        let next = topCard(app)
+        drag(app, to: CGVector(dx: 0.02, dy: 0.5))
+        let alert = app.alerts["Your pile is full"]
+        XCTAssertTrue(alert.waitForExistence(timeout: 3))
+        XCTAssertTrue(alert.buttons["Review pile"].exists)
+        XCTAssertFalse(alert.buttons["Unlock"].exists, "Free users clear the pile; the pitch comes after the delete")
+        attachScreenshot(app, "pile full")
+        alert.buttons["Not now"].tap()
+        XCTAssertEqual(topCard(app), next, "Nothing was decided")
+    }
+
+    @MainActor
     func testFreeDeleteOffersTheUnlockAfterThePileCloses() throws {
         let app = launch("-startAt", "pending", "-showPile", "YES", "-unlocked", "NO")
         let limit = app.descendants(matching: .any)["pile.limit"]
         XCTAssertTrue(limit.waitForExistence(timeout: 5), "Free users see how full the pile is")
-        XCTAssertTrue(limit.label.contains("of 50 photos"))
+        XCTAssertTrue(limit.label.contains("of 1 GB"), "The free pile is capped by storage")
         deleteAllInPile(app)
 
         let unlock = app.buttons["paywall.unlock"]
@@ -790,6 +810,32 @@ final class photo_swiperUITests: XCTestCase {
         XCTAssertEqual(left.label, "Swipes left, 20", "Back to the cap")
         app.buttons["settings.debug.zeroSwipes"].tap()
         XCTAssertEqual(left.label, "Swipes left, 0")
+    }
+
+    @MainActor
+    func testDeveloperModeSwitchesOffAndSevenTapsBringItBack() throws {
+        let app = launch()
+        openSettings(app)
+        let devMode = app.switches["settings.debug.devMode"]
+        scrollTo(devMode, in: app)
+        XCTAssertEqual(devMode.value as? String, "1", "Debug builds start in Developer mode")
+        // The panel sits below, in the same scroll view, so it's in the tree without scrolling.
+        let binSize = app.textFields["settings.tuning.freeBinMB"]
+        XCTAssertTrue(binSize.exists)
+        XCTAssertEqual(binSize.value as? String, "1000", "The free bin defaults to 1 GB")
+        XCTAssertTrue(element(app, containing: "swipes/day").exists, "The derived per-day line shows")
+        XCTAssertTrue(app.descendants(matching: .any)["settings.tuning.countdown"].exists)
+
+        flip(devMode)
+        XCTAssertTrue(devMode.waitForNonExistence(timeout: 3), "Off hides the Debug section")
+        XCTAssertFalse(binSize.exists)
+
+        let version = app.descendants(matching: .any)["settings.version"]
+        for _ in 0..<6 where !(version.exists && version.isHittable) { app.swipeDown() }
+        XCTAssertTrue(version.isHittable)
+        for _ in 0..<7 { version.tap() }
+        XCTAssertTrue(app.descendants(matching: .any)["settings.devModeToast"].waitForExistence(timeout: 2))
+        XCTAssertTrue(devMode.waitForExistence(timeout: 3), "Seven taps turn it back on")
     }
 
     // MARK: Progress

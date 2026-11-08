@@ -4,8 +4,6 @@ import SwiftUI
 struct FeedView: View {
     @Environment(FeedViewModel.self) private var vm
     var onOpenPile: () -> Void = {}
-    /// The unlock, offered from the full-pile notice.
-    @State private var isUnlockPresented = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -25,22 +23,14 @@ struct FeedView: View {
                 .presentationBackground(DS.Palette.paper)
                 .presentationCornerRadius(DS.Radius.card)
         }
-        .sheet(isPresented: $isUnlockPresented) {
-            UnlockSheet(
-                title: "No limit on the pile",
-                subtitle: "Free piles hold \(FeedViewModel.freePileCap) photos. Unlock to keep deleting without stopping to clear."
-            )
-            .presentationDragIndicator(.visible)
-            .presentationBackground(DS.Palette.paper)
-            .presentationCornerRadius(DS.Radius.card)
-        }
+        // Free users clear the pile to go on; the unlock is offered after the delete instead.
         .alert("Your pile is full", isPresented: Bindable(vm).isPileFullNoticePresented) {
             Button("Review pile", action: onOpenPile)
-            Button("Unlock") { isUnlockPresented = true }
             Button("Not now", role: .cancel) {}
         } message: {
-            Text("Free piles hold \(FeedViewModel.freePileCap) photos. Clear them to keep deleting, or unlock for no limit.")
+            Text("Free piles hold up to \(Format.limit(vm.freeBinBytes)). Delete what's in it to keep clearing.")
         }
+
         .task(id: vm.nextRefillAt) {
             // Credits the refill the moment it's due, so the countdown and the deck move on by themselves.
             guard let next = vm.nextRefillAt else { return }
