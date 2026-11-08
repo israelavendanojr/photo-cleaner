@@ -32,13 +32,26 @@ struct MockFeedBuilder: FeedBuilding {
 
 // MARK: - Factory
 
-private struct Factory {
-    private static let photoImages = [
+/// The bundled mock images and places, shared by the mock deck and Admin Tools' mock cards.
+enum MockImages {
+    static let photos = [
         "photo-sunset", "photo-beach", "photo-desert", "photo-hills", "photo-dusk",
         "photo-coast", "photo-pink", "photo-night", "photo-room", "photo-cafe",
     ]
-    private static let screenshotImages = ["shot-light", "shot-dark", "shot-cream", "shot-sand", "shot-lavender"]
-    private static let locations = ["Santa Monica", "Los Angeles", "Joshua Tree", "Ojai", "Malibu", "Pasadena", "Big Sur", "Home"]
+    static let pocket = "photo-pocket"
+    static let receipt = "photo-receipt"
+    static let screenshots = ["shot-light", "shot-dark", "shot-cream", "shot-sand", "shot-lavender"]
+    static let videos = ["video-waves", "video-party"]
+    /// Similar sets: each has variants 1 to `similarVariants`, e.g. "similar-a-3".
+    static let similarSets = ["similar-a", "similar-b"]
+    static let similarVariants = 6
+    static let locations = ["Santa Monica", "Los Angeles", "Joshua Tree", "Ojai", "Malibu", "Pasadena", "Big Sur", "Home"]
+}
+
+private struct Factory {
+    private static let photoImages = MockImages.photos
+    private static let screenshotImages = MockImages.screenshots
+    private static let locations = MockImages.locations
 
     let session: Int
     let options: FeedOptions
@@ -77,9 +90,9 @@ private struct Factory {
         // An untagged receipt-looking photo. Same odds and random draws as before, so the mock deck doesn't shift.
         let isReceipt = (0.24..<0.29).contains(roll)
         let image = if flags.first == .accidental {
-            "photo-pocket"
+            MockImages.pocket
         } else if isReceipt {
-            "photo-receipt"
+            MockImages.receipt
         } else {
             Self.photoImages[Int(rng.unit() * Double(Self.photoImages.count))]
         }
