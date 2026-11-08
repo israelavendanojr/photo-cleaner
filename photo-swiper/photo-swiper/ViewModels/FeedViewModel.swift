@@ -143,6 +143,8 @@ final class FeedViewModel {
     private let now: () -> Date
     /// Where the free tier's limits come from: the swipe allowance and the pile limit.
     let freeTier: FreeTierTunables
+    /// Which bundle cards free and unlocked users get.
+    let features: FeatureAvailabilityTunables
     /// The allowance, the wall and the unlock purchase, and the free pile limit.
     let gate: SwipeGate
     /// The review prompt or unlock offer a delete earns.
@@ -156,6 +158,7 @@ final class FeedViewModel {
     ///   - allowanceStore: Where the free swipes are saved. Nil keeps them in memory, starting full.
     ///   - allowanceTunables: Fixed swipe tunables, used when `freeTier` is nil.
     ///   - freeTier: The live free-tier limits. Nil fixes them at `allowanceTunables` and the standard pile limit.
+    ///   - features: Live feature availability. Nil gives everyone every feature.
     init(
         library: any PhotoLibraryProviding,
         builder: any FeedBuilding,
@@ -167,6 +170,7 @@ final class FeedViewModel {
         allowanceStore: SwipeAllowanceStore? = nil,
         allowanceTunables: SwipeAllowance.Tunables = .standard,
         freeTier: FreeTierTunables? = nil,
+        features: FeatureAvailabilityTunables? = nil,
         notifier: RefillNotifier? = nil,
         now: @escaping () -> Date = Date.init
     ) {
@@ -180,6 +184,7 @@ final class FeedViewModel {
         self.now = now
         let freeTier = freeTier ?? .fixed(FreeTierLimits(allowance: allowanceTunables))
         self.freeTier = freeTier
+        self.features = features ?? .fixed()
         followUps = FollowUpCoordinator(defaults: defaults, freeTier: freeTier, now: now)
         onboarding = OnboardingFlow(defaults: defaults, notifier: notifier, library: library)
         reminders = ReminderController(notifier: notifier, builder: builder, store: store, now: now)
@@ -199,6 +204,7 @@ final class FeedViewModel {
         allowanceStore: SwipeAllowanceStore? = nil,
         allowanceTunables: SwipeAllowance.Tunables = .standard,
         freeTier: FreeTierTunables? = nil,
+        features: FeatureAvailabilityTunables? = nil,
         notifier: RefillNotifier? = nil
     ) {
         self.library = library
@@ -211,6 +217,7 @@ final class FeedViewModel {
         now = Date.init
         let freeTier = freeTier ?? .fixed(FreeTierLimits(allowance: allowanceTunables))
         self.freeTier = freeTier
+        self.features = features ?? .fixed()
         followUps = FollowUpCoordinator(defaults: defaults, freeTier: freeTier, now: now)
         onboarding = OnboardingFlow(defaults: defaults, notifier: notifier, library: library)
         reminders = ReminderController(notifier: notifier, builder: builder, store: store, now: now)
@@ -328,7 +335,7 @@ final class FeedViewModel {
     var deckPhase: Phase { onboarding.heldPhase ?? phase } // internal for FeedViewModel+AdminTools
 
     /// The number the next page gets. Pages are numbered across decks, so saved decisions can tell them apart.
-    private var nextPageNumber: Int { max(session?.number ?? 0, store.lastSessionNumber()) + 1 }
+    var nextPageNumber: Int { max(session?.number ?? 0, store.lastSessionNumber()) + 1 } // internal for FeedViewModel+AdminTools
 
     // MARK: Card helpers
 
@@ -784,7 +791,7 @@ final class FeedViewModel {
         var options = FeedOptions(skipFavorites: skipFavorites, excluding: store.excludedFromNewSession(asOf: now()))
         options.excluding.formUnion(inDeck)
         options.excluding.formUnion(decisions.keys)
-        let page = await builder.makeSession(number: nextPageNumber, options: options)
+        let page = gated(await builder.makeSession(number: nextPageNumber, options: options))
         guard generation == deckGeneration, deckPhase == .feed, var current = session else { return }
 
         // Anything dealt meanwhile stays out, so no item is ever in the deck twice.
@@ -947,7 +954,15 @@ final class FeedViewModel {
     func makeSession(number: Int, placeBudget: Duration? = nil) async -> Session { // internal for FeedViewModel+AdminTools
         var options = FeedOptions(skipFavorites: skipFavorites, excluding: store.excludedFromNewSession(asOf: now()))
         if let placeBudget { options.placeBudget = placeBudget }
-        return await builder.makeSession(number: number, options: options)
+        return gated(await builder.makeSession(number: number, options: options))
+    }
+
+    /// Splits bundles this user doesn't get into single cards. See `FeatureAvailabilityTunables`.
+    private func gated(_ session: Session) -> Session {
+        let enabled = features.enabled(isUnlocked: isUnlocked)
+        var session = session
+        session.cards = session.cards.flatMap { $0.unbundled(unless: enabled) }
+        return session
     }
 
     func apply(_ next: Session) { // internal for FeedViewModel+AdminTools and +Mock
