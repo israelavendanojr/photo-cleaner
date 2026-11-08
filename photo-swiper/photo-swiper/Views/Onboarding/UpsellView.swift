@@ -49,7 +49,7 @@ struct UpsellView: View {
                 .font(.callout.weight(.semibold))
                 .foregroundStyle(DS.Palette.ink)
             FreeTierRow(systemImage: "hand.draw", text: Copy.swipes(vm.allowanceTunables))
-            FreeTierRow(systemImage: "trash", text: Copy.pile(FeedViewModel.freePileCap))
+            FreeTierRow(systemImage: "trash", text: Copy.pile(vm.freeBinBytes))
         }
         .padding(DS.Spacing.l)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -94,10 +94,11 @@ private enum Copy {
         return "\(tunables.cap) swipes to start, then \(tunables.refillAmount) more every \(every)."
     }
 
-    /// "Up to 50 photos waiting to delete at a time. Delete them and keep going."
-    static func pile(_ cap: Int) -> String {
-        "Up to \(cap) photos waiting to delete at a time. Delete them and keep going."
+    /// "Up to 1 GB waiting to delete at a time. Delete it and keep going."
+    static func pile(_ limitBytes: Int64) -> String {
+        "Up to \(Format.limit(limitBytes)) waiting to delete at a time. Delete it and keep going."
     }
+
 }
 
 private struct FreeTierRow: View {

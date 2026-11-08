@@ -122,8 +122,8 @@ struct PendingPileView: View {
                         .foregroundStyle(DS.Palette.ink)
                 }
             }
-            if let limit = vm.pileLimit {
-                PileLimit(count: count, limit: limit)
+            if let limit = vm.pileLimitBytes {
+                PileLimit(bytes: vm.pendingBytes, counted: vm.pileCountedBytes, limit: limit, isFull: vm.isPileFull)
                     .padding(.top, DS.Spacing.m)
             }
         }
@@ -221,32 +221,35 @@ struct PendingPileView: View {
     }
 }
 
-/// A free user's pile fills up: "12/50 photos" on a thin line, and what to do once it's full.
+/// A free user's pile fills up: "320 MB / 1 GB" on a thin line, and what to do once it's full.
 private struct PileLimit: View {
-    let count: Int
-    let limit: Int
-
-    private var isFull: Bool { count >= limit }
+    /// The pile's real size, as shown.
+    let bytes: Int64
+    /// What counts toward the limit (unknown sizes count as a typical photo).
+    let counted: Int64
+    let limit: Int64
+    let isFull: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: DS.Spacing.xs) {
             HStack(spacing: DS.Spacing.s) {
-                Text("\(count)/\(limit) photos")
+                Text("\(Format.size(bytes)) / \(Format.limit(limit))")
                     .font(.footnote.weight(.semibold))
                     .monospacedDigit()
                     .foregroundStyle(isFull ? DS.Palette.brick : DS.Palette.ink)
-                    .contentTransition(.numericText(value: Double(count)))
-                ProgressLine(value: Double(count) / Double(limit), tint: DS.Palette.brick, height: 4)
+                    .contentTransition(.numericText(value: Double(bytes)))
+                ProgressLine(value: min(1, Double(counted) / Double(max(limit, 1))), tint: DS.Palette.brick, height: 4)
             }
             if isFull {
-                Text("Your pile is full. Delete these to keep clearing, or unlock for no limit.")
+                Text("Your pile is full. Delete these to keep clearing.")
                     .font(.footnote)
                     .foregroundStyle(DS.Palette.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(count) of \(limit) photos in the free pile\(isFull ? ". Full." : "")")
+        .accessibilityLabel("\(Format.size(bytes)) of \(Format.limit(limit)) in the free pile\(isFull ? ". Full." : "")")
+
         .accessibilityIdentifier("pile.limit")
     }
 }
