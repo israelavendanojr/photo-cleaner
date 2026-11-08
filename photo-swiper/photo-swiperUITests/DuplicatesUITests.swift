@@ -11,7 +11,11 @@ final class DuplicatesUITests: XCTestCase {
         let app = launch("-startAt", "duplicates")
         let hero = app.descendants(matching: .any)["duplicates.hero"]
         XCTAssertTrue(hero.waitForExistence(timeout: 5))
-        XCTAssertTrue(element(app, containing: "3 copies of the same photo").exists)
+        XCTAssertTrue(element(app, containing: "3 copies").exists)
+        XCTAssertFalse(element(app, containing: "of the same photo").exists)
+        XCTAssertFalse(element(app, containing: "Saved").exists, "No saved dates on the hero or thumbnails")
+        XCTAssertFalse(element(app, containing: "Highest resolution").exists, "The keeper's reason isn't shown")
+        XCTAssertTrue(element(app, containing: "The other two copies can go.").exists)
         XCTAssertTrue(element(app, containing: "Keep one, clear 2").exists)
         let card = topCard(app)
         attachScreenshot(app, "duplicates card")
@@ -32,7 +36,10 @@ final class DuplicatesUITests: XCTestCase {
 
         XCTAssertTrue(element(app, containing: "Duplicates").waitForExistence(timeout: 3))
         XCTAssertTrue(element(app, containing: "1 of 3").exists)
-        XCTAssertTrue(element(app, containing: "Best pick. Highest resolution").exists, "Opens on the copy to keep")
+        let marker = app.descendants(matching: .any)["review.bestPick"]
+        XCTAssertTrue(marker.waitForExistence(timeout: 3))
+        XCTAssertEqual(marker.label, "best pick", "Opens on the copy to keep")
+        XCTAssertFalse(element(app, containing: "Highest resolution").exists, "No reason is read out")
         attachScreenshot(app, "duplicates review")
     }
 
