@@ -49,7 +49,7 @@ struct FeedTopBar: View {
     @ViewBuilder
     private var status: some View {
         if let left = vm.swipesLeft, left <= Self.lowSwipes {
-            SwipesLeftPill(left: left, nextRefillAt: vm.nextRefillAt, refillAmount: vm.allowanceTunables.refillAmount) {
+            SwipesLeftPill(left: left) {
                 vm.presentWall()
             }
             .fixedSize()
@@ -69,26 +69,17 @@ struct FeedTopBar: View {
     }
 }
 
-/// "3 left", or the countdown to the next refill at zero. Opens the wall.
+/// "3 left", down to "0 left". Opens the wall.
 private struct SwipesLeftPill: View {
     let left: Int
-    let nextRefillAt: Date?
-    let refillAmount: Int
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
-            if left == 0, let nextRefillAt {
-                TimelineView(.periodic(from: .now, by: 1)) { context in
-                    Chip(text: "+\(refillAmount) in \(Format.countdown(nextRefillAt.timeIntervalSince(context.date)))", size: .caption)
-                        .monospacedDigit()
-                }
-            } else {
-                Chip(text: "\(left) left", size: .caption)
-            }
+            Chip(text: "\(left) left", size: .caption)
         }
         .buttonStyle(PressScaleStyle())
-        .accessibilityLabel(left == 0 ? "Out of swipes" : "\(left) swipes left")
+        .accessibilityLabel("\(left) swipes left")
         .accessibilityHint("Shows when more swipes arrive")
         .accessibilityIdentifier("feed.swipesLeft")
     }
