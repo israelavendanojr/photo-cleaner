@@ -70,7 +70,7 @@ final class VideoBoostUITests: XCTestCase {
 
     /// Opens the video card full screen and waits for playback. Returns the timeline.
     private func openVideo(_ app: XCUIApplication) -> XCUIElement {
-        let card = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "Video ·")).firstMatch
+        let card = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "Video, ")).firstMatch
         XCTAssertTrue(card.waitForExistence(timeout: 5))
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         let scrubber = app.descendants(matching: .any)["videoScrubber"]

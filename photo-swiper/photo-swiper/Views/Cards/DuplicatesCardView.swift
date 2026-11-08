@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// The same photo saved more than once: the copy to keep up top, the other copies below with when
-/// each was saved. Tapping a copy opens the set one by one there.
+/// The same photo saved more than once: the copy to keep up top, the other copies below.
+/// Tapping a copy opens the set one by one there.
 struct DuplicatesCardView: View {
     let group: DuplicateGroup
     let marked: Set<LibraryItem.ID>
@@ -20,7 +20,7 @@ struct DuplicatesCardView: View {
             header
             hero
                 .padding(.top, DS.Spacing.s)
-            Text(group.reason)
+            Text("\(group.items.count) copies")
                 .dsSerif(22, relativeTo: .title3, italic: true)
                 .foregroundStyle(DS.Palette.ink)
                 .padding(.top, DS.Spacing.s)
@@ -40,16 +40,11 @@ struct DuplicatesCardView: View {
     }
 
     private var header: some View {
-        HStack {
-            Chip(text: "\(group.items.count) copies of the same photo")
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
-            Spacer(minLength: DS.Spacing.xs)
-            Text(Format.size(totalBytes))
-                .font(.subheadline)
-                .foregroundStyle(DS.Palette.secondary)
-                .lineLimit(1)
-        }
+        Text(Format.size(totalBytes))
+            .font(.subheadline)
+            .foregroundStyle(DS.Palette.secondary)
+            .lineLimit(1)
+            .frame(maxWidth: .infinity, alignment: .trailing)
     }
 
     private var hero: some View {
@@ -63,12 +58,8 @@ struct DuplicatesCardView: View {
                 Chip(text: "Keep", systemImage: "checkmark", style: .plain)
                     .padding(DS.Spacing.s)
             }
-            .overlay(alignment: .bottomLeading) {
-                Chip(text: "Saved \(Format.shortDay(group.keep.date))", style: .frosted, size: .caption)
-                    .padding(DS.Spacing.s)
-            }
             .accessibilityElement()
-            .accessibilityLabel("Copy to keep, saved \(Format.shortDay(group.keep.date)). \(group.reason)")
+            .accessibilityLabel("Copy to keep")
             .accessibilityValue(marked.contains(group.keepID) ? "Marked to clear" : "")
             .accessibilityAddTraits(.isButton)
             .accessibilityIdentifier("duplicates.hero")
@@ -80,7 +71,7 @@ struct DuplicatesCardView: View {
         let others = group.others
         let shown = others.count > Self.maxThumbnails ? Array(others.prefix(Self.maxThumbnails - 1)) : others
         let hidden = others.count - shown.count
-        return HStack(alignment: .top, spacing: 6) {
+        return HStack(spacing: 6) {
             ForEach(Array(shown.enumerated()), id: \.element.id) { offset, item in
                 DuplicateThumbnail(item: item, isMarked: marked.contains(item.id), number: offset + 2) { onOpen(item.id) }
             }
@@ -129,7 +120,7 @@ struct DuplicatesCardView: View {
     }
 }
 
-/// One copy to clear: its image and the day it was saved. Opens the review on it.
+/// One copy to clear. Opens the review on it.
 private struct DuplicateThumbnail: View {
     let item: LibraryItem
     let isMarked: Bool
@@ -138,22 +129,16 @@ private struct DuplicateThumbnail: View {
 
     var body: some View {
         Button(action: onOpen) {
-            VStack(alignment: .leading, spacing: 4) {
-                Color.clear
-                    .aspectRatio(1, contentMode: .fit)
-                    .overlay {
-                        ItemImage(item.image)
-                            .opacity(isMarked ? 1 : 0.5)
-                    }
-                    .clipShape(RoundedRectangle(cornerRadius: DS.Radius.thumb, style: .continuous))
-                Text(Format.shortDay(item.date))
-                    .font(.caption)
-                    .foregroundStyle(DS.Palette.secondary)
-                    .lineLimit(1)
-            }
+            Color.clear
+                .aspectRatio(1, contentMode: .fit)
+                .overlay {
+                    ItemImage(item.image)
+                        .opacity(isMarked ? 1 : 0.5)
+                }
+                .clipShape(RoundedRectangle(cornerRadius: DS.Radius.thumb, style: .continuous))
         }
         .buttonStyle(PressScaleStyle())
-        .accessibilityLabel("Open copy \(number), saved \(Format.shortDay(item.date))")
+        .accessibilityLabel("Open copy \(number)")
         .accessibilityValue(isMarked ? "Marked to clear" : "Keeping")
     }
 }

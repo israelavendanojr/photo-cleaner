@@ -171,6 +171,50 @@ final class photo_swiperUITests: XCTestCase {
         XCTAssertFalse(emptyPile(app).exists)
     }
 
+    // MARK: Card labels
+
+    @MainActor
+    func testFlaggedPhotoCardShowsNoFlag() throws {
+        let app = launch("-startAt", "similar")
+        XCTAssertTrue(similarHero(app).waitForExistence(timeout: 5))
+        // Card 12, a blurry photo (see MockDeckTests), is six keeps past the similar card.
+        for _ in 0..<6 {
+            let card = topCard(app)
+            tapAndWait(onScreen(app, "Keep"))
+            XCTAssertTrue(waitForTopCard(app, not: card))
+        }
+        XCTAssertTrue(waitForTopCard(app, containing: "s1-i30"), "On the blurry photo")
+        XCTAssertFalse(element(app, containing: "Possibly blurry").exists)
+        XCTAssertFalse(element(app, containing: "Best pick").exists)
+        XCTAssertTrue(element(app, containing: "Photo, ").exists, "Date, place and size stay")
+        attachScreenshot(app, "flagged photo card")
+    }
+
+    @MainActor
+    func testSimilarCardHeadlinesTheCount() throws {
+        let app = launch("-startAt", "similar")
+        XCTAssertTrue(similarHero(app).waitForExistence(timeout: 5))
+        XCTAssertTrue(element(app, containing: "6 similar shots").exists)
+        XCTAssertTrue(element(app, containing: "The other five can go.").exists)
+        XCTAssertFalse(element(app, containing: "Sharpest of the set").exists, "The pick's reason isn't shown")
+        XCTAssertEqual(similarHero(app).label, "Best pick")
+    }
+
+    @MainActor
+    func testBatchCardHasNoKindChip() throws {
+        let app = launch("-startAt", "batch")
+        let title = element(app, containing: "14 screenshots from last week")
+        XCTAssertTrue(title.waitForExistence(timeout: 5))
+        XCTAssertTrue(title.label.hasPrefix("14 screenshots from last week"), "The title leads, with no chip before it")
+    }
+
+    @MainActor
+    func testVideoCardShowsJustTheDuration() throws {
+        let app = launch("-startAt", "video")
+        XCTAssertTrue(element(app, containing: "Video, 4:12").waitForExistence(timeout: 5))
+        XCTAssertFalse(element(app, containing: "Video ·").exists)
+    }
+
     @MainActor
     func testSimilarHeroOpensReviewOnTheBestPick() throws {
         let app = launch("-startAt", "similar")
@@ -182,7 +226,8 @@ final class photo_swiperUITests: XCTestCase {
 
         XCTAssertTrue(element(app, containing: "Similar shots").waitForExistence(timeout: 3))
         XCTAssertTrue(element(app, containing: "1 of 6").exists)
-        XCTAssertTrue(element(app, containing: "Photo, Best pick. Sharpest of the set").exists, "The best pick shows its chip")
+        XCTAssertEqual(bestPickMarker(app).label, "best pick", "It opens on the best pick")
+        XCTAssertFalse(element(app, containing: "Best pick.").exists, "No reason is read out")
         attachScreenshot(app, "similar review on best pick")
     }
 
@@ -196,11 +241,11 @@ final class photo_swiperUITests: XCTestCase {
 
         XCTAssertTrue(element(app, containing: "1 of 6").waitForExistence(timeout: 3))
         sleep(1)
-        XCTAssertFalse(element(app, containing: "Photo, Best pick").exists, "It opens on shot 3, not the best pick")
+        XCTAssertEqual(bestPickMarker(app).label, "other", "It opens on shot 3, not the best pick")
         // Shots 3 to 6, then it wraps to the best pick and shot 2.
         for _ in 0..<4 { tapAndWait(onScreen(app, "Keep")) }
         XCTAssertTrue(element(app, containing: "5 of 6").waitForExistence(timeout: 3))
-        XCTAssertTrue(element(app, containing: "Photo, Best pick").exists, "It wraps around to the best pick")
+        XCTAssertEqual(bestPickMarker(app).label, "best pick", "It wraps around to the best pick")
     }
 
     @MainActor
@@ -351,7 +396,7 @@ final class photo_swiperUITests: XCTestCase {
     @MainActor
     func testVideoPreviewPlaysScrubsAndClosesWithoutDeciding() throws {
         let app = launch("-startAt", "video")
-        XCTAssertTrue(element(app, containing: "Video ·").waitForExistence(timeout: 5))
+        XCTAssertTrue(element(app, containing: "Video, ").waitForExistence(timeout: 5))
         let position = topCard(app)
 
         // The play button sits in the middle of the card.
@@ -461,7 +506,7 @@ final class photo_swiperUITests: XCTestCase {
     @MainActor
     func testVideoPreviewSwipeRightKeeps() throws {
         let app = launch("-startAt", "video")
-        XCTAssertTrue(element(app, containing: "Video ·").waitForExistence(timeout: 5))
+        XCTAssertTrue(element(app, containing: "Video, ").waitForExistence(timeout: 5))
         let position = topCard(app)
 
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
@@ -619,6 +664,10 @@ final class photo_swiperUITests: XCTestCase {
         app.buttons["paywall.notNow"].tap()
         XCTAssertTrue(unlock.waitForNonExistence(timeout: 3))
         XCTAssertEqual(cardMarker(app).label, second, "Nothing was committed; the deck stays")
+        let pill = app.buttons["feed.swipesLeft"]
+        XCTAssertTrue(pill.isHittable)
+        XCTAssertEqual(pill.label, "0 swipes left", "At zero the pill says 0 left, no countdown")
+        XCTAssertFalse(element(app, containing: "+10 in").exists)
 
         tapCenter(onScreen(app, "Delete"))
         XCTAssertTrue(unlock.waitForExistence(timeout: 5), "The next swipe asks again")
@@ -811,6 +860,13 @@ final class photo_swiperUITests: XCTestCase {
     }
 
     /// The debug marker naming the top card by id, "none" while the deck waits on more.
+    /// The debug marker saying whether the one-by-one review is on the best pick.
+    private func bestPickMarker(_ app: XCUIApplication) -> XCUIElement {
+        let marker = app.descendants(matching: .any)["review.bestPick"]
+        XCTAssertTrue(marker.waitForExistence(timeout: 3), "The review shows")
+        return marker
+    }
+
     private func similarHero(_ app: XCUIApplication) -> XCUIElement {
         app.descendants(matching: .any)["similar.hero"]
     }
