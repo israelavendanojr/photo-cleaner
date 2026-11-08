@@ -116,6 +116,8 @@ final class FeedViewModel {
     /// The wall has shown since launch. Every wall ends in a dismiss or an unlock, so the delete
     /// offer stays away for the rest of the process.
     private var wasWallShownThisSession = false
+    /// Admin Tools asked for an upsell screen. RootView shows it and clears this.
+    private(set) var adminUpsellRequest: AdminUpsell?
     /// A free user's swipe was refused because the pile is full. FeedView shows it.
     var isPileFullNoticePresented = false
     /// Something about the last delete the user should know, e.g. items the system refused.
@@ -1418,6 +1420,27 @@ extension FeedViewModel {
     func debugResetCelebration() {
         hasCelebratedComplete = false
         defaults.removeObject(forKey: DefaultsKey.celebratedComplete)
+    }
+
+    // MARK: Upsell
+
+    /// The next delete offers the unlock again: forgets when it last showed and that the wall showed this session.
+    func adminResetDeleteUpsell() {
+        defaults.removeObject(forKey: DefaultsKey.deleteUpsellShownAt)
+        wasWallShownThisSession = false
+    }
+
+    /// Asks RootView to show an upsell screen now, once Settings has closed.
+    func adminRaiseUpsell(_ screen: AdminUpsell) {
+        if screen == .postDelete {
+            upsellFreedBytes = Int64.random(in: 20_000_000...3_000_000_000)
+        }
+        adminUpsellRequest = screen
+    }
+
+    /// RootView showed the requested upsell.
+    func finishAdminUpsell() {
+        adminUpsellRequest = nil
     }
 
     // MARK: Developer mode

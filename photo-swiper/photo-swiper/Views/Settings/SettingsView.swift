@@ -73,6 +73,7 @@ struct SettingsView: View {
                     about
                     if DevMode.shared.isEnabled {
                         debugSection
+                        AdminUpsellPanel { dismiss() }
                         FreeLimitsPanel()
                     }
                 }

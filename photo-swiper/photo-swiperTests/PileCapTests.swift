@@ -446,6 +446,35 @@ struct PileCapTests {
         #expect(try await deleteOne(vm), "Due again after the tuned interval")
     }
 
+    @Test func adminToolsLetTheOfferShowAgain() async throws {
+        let (vm, _) = try await started(unlocked: false)
+
+        #expect(try await deleteOne(vm))
+        vm.finishDeleteUpsell(shown: true)
+        #expect(try await deleteOne(vm) == false, "Waiting out the interval")
+
+        vm.adminResetDeleteUpsell()
+        #expect(try await deleteOne(vm), "Due right away after the reset")
+        vm.finishDeleteUpsell(shown: true)
+
+        vm.presentWall()
+        vm.dismissWall()
+        vm.adminResetDeleteUpsell()
+        #expect(try await deleteOne(vm), "The reset also forgets the wall this session")
+    }
+
+    @Test func raisingThePostDeleteSheetGivesItAFreedSize() {
+        let vm = FeedViewModel(library: FakeLibrary(), builder: MockFeedBuilder(), entitlements: TestEntitlements(isUnlocked: false), defaults: defaults)
+
+        vm.adminRaiseUpsell(.postDelete)
+        #expect(vm.adminUpsellRequest == .postDelete)
+        #expect((20_000_000...3_000_000_000).contains(vm.upsellFreedBytes))
+        #expect(defaults.object(forKey: DefaultsKey.deleteUpsellShownAt) == nil, "Raising it doesn't start the wait")
+
+        vm.finishAdminUpsell()
+        #expect(vm.adminUpsellRequest == nil)
+    }
+
     @Test func anOfferNotShownDoesNotStartTheWait() async throws {
         let clock = TestClock()
         let (vm, _) = try await started(unlocked: false, clock: clock)
