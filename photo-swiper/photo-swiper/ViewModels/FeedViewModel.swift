@@ -79,13 +79,6 @@ final class FeedViewModel {
     /// Access was just granted from onboarding and the first session is being built.
     /// Onboarding stays up meanwhile instead of a loading screen.
     private(set) var isPreparingFirstSession = false
-    var paywallStatus = PaywallStatus.idle // internal for FeedViewModel+Mock
-    /// The free swipes. Never spent or checked while unlocked.
-    var allowance: SwipeAllowance // internal for FeedViewModel+AdminTools and +Mock
-    /// "Out of swipes": the wall sheet over the feed, offering the unlock.
-    var isWallPresented = false
-    /// Bought or restored since launch. The review prompt never follows a purchase.
-    private(set) var purchasedThisLaunch = false
     /// Admin Tools asked for an upsell screen. RootView shows it and clears this.
     var adminUpsellRequest: AdminUpsell? // internal for FeedViewModel+AdminTools
     /// Bumped when Admin Tools puts a mock card on the deck, so RootView switches to the feed.
@@ -121,8 +114,6 @@ final class FeedViewModel {
     private var changesTask: Task<Void, Never>?
     /// A refill landed while no deck could take the strongest cards first; the next one dealt does.
     private var refilledSinceDeal = false
-    /// Off while mocks play swipes through, so their setup doesn't spend the allowance.
-    var chargesSwipes = true // internal for FeedViewModel+Mock
     /// The next page being built, while one is.
     private var pageTask: Task<Void, Never>?
     /// The last page build came back empty. No more are tried until the deck runs out.
@@ -141,10 +132,10 @@ final class FeedViewModel {
     /// Shortest time onboarding shows its "preparing" state, so the step change can be read.
     private let firstSessionMinimum: Duration
     let now: () -> Date // internal for FeedViewModel+AdminTools
-    let allowanceStore: SwipeAllowanceStore // internal for FeedViewModel+AdminTools
     /// Where the free tier's limits come from: the swipe allowance and the pile limit.
     let freeTier: FreeTierTunables
-    var allowanceTunables: SwipeAllowance.Tunables { freeTier.limits.allowance }
+    /// The allowance, the wall and the unlock purchase, and the free pile limit.
+    let gate: SwipeGate
     /// The review prompt or unlock offer a delete earns.
     let followUps: FollowUpCoordinator
     /// Refill reminders and the clutter estimate they quote.
@@ -178,14 +169,12 @@ final class FeedViewModel {
         self.defaults = defaults
         self.firstSessionMinimum = firstSessionMinimum
         self.now = now
-        let allowanceStore = allowanceStore ?? SwipeAllowanceStore()
-        self.allowanceStore = allowanceStore
         let freeTier = freeTier ?? .fixed(FreeTierLimits(allowance: allowanceTunables))
         self.freeTier = freeTier
         followUps = FollowUpCoordinator(defaults: defaults, freeTier: freeTier, now: now)
         onboarding = OnboardingFlow(defaults: defaults, notifier: notifier, library: library)
         reminders = ReminderController(notifier: notifier, builder: builder, store: store, now: now)
-        allowance = allowanceStore.load() ?? SwipeAllowance(tunables: freeTier.limits.allowance, now: now())
+        gate = SwipeGate(entitlements: entitlements, allowanceStore: allowanceStore ?? SwipeAllowanceStore(), freeTier: freeTier, now: now)
         skipFavorites = store.skipFavorites
         hasCelebratedComplete = defaults.bool(forKey: DefaultsKey.celebratedComplete)
     }
@@ -211,14 +200,12 @@ final class FeedViewModel {
         defaults = .standard
         firstSessionMinimum = .zero
         now = Date.init
-        let allowanceStore = allowanceStore ?? SwipeAllowanceStore()
-        self.allowanceStore = allowanceStore
         let freeTier = freeTier ?? .fixed(FreeTierLimits(allowance: allowanceTunables))
         self.freeTier = freeTier
         followUps = FollowUpCoordinator(defaults: defaults, freeTier: freeTier, now: now)
         onboarding = OnboardingFlow(defaults: defaults, notifier: notifier, library: library)
         reminders = ReminderController(notifier: notifier, builder: builder, store: store, now: now)
-        allowance = allowanceStore.load() ?? SwipeAllowance(tunables: freeTier.limits.allowance, now: .now)
+        gate = SwipeGate(entitlements: entitlements, allowanceStore: allowanceStore ?? SwipeAllowanceStore(), freeTier: freeTier, now: now)
         skipFavorites = store.skipFavorites
         hasCelebratedComplete = defaults.bool(forKey: DefaultsKey.celebratedComplete)
         libraryStats = stats
@@ -259,6 +246,30 @@ final class FeedViewModel {
     private var similarAhead: Int {
         cards.dropFirst(index).filter { if case .similar = $0 { true } else { false } }.count
     }
+
+    // MARK: Swipe gate
+
+    var allowance: SwipeAllowance { gate.allowance }
+    var allowanceTunables: SwipeAllowance.Tunables { gate.allowanceTunables }
+    var paywallStatus: PaywallStatus { gate.paywallStatus }
+    var isWallPresented: Bool {
+        get { gate.isWallPresented }
+        set { gate.isWallPresented = newValue }
+    }
+    var purchasedThisLaunch: Bool { gate.purchasedThisLaunch }
+    var canSwipe: Bool { gate.canSwipe }
+    var swipesLeft: Int? { gate.swipesLeft }
+    var nextRefillAt: Date? { gate.nextRefillAt }
+    var isPurchaseBusy: Bool { gate.isPurchaseBusy }
+    var freeBinBytes: Int64 { gate.freeBinBytes }
+    var pileLimitBytes: Int64? { gate.pileLimitBytes }
+    /// What the pile counts toward its limit: `pendingBytes`, with unknown sizes counted as `unknownSizeBytes`.
+    var pileCountedBytes: Int64 { Self.countedBytes(pendingItems) }
+    var isPileFull: Bool { gate.isPileFull(counted: pileCountedBytes) }
+    static var unknownSizeBytes: Int64 { SwipeGate.unknownSizeBytes }
+    static func countedBytes(_ items: [LibraryItem]) -> Int64 { SwipeGate.countedBytes(items) }
+    func dismissWall() { gate.dismissWall() }
+    func resetPurchaseStatus() { gate.resetPurchaseStatus() }
 
     // MARK: Derived
 
@@ -302,21 +313,6 @@ final class FeedViewModel {
 
     var isUnlocked: Bool { entitlements.isUnlocked }
     var displayPrice: String { entitlements.displayPrice }
-
-    /// A card decision would go through. Unlocked, always.
-    var canSwipe: Bool { isUnlocked || allowance.remaining > 0 }
-    /// How much a free user's pile holds, e.g. 1 GB, unlocked or not.
-    var freeBinBytes: Int64 { freeTier.limits.freeBinBytes }
-    /// The most the pile holds before deleting, in bytes; nil when unlocked, where it has no limit.
-    var pileLimitBytes: Int64? { isUnlocked ? nil : freeBinBytes }
-    /// What the pile counts toward its limit: `pendingBytes`, with unknown sizes counted as `unknownSizeBytes`.
-    var pileCountedBytes: Int64 { Self.countedBytes(pendingItems) }
-    /// A free user's pile is at its limit, so only keeps and laters go through.
-    var isPileFull: Bool { pileLimitBytes.map { pileCountedBytes >= $0 } ?? false }
-    /// Free swipes left; nil when unlocked, where nothing is counted.
-    var swipesLeft: Int? { isUnlocked ? nil : allowance.remaining }
-    /// When the next refill lands; nil when unlocked or full.
-    var nextRefillAt: Date? { isUnlocked ? nil : allowance.nextRefillAt(allowanceTunables) }
 
     /// The deck's phase, even while onboarding holds the screen. Paging and reordering go by this;
     /// swiping still needs `phase` itself to be the feed.
@@ -489,7 +485,7 @@ final class FeedViewModel {
     /// False out of swipes, or for a free user when it would take the pile past its limit.
     func canDecide(_ direction: SwipeDirection) -> Bool {
         if currentCard?.isAdminMock == true { return true }
-        guard canSwipe || !chargesSwipes else { return false }
+        guard gate.admitsSwipe else { return false }
         guard let card = currentCard else { return true }
         return fitsInPile(itemDecisions(for: card, direction: direction), card: card)
     }
@@ -497,7 +493,7 @@ final class FeedViewModel {
     /// Whether a finished one-by-one review of the current card would go through, like `canDecide`.
     func canDecideIndividually(_ outcome: [LibraryItem.ID: Decision]) -> Bool {
         if currentCard?.isAdminMock == true { return true }
-        guard canSwipe || !chargesSwipes else { return false }
+        guard gate.admitsSwipe else { return false }
         guard let card = currentCard, let complete = completed(outcome, for: card) else { return true }
         return fitsInPile(complete, card: card)
     }
@@ -505,7 +501,7 @@ final class FeedViewModel {
     /// The deck refused a swipe: opens the wall when out of swipes, or says the pile is full.
     func refuse(_ direction: SwipeDirection) {
         refreshAllowance()
-        if !canSwipe, chargesSwipes {
+        if !gate.admitsSwipe {
             presentWall()
         } else if !isUnlocked {
             isPileFullNoticePresented = true
@@ -571,10 +567,7 @@ final class FeedViewModel {
         marks = last.marks
         drafts = last.drafts
         store.save(last.stored)
-        if last.charged {
-            allowance.refund(at: now(), allowanceTunables)
-            allowanceStore.save(allowance)
-        }
+        if last.charged { gate.refund() }
         returningCard = ReturningCard(cardID: last.cardID, direction: last.direction)
         dismissChip()
         phase = .feed
@@ -647,89 +640,37 @@ final class FeedViewModel {
     /// Opens the wall: the countdown, what's left, and the unlock. The deck stays underneath.
     func presentWall() {
         refreshAllowance()
-        if !isWallPresented { paywallStatus = .idle }
-        isWallPresented = true
+        gate.openWall()
         followUps.wallShown()
         Task { await reminders.refreshEstimate(similarAhead: { similarAhead }) }
     }
 
-    /// "Not now". The next refused swipe opens it again.
-    func dismissWall() {
-        guard !isPurchaseBusy else { return }
-        isWallPresented = false
-    }
-
-    /// A purchase or restore is running. The wall and the Settings unlock can't close meanwhile.
-    var isPurchaseBusy: Bool { paywallStatus == .purchasing || paywallStatus == .restoring }
-
-    /// Buys the unlock, from the wall or Settings. Closes the wall, so the current card can be swiped
-    /// straight away. False if it didn't go through; a cancel says nothing.
+    /// Buys the unlock, from the wall or Settings. See `SwipeGate.purchaseUnlock()`.
+    /// Bought: reminders are moot.
     @discardableResult
     func purchaseUnlock() async -> Bool {
-        guard !isPurchaseBusy else { return false }
-        paywallStatus = .purchasing
-        switch await entitlements.unlock() {
-        case .purchased where entitlements.isUnlocked:
-            didUnlock()
-            paywallStatus = .idle
-            return true
-        case .cancelled:
-            paywallStatus = .idle
-        case .pending:
-            paywallStatus = .purchasePending
-        case .purchased, .failed:
-            paywallStatus = .purchaseFailed
-        }
-        return false
-    }
-
-    /// The unlock changed outside a purchase run here: Ask to Buy approved, bought on another
-    /// device, or refunded. Unlocking closes the wall; relocking needs nothing, gating reads it live.
-    func entitlementChanged() {
-        guard isUnlocked, !isPurchaseBusy else { return }
-        if paywallStatus == .purchasePending {
-            purchasedThisLaunch = true
-            paywallStatus = .idle
-        }
+        guard await gate.purchaseUnlock() else { return false }
         reminders.cancelAll()
-        isWallPresented = false
+        return true
     }
 
-    /// Restores an earlier purchase, from the wall or Settings. True if the app is now unlocked;
-    /// `paywallStatus` says what was found either way.
+    /// The unlock changed outside a purchase run here. See `SwipeGate.entitlementChanged()`.
+    func entitlementChanged() {
+        if gate.entitlementChanged() { reminders.cancelAll() }
+    }
+
+    /// Restores an earlier purchase, from the wall or Settings. See `SwipeGate.restorePurchases()`.
     @discardableResult
     func restorePurchases() async -> Bool {
-        guard !isPurchaseBusy else { return false }
-        paywallStatus = .restoring
-        switch await entitlements.restore() {
-        case .restored where entitlements.isUnlocked:
-            didUnlock()
-            paywallStatus = .restored
-            return true
-        case .nothingToRestore:
-            paywallStatus = .nothingToRestore
-        case .restored, .failed:
-            paywallStatus = .restoreFailed
-        }
-        return false
-    }
-
-    /// Clears a finished purchase or restore message, e.g. when Settings opens. Not while one runs.
-    func resetPurchaseStatus() {
-        guard !isPurchaseBusy else { return }
-        paywallStatus = .idle
+        guard await gate.restorePurchases() else { return false }
+        reminders.cancelAll()
+        return true
     }
 
     /// Credits any refills owed by now. Called on returning to the app and while a countdown shows.
     /// When a refill lands, the strongest cards waiting move to the front.
     func refreshAllowance() {
-        guard !isUnlocked else { return }
-        var settled = allowance
-        let refilled = settled.settle(at: now(), allowanceTunables)
-        guard settled != allowance else { return }
-        allowance = settled
-        allowanceStore.save(settled)
-        if refilled { frontLoad() }
+        if gate.creditRefills() { frontLoad() }
     }
 
     func clearReturningCard() {
@@ -738,17 +679,10 @@ final class FeedViewModel {
 
     // MARK: Internals
 
-    /// Bought or restored: reminders are moot and the wall, if up, closes.
-    private func didUnlock() {
-        reminders.cancelAll()
-        purchasedThisLaunch = true
-        isWallPresented = false
-    }
-
     /// Lets a card decision through, or refuses it and opens the wall when no swipes are left.
     private func admitSwipe() -> Bool {
         refreshAllowance()
-        guard canSwipe || !chargesSwipes else {
+        guard gate.admitsSwipe else {
             presentWall()
             return false
         }
@@ -757,8 +691,7 @@ final class FeedViewModel {
 
     /// Spends one swipe for a card decision. Unlocked, nothing is counted. True if one was spent.
     private func spendSwipe() -> Bool {
-        guard chargesSwipes, !isUnlocked, allowance.spend(at: now(), allowanceTunables) else { return false }
-        allowanceStore.save(allowance)
+        guard gate.spend() else { return false }
         // Back and swiping before a reminder fired: it's no longer needed.
         reminders.cancelAll()
         if allowance.remaining == 0, isRemindersOptedIn {
@@ -935,18 +868,11 @@ final class FeedViewModel {
     /// Groups go in whole or not at all.
     private func fitsInPile(_ outcome: [LibraryItem.ID: Decision], card: FeedCard) -> Bool {
         guard !card.isAdminMock else { return true }
-        guard let limit = pileLimitBytes, chargesSwipes else { return true }
+        guard gate.isPileLimited else { return true }
         let pending = pendingItems
         let pendingIDs = Set(pending.map(\.id))
         let added = card.items.filter { outcome[$0.id] == .delete && !pendingIDs.contains($0.id) }
-        guard !added.isEmpty, !pending.isEmpty else { return true }
-        return Self.countedBytes(pending) + Self.countedBytes(added) <= limit
-    }
-
-    /// Sizes toward the pile limit. An unknown (zero) size counts as `unknownSizeBytes`, so a pile of
-    /// them still fills up.
-    static func countedBytes(_ items: [LibraryItem]) -> Int64 {
-        items.reduce(0) { $0 + ($1.bytes > 0 ? $1.bytes : unknownSizeBytes) }
+        return gate.pileTakes(added, onto: pending)
     }
 
     /// Asks the library to delete these and settles the ones that can't be. Returns what was
@@ -1164,6 +1090,4 @@ extension FeedViewModel {
     static let pageAhead = 5
     /// Decided cards kept behind the current one, for undo. Older ones are trimmed when a page lands.
     static let keptBehind = 30
-    /// What an item of unknown size (zero bytes) counts as toward the free pile limit: a typical photo.
-    static let unknownSizeBytes: Int64 = 3_000_000
 }

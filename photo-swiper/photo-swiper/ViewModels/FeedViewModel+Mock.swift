@@ -70,7 +70,7 @@ extension FeedViewModel {
             vm.simulateSwipes(10)
         case .outOfSwipes:
             vm.index = 4
-            vm.allowance = SwipeAllowance(balance: 0, tunables: allowanceTunables, now: .now)
+            vm.gate.allowance = SwipeAllowance(balance: 0, tunables: allowanceTunables, now: .now)
             vm.presentWall()
         case .caughtUp:
             vm.apply(Session(number: 2, cards: []))
@@ -87,14 +87,14 @@ extension FeedViewModel {
 
     /// Shows a wall state without going through a purchase, for previews.
     func previewWall(status: PaywallStatus) {
-        isWallPresented = true
-        paywallStatus = status
+        gate.isWallPresented = true
+        gate.paywallStatus = status
     }
 
     /// Decides the next `count` cards with a plausible mix of deletes, keeps, and laters.
     private func simulateSwipes(_ count: Int) {
-        chargesSwipes = false
-        defer { chargesSwipes = true }
+        gate.chargesSwipes = false
+        defer { gate.chargesSwipes = true }
         for _ in 0..<count where phase == .feed && currentCard != nil {
             let isVideo = if case .video = currentCard { true } else { false }
             let direction: SwipeDirection = switch index % 9 {

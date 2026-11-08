@@ -6,9 +6,7 @@ import Foundation
 extension FeedViewModel {
     /// Replaces the free swipes left. Nil fills them to the cap.
     func debugSetSwipes(_ balance: Int?) {
-        allowance = balance.map { SwipeAllowance(balance: $0, tunables: allowanceTunables, now: now()) }
-            ?? SwipeAllowance(tunables: allowanceTunables, now: now())
-        allowanceStore.save(allowance)
+        gate.debugSetSwipes(balance)
     }
 
     #if DEBUG
@@ -152,10 +150,7 @@ extension FeedViewModel {
 
     /// Fits the saved allowance to new swipe tunables, and re-times a pending refill reminder.
     private func freeTierChanged(from before: SwipeAllowance.Tunables) {
-        let after = allowanceTunables
-        guard after != before else { return }
-        allowance.adjust(from: before, to: after, at: now())
-        allowanceStore.save(allowance)
+        guard gate.fitAllowance(from: before) else { return }
         if !isUnlocked, allowance.remaining == 0, isRemindersOptedIn {
             reminders.cancelAll()
             Task { await scheduleReminders() }
