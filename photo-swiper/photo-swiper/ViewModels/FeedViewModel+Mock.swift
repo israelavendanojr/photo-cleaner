@@ -22,6 +22,7 @@ extension FeedViewModel {
         allowance: SwipeAllowance? = nil,
         allowanceTunables: SwipeAllowance.Tunables = .standard,
         freeTier: FreeTierTunables? = nil,
+        features: FeatureAvailabilityTunables? = nil,
         notifier: RefillNotifier? = nil
     ) -> FeedViewModel {
         let entitlements = entitlements ?? EntitlementServices.make(mock: true)
@@ -39,6 +40,7 @@ extension FeedViewModel {
                 firstSessionMinimum: onboardingPreparingMinimum,
                 allowanceTunables: allowanceTunables,
                 freeTier: freeTier,
+                features: features,
                 notifier: notifier ?? RefillNotifier(center: PreviewNotificationCenter(), defaults: defaults)
             )
         }
@@ -53,6 +55,7 @@ extension FeedViewModel {
             allowanceStore: SwipeAllowanceStore(initial: allowance),
             allowanceTunables: allowanceTunables,
             freeTier: freeTier,
+            features: features,
             notifier: notifier
         )
         switch start {

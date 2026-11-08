@@ -140,6 +140,22 @@ extension FeedViewModel {
         freeTierChanged(from: before)
     }
 
+    // MARK: Feature availability
+
+    /// Changes who gets one feature. The next page follows it; `adminRebuildDeck()` applies it now.
+    func setFeatureAvailability(_ feature: TierFeature, _ availability: FeatureAvailability) {
+        features.set(feature, availability)
+    }
+
+    func resetFeatureAvailability() {
+        features.resetToDefaults()
+    }
+
+    /// Deals a fresh deck on the current rules, keeping every decision.
+    func adminRebuildDeck() async {
+        apply(await makeSession(number: nextPageNumber))
+    }
+
     private func devModeChanged(from before: SwipeAllowance.Tunables) {
         if !DevMode.shared.isEnabled {
             (entitlements as? DebugOverrideEntitlementStore)?.setOverride(.off)

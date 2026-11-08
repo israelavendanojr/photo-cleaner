@@ -79,6 +79,7 @@ struct SettingsView: View {
                         AdminMockCardsPanel { dismiss() }
                         #endif
                         FreeLimitsPanel()
+                        FeatureAvailabilityPanel()
                     }
                 }
                 .padding(.horizontal, DS.Spacing.l)

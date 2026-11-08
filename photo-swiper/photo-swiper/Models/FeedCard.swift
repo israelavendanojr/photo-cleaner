@@ -31,6 +31,25 @@ enum FeedCard: Identifiable, Hashable, Sendable, Codable {
         case .duplicates(let group): group.items
         }
     }
+
+    /// The tier feature this card needs. Nil for single cards, which everyone gets.
+    var feature: TierFeature? {
+        switch self {
+        case .photo, .video: nil
+        case .similar: .similarShots
+        case .duplicates: .duplicates
+        case .batch(let batch):
+            switch batch.kind {
+            case .screenshots: .screenshotBatches
+            }
+        }
+    }
+
+    /// Itself when `enabled` allows it, otherwise a single card per item, in the bundle's order.
+    func unbundled(unless enabled: Set<TierFeature>) -> [FeedCard] {
+        guard let feature, !enabled.contains(feature) else { return [self] }
+        return items.map(FeedCard.init(item:))
+    }
 }
 
 /// A burst of near-identical shots with one suggested keeper.
