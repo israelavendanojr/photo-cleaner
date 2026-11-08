@@ -1,36 +1,17 @@
 import SwiftUI
 
-/// Full-bleed single photo with date, place, size, and an optional review flag.
+/// Full-bleed single photo with date, place, and size.
 struct PhotoCardView: View {
     let item: LibraryItem
-    /// Why this is a set's best pick, shown with a "Best pick" chip in place of the review flag.
-    var bestPickReason: String?
     var onOpen: () -> Void = {}
-
-    private var isBlurry: Bool { item.reviewFlag == .blurry }
 
     var body: some View {
         ItemImage(item.image)
-            .blur(radius: isBlurry ? 10 : 0, opaque: true)
             .overlay { BottomScrim() }
             .overlay {
                 CardCenterButton(accessibilityLabel: "View full screen", action: onOpen)
             }
             .overlay(alignment: .bottomLeading) { caption }
-            .overlay(alignment: .topLeading) {
-                if let bestPickReason {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Chip(text: "Best pick", systemImage: "star.fill", style: .plain)
-                        Chip(text: bestPickReason, style: .frosted, size: .footnote)
-                    }
-                    .softShadow()
-                    .padding(18)
-                } else if let flag = item.reviewFlag {
-                    Chip(text: flag.label, systemImage: "exclamationmark.circle")
-                        .softShadow()
-                        .padding(18)
-                }
-            }
             .rankDebugBadge(for: item)
             .clipShape(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
             .cardShadow()
@@ -59,11 +40,6 @@ struct PhotoCardView: View {
 
     private var accessibilityText: String {
         var parts = ["Photo", Format.day(item.date), item.location, Format.size(item.bytes)].compactMap { $0 }
-        if let bestPickReason {
-            parts.insert("Best pick. \(bestPickReason)", at: 1)
-        } else if let flag = item.reviewFlag {
-            parts.insert(flag.label, at: 1)
-        }
         if item.isFavorite { parts.append("Favorite") }
         return parts.joined(separator: ", ")
     }
@@ -85,7 +61,7 @@ struct BottomScrim: View {
 }
 
 #if DEBUG
-#Preview("Blurry") {
+#Preview("Flagged") {
     PhotoCardView(item: PreviewSamples.blurryPhoto)
         .padding(14)
         .background(DS.Palette.paper)

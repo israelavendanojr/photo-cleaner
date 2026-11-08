@@ -44,8 +44,7 @@ struct ItemReviewView: View {
                 returning: returning,
                 label: vm.swipeLabel,
                 onDecide: decide,
-                request: $request,
-                bestPickReason: bestPickReason
+                request: $request
             )
         }
         .background(DS.Palette.paper)
@@ -68,11 +67,6 @@ struct ItemReviewView: View {
             ToClearCounter(bytes: clearBytes, addedBytes: addedBytes, addedID: index)
                 .frame(maxWidth: .infinity, alignment: .trailing)
         }
-    }
-
-    private func bestPickReason(for card: FeedCard) -> String? {
-        guard let bestID = set.bestID, card.items.first?.id == bestID else { return nil }
-        return set.reason ?? ""
     }
 
     private func decide(_ direction: SwipeDirection, card: FeedCard) {

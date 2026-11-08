@@ -4,8 +4,6 @@ import SwiftUI
 struct CardContentView: View {
     @Environment(FeedViewModel.self) private var vm
     let card: FeedCard
-    /// Shown with a "Best pick" chip on a single-photo card in a one-by-one review.
-    var bestPickReason: String?
     var onOpenReview: (ReviewSet) -> Void = { _ in }
     var onPlayVideo: (LibraryItem) -> Void = { _ in }
     var onOpenPhoto: (LibraryItem) -> Void = { _ in }
@@ -13,7 +11,7 @@ struct CardContentView: View {
     var body: some View {
         switch card {
         case .photo(let item):
-            PhotoCardView(item: item, bestPickReason: bestPickReason) { onOpenPhoto(item) }
+            PhotoCardView(item: item) { onOpenPhoto(item) }
         case .video(let item):
             VideoCardView(item: item) { onPlayVideo(item) }
         case .similar(let group):

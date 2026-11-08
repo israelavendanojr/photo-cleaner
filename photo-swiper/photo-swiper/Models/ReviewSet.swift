@@ -9,7 +9,7 @@ struct ReviewSet: Identifiable, Hashable {
     let items: [LibraryItem]
     /// Where the review opens.
     let start: Int
-    /// The suggested keeper of a similar or duplicate set, shown with a "Best pick" chip.
+    /// The suggested keeper of a similar or duplicate set. The review opens on it first.
     var bestID: LibraryItem.ID?
     /// Why the best pick won, e.g. "Sharpest of the set".
     var reason: String?
