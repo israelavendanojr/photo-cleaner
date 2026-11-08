@@ -768,19 +768,20 @@ final class photo_swiperUITests: XCTestCase {
         let devMode = app.switches["settings.debug.devMode"]
         scrollTo(devMode, in: app)
         XCTAssertEqual(devMode.value as? String, "1", "Debug builds start in Developer mode")
+        // The panel sits below, in the same scroll view, so it's in the tree without scrolling.
         let binSize = app.textFields["settings.tuning.freeBinMB"]
-        scrollTo(binSize, in: app)
+        XCTAssertTrue(binSize.exists)
         XCTAssertEqual(binSize.value as? String, "1000", "The free bin defaults to 1 GB")
         XCTAssertTrue(element(app, containing: "swipes/day").exists, "The derived per-day line shows")
         XCTAssertTrue(app.descendants(matching: .any)["settings.tuning.countdown"].exists)
 
-        scrollTo(devMode, in: app)
         flip(devMode)
         XCTAssertTrue(devMode.waitForNonExistence(timeout: 3), "Off hides the Debug section")
         XCTAssertFalse(binSize.exists)
 
         let version = app.descendants(matching: .any)["settings.version"]
-        scrollTo(version, in: app)
+        for _ in 0..<6 where !(version.exists && version.isHittable) { app.swipeDown() }
+        XCTAssertTrue(version.isHittable)
         for _ in 0..<7 { version.tap() }
         XCTAssertTrue(app.descendants(matching: .any)["settings.devModeToast"].waitForExistence(timeout: 2))
         XCTAssertTrue(devMode.waitForExistence(timeout: 3), "Seven taps turn it back on")
