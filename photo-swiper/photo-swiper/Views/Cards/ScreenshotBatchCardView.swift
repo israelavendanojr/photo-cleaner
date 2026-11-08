@@ -14,12 +14,10 @@ struct ScreenshotBatchCardView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Chip(text: batch.label)
             Text(batch.title)
                 .dsSerif(34, relativeTo: .largeTitle)
                 .foregroundStyle(DS.Palette.ink)
                 .frame(maxWidth: 280, alignment: .leading)
-                .padding(.top, DS.Spacing.s)
             Text("\(Format.range(batch.items.map(\.date))) · \(Format.size(totalBytes))")
                 .font(.subheadline)
                 .foregroundStyle(DS.Palette.secondary)

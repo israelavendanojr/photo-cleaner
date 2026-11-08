@@ -13,7 +13,7 @@ struct VideoCardView: View {
             }
             .overlay(alignment: .topLeading) {
                 if let duration = item.duration {
-                    Chip(text: "Video · \(Format.duration(duration))", style: .frosted)
+                    Chip(text: Format.duration(duration), style: .frosted)
                         .padding(18)
                 }
             }
