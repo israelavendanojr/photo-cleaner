@@ -610,7 +610,9 @@ final class photo_swiperUITests: XCTestCase {
         let unlock = app.buttons["paywall.unlock"]
         XCTAssertTrue(unlock.waitForExistence(timeout: 5), "The swipe is refused and the wall opens")
         XCTAssertTrue(element(app, containing: "Out of swipes").exists)
-        XCTAssertTrue(element(app, containing: "+10 in").exists)
+        let countdown = app.descendants(matching: .any)["wall.countdown"]
+        XCTAssertTrue(countdown.exists, "The wall says when swipes come back")
+        XCTAssertTrue(countdown.label.hasPrefix("+10 in "), "Plainly: \(countdown.label)")
         XCTAssertTrue(element(app, containing: "Unlimited swipes").exists)
         XCTAssertEqual(unlock.label, "Unlock for $9.99, one-time purchase")
         sleep(1)
@@ -892,8 +894,9 @@ final class photo_swiperUITests: XCTestCase {
     private func launch(_ arguments: String...) -> XCUIApplication {
         let app = XCUIApplication()
         // Always the mock library, so tests never hit the photo permission prompt. The swipe
-        // hint's nudge would move the card under a drag, so it counts as already seen.
-        app.launchArguments = ["-mockLibrary", "YES", "-hasSeenSwipeHint", "YES"] + arguments
+        // hint's nudge would move the card under a drag, so it counts as already seen. The unlock
+        // offer after a delete shows once a day, so each launch starts with it due.
+        app.launchArguments = ["-mockLibrary", "YES", "-hasSeenSwipeHint", "YES", "-resetUpsell", "YES"] + arguments
         app.launch()
         return app
     }
