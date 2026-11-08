@@ -51,6 +51,10 @@ struct RootView: View {
             // A refill reminder was tapped.
             tab = .feed
         }
+        .onChange(of: vm.adminShowFeedRequest) {
+            // Admin Tools put a mock card on the deck.
+            tab = .feed
+        }
         .sheet(isPresented: $isPilePresented) {
             PendingPileView(showsDone: true)
                 .presentationDetents([.large])

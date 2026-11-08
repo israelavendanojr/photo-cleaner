@@ -60,10 +60,52 @@ struct AdminUpsellPanel: View {
 }
 
 #if DEBUG
+/// Admin Tools' mock cards: one freshly randomized card of a kind on top of the deck, then the feed.
+/// Debug builds only, since release builds leave out the mock images.
+struct AdminMockCardsPanel: View {
+    @Environment(FeedViewModel.self) private var vm
+    let onClose: () -> Void
+
+    var body: some View {
+        SettingsSection("Admin Tools · Mock cards") {
+            ForEach(AdminMockKind.allCases) { kind in
+                row("Add \(kind.title.lowercased())", icon: kind.icon, id: "settings.admin.mock.\(kind.rawValue)") {
+                    add(kind)
+                }
+            }
+            row("Add a random kind", icon: "dice", id: "settings.admin.mock.random") {
+                add(AdminMockKind.allCases.randomElement()!)
+            }
+            row("Remove mock cards", icon: "xmark.bin", id: "settings.admin.mock.remove",
+                detail: "Mock cards never save a decision, fill the pile or cost a swipe.") {
+                vm.adminRemoveMockCards()
+            }
+        }
+    }
+
+    private func add(_ kind: AdminMockKind) {
+        var rng = SystemRandomNumberGenerator()
+        vm.adminInsertMockCard(AdminMockCards.card(kind, using: &rng))
+        onClose()
+    }
+
+    private func row(_ title: String, icon: String, id: String, detail: String? = nil, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            SettingsLabel(icon: icon, title: title, detail: detail)
+                .settingsRowPadding()
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier(id)
+    }
+}
+
 #Preview {
     ScrollView {
-        AdminUpsellPanel(onClose: {})
-            .padding()
+        VStack(spacing: DS.Spacing.l) {
+            AdminUpsellPanel(onClose: {})
+            AdminMockCardsPanel(onClose: {})
+        }
+        .padding()
     }
     .background(DS.Palette.paper)
     .environment(FeedViewModel.mock())

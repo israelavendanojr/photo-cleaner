@@ -118,6 +118,8 @@ final class FeedViewModel {
     private var wasWallShownThisSession = false
     /// Admin Tools asked for an upsell screen. RootView shows it and clears this.
     private(set) var adminUpsellRequest: AdminUpsell?
+    /// Bumped when Admin Tools puts a mock card on the deck, so RootView switches to the feed.
+    private(set) var adminShowFeedRequest = 0
     /// A free user's swipe was refused because the pile is full. FeedView shows it.
     var isPileFullNoticePresented = false
     /// Something about the last delete the user should know, e.g. items the system refused.
@@ -502,6 +504,7 @@ final class FeedViewModel {
     /// Whether swiping the current card this way would go through. The deck asks before letting a card fly.
     /// False out of swipes, or for a free user when it would take the pile past its limit.
     func canDecide(_ direction: SwipeDirection) -> Bool {
+        if currentCard?.isAdminMock == true { return true }
         guard canSwipe || !chargesSwipes else { return false }
         guard let card = currentCard else { return true }
         return fitsInPile(itemDecisions(for: card, direction: direction), card: card)
@@ -509,6 +512,7 @@ final class FeedViewModel {
 
     /// Whether a finished one-by-one review of the current card would go through, like `canDecide`.
     func canDecideIndividually(_ outcome: [LibraryItem.ID: Decision]) -> Bool {
+        if currentCard?.isAdminMock == true { return true }
         guard canSwipe || !chargesSwipes else { return false }
         guard let card = currentCard, let complete = completed(outcome, for: card) else { return true }
         return fitsInPile(complete, card: card)
@@ -527,7 +531,7 @@ final class FeedViewModel {
     /// Out of free swipes, nothing is committed and the wall opens instead.
     /// A free user's delete that won't fit in the pile is refused whole, and says so.
     func decide(_ direction: SwipeDirection) {
-        guard phase == .feed, let card = currentCard, admitSwipe() else { return }
+        guard phase == .feed, let card = currentCard, card.isAdminMock || admitSwipe() else { return }
         let outcome = itemDecisions(for: card, direction: direction)
         guard fitsInPile(outcome, card: card) else {
             isPileFullNoticePresented = true
@@ -542,7 +546,7 @@ final class FeedViewModel {
     /// is kept as a draft and the wall or the pile notice opens.
     func decideIndividually(_ outcome: [LibraryItem.ID: Decision]) {
         guard phase == .feed, let card = currentCard, let complete = completed(outcome, for: card) else { return }
-        guard admitSwipe() else {
+        guard card.isAdminMock || admitSwipe() else {
             saveDraft(outcome, for: card.id)
             return
         }
@@ -896,21 +900,25 @@ final class FeedViewModel {
 
     /// Records per-item decisions for the current card and moves on.
     /// `direction` is the side the card left from, so undo brings it back the same way.
+    /// An Admin Tools mock card only moves on: nothing is saved, charged or added to the pile.
     private func commit(_ outcome: [LibraryItem.ID: Decision], card: FeedCard, direction: SwipeDirection) {
+        let isMock = card.isAdminMock
         let ids = card.items.map(\.id)
-        let before = store.decisions(for: Set(ids))
-        let stored = Dictionary(uniqueKeysWithValues: ids.map { ($0, before[$0]) })
-        let charged = spendSwipe()
+        let before = isMock ? [:] : store.decisions(for: Set(ids))
+        let stored = isMock ? [:] : Dictionary(uniqueKeysWithValues: ids.map { ($0, before[$0]) })
+        let charged = isMock ? false : spendSwipe()
         history.append(Snapshot(index: index, decisions: decisions, marks: marks, drafts: drafts, cardID: card.id, direction: direction, stored: stored, charged: charged))
-        decisions.merge(outcome) { _, new in new }
+        if !isMock { decisions.merge(outcome) { _, new in new } }
         drafts[card.id] = nil
         returningCard = nil
 
         let decidedAt = now()
         let sessionNumber = session?.number ?? 0
-        store.save(Dictionary(uniqueKeysWithValues: card.items.compactMap { item in
-            outcome[item.id].map { (item.id, StoredDecision(decision: $0, decidedAt: decidedAt, sessionNumber: sessionNumber, item: item)) }
-        }))
+        if !isMock {
+            store.save(Dictionary(uniqueKeysWithValues: card.items.compactMap { item in
+                outcome[item.id].map { (item.id, StoredDecision(decision: $0, decidedAt: decidedAt, sessionNumber: sessionNumber, item: item)) }
+            }))
+        }
 
         let cleared = card.items.filter { outcome[$0.id] == .delete }.reduce(0) { $0 + $1.bytes }
         if cleared > 0 { showChip(bytes: cleared) }
@@ -1043,6 +1051,7 @@ final class FeedViewModel {
     /// An empty pile takes anything, even one item (or group) bigger than the whole limit.
     /// Groups go in whole or not at all.
     private func fitsInPile(_ outcome: [LibraryItem.ID: Decision], card: FeedCard) -> Bool {
+        guard !card.isAdminMock else { return true }
         guard let limit = pileLimitBytes, chargesSwipes else { return true }
         let pending = pendingItems
         let pendingIDs = Set(pending.map(\.id))
@@ -1153,6 +1162,10 @@ final class FeedViewModel {
     private func restore(_ saved: SavedSession) async {
         var restored = saved.session
         var position = saved.index
+        // Admin Tools' mock cards don't outlive the launch.
+        position -= restored.cards.prefix(position).filter(\.isAdminMock).count
+        restored.cards.removeAll(where: \.isAdminMock)
+        let savedIndex = position
         let gone = await library.missing(from: Set(restored.items.map(\.id)).union(store.pile().map(\.id)))
         if !gone.isEmpty {
             // Undo history starts empty, so earlier cards can be pruned too.
@@ -1161,7 +1174,7 @@ final class FeedViewModel {
             for (offset, card) in restored.cards.enumerated() {
                 guard let kept = card.removing(gone) else { continue }
                 cards.append(kept)
-                if offset < saved.index { position += 1 }
+                if offset < savedIndex { position += 1 }
             }
             restored.cards = cards
             store.settle(gone, as: .gone)
@@ -1441,6 +1454,29 @@ extension FeedViewModel {
     /// RootView showed the requested upsell.
     func finishAdminUpsell() {
         adminUpsellRequest = nil
+    }
+
+    // MARK: Mock cards
+
+    /// Puts an Admin Tools mock card on top of the deck, even from caught up.
+    func adminInsertMockCard(_ card: FeedCard) {
+        guard var current = session else { return }
+        current.cards.insert(card, at: min(index, current.cards.count))
+        session = current
+        returningCard = nil
+        if deckPhase == .caughtUp { enterDeckPhase(.feed) }
+        saveProgress()
+        adminShowFeedRequest += 1
+    }
+
+    /// Takes the mock cards still ahead out of the deck. Swiped ones stay behind until trimmed.
+    func adminRemoveMockCards() {
+        guard var current = session, current.cards[index...].contains(where: \.isAdminMock) else { return }
+        current.cards = Array(current.cards[..<index]) + current.cards[index...].filter { !$0.isAdminMock }
+        session = current
+        returningCard = nil
+        saveProgress()
+        fillIfNeeded()
     }
 
     // MARK: Developer mode

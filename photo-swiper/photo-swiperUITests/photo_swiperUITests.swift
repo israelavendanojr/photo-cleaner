@@ -838,6 +838,41 @@ final class photo_swiperUITests: XCTestCase {
         XCTAssertTrue(devMode.waitForExistence(timeout: 3), "Seven taps turn it back on")
     }
 
+    // MARK: Admin Tools
+
+    @MainActor
+    func testAddingAMockSimilarCardPutsItOnTopOfTheFeed() throws {
+        let app = launch()
+        let before = topCard(app)
+        openSettings(app)
+        XCTAssertTrue(element(app, containing: "Admin Tools").exists, "The section is called Admin Tools")
+        let add = app.buttons["settings.admin.mock.similar"]
+        scrollTo(add, in: app)
+        add.tap()
+
+        XCTAssertTrue(waitForTopCard(app, containing: "admin-"), "Back on the feed with the mock card on top")
+        XCTAssertTrue(similarHero(app).waitForExistence(timeout: 3), "It's a similar shots card")
+        attachScreenshot(app, "mock similar card")
+
+        swipe(app, forward: false)
+        XCTAssertTrue(waitForTopCard(app, is: before), "The card that was on top is next")
+    }
+
+    @MainActor
+    func testRaisingThePostDeleteUpsellShowsIt() throws {
+        // A pick saved from an earlier run would change what's raised.
+        let app = launch("-unlocked", "NO", "-admin.upsellScreen", "postDelete")
+        openSettings(app)
+        let raise = app.buttons["settings.admin.raiseUpsell"]
+        scrollTo(raise, in: app)
+        XCTAssertTrue(raise.label.contains("Post-delete sheet"), "The default pick, read \(raise.label)")
+        raise.tap()
+
+        let title = app.descendants(matching: .any)["unlock.title"]
+        XCTAssertTrue(title.waitForExistence(timeout: 5), "The offer comes up once Settings closes")
+        XCTAssertTrue(title.label.hasPrefix("Freed "), "Read \(title.label)")
+    }
+
     // MARK: Progress
 
     @MainActor
