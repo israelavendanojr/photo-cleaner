@@ -103,19 +103,6 @@ final class FeedViewModel {
     private(set) var areRemindersDenied = false
     /// Bought or restored since launch. The review prompt never follows a purchase.
     private(set) var purchasedThisLaunch = false
-    /// RootView should ask for a review now. Set once the freed confirmation has closed.
-    private(set) var isReviewPromptDue = false
-    /// The last delete earned a review prompt; it waits for the pile to close.
-    private var isReviewPromptQueued = false
-    /// RootView should offer the unlock now: a free user's delete went through and the pile has closed.
-    private(set) var isDeleteUpsellDue = false
-    /// What the free user's last delete freed, for the offer's headline.
-    var upsellFreedBytes: Int64 = 0 // internal for FeedViewModel+AdminTools
-    /// A free user's delete earned the unlock offer; it waits for the pile to close.
-    private var isDeleteUpsellQueued = false
-    /// The wall has shown since launch. Every wall ends in a dismiss or an unlock, so the delete
-    /// offer stays away for the rest of the process.
-    var wasWallShownThisSession = false // internal for FeedViewModel+AdminTools
     /// Admin Tools asked for an upsell screen. RootView shows it and clears this.
     var adminUpsellRequest: AdminUpsell? // internal for FeedViewModel+AdminTools
     /// Bumped when Admin Tools puts a mock card on the deck, so RootView switches to the feed.
@@ -175,6 +162,8 @@ final class FeedViewModel {
     /// Where the free tier's limits come from: the swipe allowance and the pile limit.
     let freeTier: FreeTierTunables
     var allowanceTunables: SwipeAllowance.Tunables { freeTier.limits.allowance }
+    /// The review prompt or unlock offer a delete earns.
+    let followUps: FollowUpCoordinator
     /// Nil where reminders can't be offered (tests, previews).
     let notifier: RefillNotifier? // internal for FeedViewModel+AdminTools
 
@@ -208,6 +197,7 @@ final class FeedViewModel {
         self.allowanceStore = allowanceStore
         let freeTier = freeTier ?? .fixed(FreeTierLimits(allowance: allowanceTunables))
         self.freeTier = freeTier
+        followUps = FollowUpCoordinator(defaults: defaults, freeTier: freeTier, now: now)
         self.notifier = notifier
         allowance = allowanceStore.load() ?? SwipeAllowance(tunables: freeTier.limits.allowance, now: now())
         isRemindersOptedIn = notifier?.isOptedIn ?? false
@@ -240,6 +230,7 @@ final class FeedViewModel {
         self.allowanceStore = allowanceStore
         let freeTier = freeTier ?? .fixed(FreeTierLimits(allowance: allowanceTunables))
         self.freeTier = freeTier
+        followUps = FollowUpCoordinator(defaults: defaults, freeTier: freeTier, now: now)
         self.notifier = notifier
         allowance = allowanceStore.load() ?? SwipeAllowance(tunables: freeTier.limits.allowance, now: .now)
         isRemindersOptedIn = notifier?.isOptedIn ?? false
@@ -249,6 +240,15 @@ final class FeedViewModel {
         apply(session)
         refreshTotals()
     }
+
+    // MARK: Follow-ups
+
+    var isReviewPromptDue: Bool { followUps.isReviewPromptDue }
+    var isDeleteUpsellDue: Bool { followUps.isDeleteUpsellDue }
+    var upsellFreedBytes: Int64 { followUps.upsellFreedBytes }
+    func releaseReviewPrompt() { followUps.releaseReviewPrompt() }
+    func finishDeleteUpsell(shown: Bool) { followUps.finishDeleteUpsell(shown: shown) }
+    func finishReviewPrompt(asked: Bool) { followUps.finishReviewPrompt(asked: asked) }
 
     // MARK: Derived
 
@@ -645,41 +645,8 @@ final class FeedViewModel {
         saveProgress()
         await refreshLibraryTotal()
         let freed = deletedItems.reduce(0) { $0 + $1.bytes }
-        queueFollowUp(freed: freed)
+        followUps.queueFollowUp(freed: freed, isUnlocked: isUnlocked, isWallPresented: isWallPresented, purchasedThisLaunch: purchasedThisLaunch)
         return freed
-    }
-
-    /// The pile's freed confirmation has closed: the review prompt or unlock offer the delete earned may show now.
-    func releaseReviewPrompt() {
-        if isDeleteUpsellQueued {
-            isDeleteUpsellQueued = false
-            isDeleteUpsellDue = true
-        }
-        if isReviewPromptQueued {
-            isReviewPromptQueued = false
-            isReviewPromptDue = true
-        }
-    }
-
-    /// RootView showed the unlock offer after a delete, or decided not to. Only a shown offer
-    /// starts the wait before the next one.
-    func finishDeleteUpsell(shown: Bool) {
-        isDeleteUpsellDue = false
-        if shown { defaults.set(now(), forKey: DefaultsKey.deleteUpsellShownAt) }
-    }
-
-    /// The delete offer shows after the first delete, then at most once per `postDeleteUpsellInterval`,
-    /// and never once the wall has shown this session.
-    private var isDeleteUpsellAllowed: Bool {
-        guard !wasWallShownThisSession else { return false }
-        guard let last = defaults.object(forKey: DefaultsKey.deleteUpsellShownAt) as? Date else { return true }
-        return now().timeIntervalSince(last) >= freeTier.limits.postDeleteUpsellInterval
-    }
-
-    /// RootView handled the due prompt. `asked` records this version, so it won't ask again until the next.
-    func finishReviewPrompt(asked: Bool) {
-        isReviewPromptDue = false
-        if asked { defaults.set(AppInfo.version, forKey: DefaultsKey.reviewPromptVersion) }
     }
 
     /// "Check again" from caught up: deals a fresh deck if anything turned up, e.g. new photos
@@ -698,7 +665,7 @@ final class FeedViewModel {
         refreshAllowance()
         if !isWallPresented { paywallStatus = .idle }
         isWallPresented = true
-        wasWallShownThisSession = true
+        followUps.wallShown()
         Task { await refreshEstimate() }
     }
 
@@ -811,30 +778,6 @@ final class FeedViewModel {
     }
 
     // MARK: Internals
-
-    /// Counts the delete and queues what follows it once the pile closes: the unlock offer for a free
-    /// user (throttled, see `isDeleteUpsellAllowed`), or a review prompt if the delete earned one (see `ReviewPrompt`). Never both.
-    private func queueFollowUp(freed: Int64) {
-        let prior = defaults.integer(forKey: DefaultsKey.deleteCount)
-        defaults.set(prior + 1, forKey: DefaultsKey.deleteCount)
-        isReviewPromptQueued = false
-        isDeleteUpsellQueued = false
-        guard !isWallPresented else { return }
-        if !isUnlocked {
-            // Free users never get the review prompt, offer or not.
-            guard isDeleteUpsellAllowed else { return }
-            upsellFreedBytes = freed
-            isDeleteUpsellQueued = true
-            return
-        }
-        guard !purchasedThisLaunch else { return }
-        isReviewPromptQueued = ReviewPrompt.isEligible(
-            freedBytes: freed,
-            priorDeletes: prior,
-            lastAskedVersion: defaults.string(forKey: DefaultsKey.reviewPromptVersion),
-            currentVersion: AppInfo.version
-        )
-    }
 
     /// Bought or restored: reminders are moot and the wall, if up, closes.
     private func didUnlock() {

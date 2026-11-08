@@ -72,14 +72,13 @@ extension FeedViewModel {
 
     /// The next delete offers the unlock again: forgets when it last showed and that the wall showed this session.
     func adminResetDeleteUpsell() {
-        defaults.removeObject(forKey: DefaultsKey.deleteUpsellShownAt)
-        wasWallShownThisSession = false
+        followUps.adminResetDeleteUpsell()
     }
 
     /// Asks RootView to show an upsell screen now, once Settings has closed.
     func adminRaiseUpsell(_ screen: AdminUpsell) {
         if screen == .postDelete {
-            upsellFreedBytes = Int64.random(in: 20_000_000...3_000_000_000)
+            followUps.adminPickFreedBytes()
         }
         adminUpsellRequest = screen
     }
