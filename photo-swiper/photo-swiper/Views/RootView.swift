@@ -67,8 +67,9 @@ struct RootView: View {
             try? await Task.sleep(for: .seconds(0.6))
             guard !Task.isCancelled, vm.isDeleteUpsellDue else { return }
             // Never over the wall, or once unlocked meanwhile.
-            if !vm.isWallPresented, !vm.isUnlocked { isUpsellPresented = true }
-            vm.finishDeleteUpsell()
+            let shows = !vm.isWallPresented && !vm.isUnlocked
+            if shows { isUpsellPresented = true }
+            vm.finishDeleteUpsell(shown: shows)
         }
         .onChange(of: vm.isUnlocked) {
             vm.entitlementChanged()

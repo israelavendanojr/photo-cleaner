@@ -226,9 +226,10 @@ struct PileCapTests {
 
     /// A started deck with several deletes pending and one earlier delete on record, so a big
     /// delete would earn a review prompt if the user were unlocked.
-    private func started(unlocked: Bool, library: FakeLibrary = FakeLibrary()) async throws -> (FeedViewModel, big: LibraryItem) {
+    private func started(unlocked: Bool, library: FakeLibrary = FakeLibrary(), clock: TestClock = TestClock()) async throws -> (FeedViewModel, big: LibraryItem) {
         defaults.set(1, forKey: DefaultsKey.deleteCount)
-        let vm = FeedViewModel(library: library, builder: MockFeedBuilder(), entitlements: TestEntitlements(isUnlocked: unlocked), defaults: defaults)
+        let vm = FeedViewModel(library: library, builder: MockFeedBuilder(), entitlements: TestEntitlements(isUnlocked: unlocked),
+                               defaults: defaults, now: { clock.now })
         await vm.start()
         for _ in 0..<6 { vm.decide(.left) }
         let big = try #require(vm.pendingItems.first { $0.bytes >= ReviewPrompt.minimumFreedBytes })
@@ -246,7 +247,7 @@ struct PileCapTests {
         #expect(vm.upsellFreedBytes == big.bytes)
         #expect(!vm.isReviewPromptDue, "The offer replaces the review prompt")
 
-        vm.finishDeleteUpsell()
+        vm.finishDeleteUpsell(shown: true)
         #expect(!vm.isDeleteUpsellDue)
         #expect(defaults.integer(forKey: DefaultsKey.deleteCount) == 2, "The delete still counts")
     }
@@ -281,5 +282,62 @@ struct PileCapTests {
         vm.releaseReviewPrompt()
 
         #expect(!vm.isDeleteUpsellDue)
+    }
+
+    // MARK: How often the offer comes back
+
+    /// Deletes one pending item and lets the pile close. True if the offer came due.
+    private func deleteOne(_ vm: FeedViewModel) async throws -> Bool {
+        let item = try #require(vm.pendingItems.first)
+        await vm.deleteNow([item])
+        vm.releaseReviewPrompt()
+        return vm.isDeleteUpsellDue
+    }
+
+    @Test func theOfferWaitsADayAfterShowing() async throws {
+        let clock = TestClock()
+        let (vm, _) = try await started(unlocked: false, clock: clock)
+
+        #expect(try await deleteOne(vm), "The first delete offers it")
+        vm.finishDeleteUpsell(shown: true)
+
+        clock.advance(hours: 23)
+        #expect(try await deleteOne(vm) == false, "Not again within the day")
+        #expect(!vm.isReviewPromptDue, "Free users still get no review prompt")
+
+        clock.advance(hours: 1)
+        #expect(try await deleteOne(vm), "Due again a full interval later")
+    }
+
+    @Test func anOfferNotShownDoesNotStartTheWait() async throws {
+        let clock = TestClock()
+        let (vm, _) = try await started(unlocked: false, clock: clock)
+
+        #expect(try await deleteOne(vm))
+        vm.finishDeleteUpsell(shown: false)
+        #expect(defaults.object(forKey: DefaultsKey.deleteUpsellShownAt) == nil)
+
+        #expect(try await deleteOne(vm), "Still due, since it never showed")
+    }
+
+    @Test func theLastShownDateIsRemembered() async throws {
+        let clock = TestClock()
+        defaults.set(clock.now.addingTimeInterval(-3600), forKey: DefaultsKey.deleteUpsellShownAt)
+        let (vm, _) = try await started(unlocked: false, clock: clock)
+
+        #expect(try await deleteOne(vm) == false, "Shown an hour ago, in an earlier launch")
+        clock.advance(hours: 23)
+        #expect(try await deleteOne(vm))
+    }
+
+    @Test func noOfferForTheRestOfTheSessionOnceTheWallHasShown() async throws {
+        let clock = TestClock()
+        let (vm, _) = try await started(unlocked: false, clock: clock)
+        vm.presentWall()
+        vm.dismissWall()
+
+        #expect(try await deleteOne(vm) == false, "Not right after the wall")
+        clock.advance(hours: 48)
+        #expect(try await deleteOne(vm) == false, "Not for the rest of the session")
     }
 }

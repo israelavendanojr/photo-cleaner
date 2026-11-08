@@ -55,6 +55,10 @@ private extension FeedViewModel {
             UserDefaults.standard.removeObject(forKey: DefaultsKey.hasSeenSwipeHint)
             UserDefaults.standard.set(true, forKey: DefaultsKey.debugShowOnboarding)
         }
+        // `-resetUpsell YES` forgets when the delete offer last showed, so it's due again.
+        if UserDefaults.standard.bool(forKey: "resetUpsell") {
+            UserDefaults.standard.removeObject(forKey: DefaultsKey.deleteUpsellShownAt)
+        }
         if LibraryServices.usesMock {
             let entitlements = EntitlementServices.make(mock: true)
             let suite = "mock.reminders"
