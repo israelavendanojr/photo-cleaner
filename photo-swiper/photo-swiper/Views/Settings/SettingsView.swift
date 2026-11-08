@@ -7,7 +7,7 @@ import UIKit
 /// Rows for launch values still unset in `AppInfo` are hidden. Debug builds show them greyed out
 /// with "Not set yet", so the layout can be checked.
 ///
-/// In Developer mode (`DevMode`) a Debug section and the free-tier tuning panel follow. Tapping the
+/// In Developer mode (`DevMode`) an Admin Tools section and the free-tier tuning panel follow. Tapping the
 /// version row `DevMode.tapsToToggle` times turns Developer mode on or off where the build allows it.
 struct SettingsView: View {
     @Environment(FeedViewModel.self) private var vm
@@ -218,7 +218,7 @@ struct SettingsView: View {
     }
 
     private var debugSection: some View {
-        SettingsSection("Debug") {
+        SettingsSection("Admin Tools") {
             Toggle(isOn: Binding(get: { DevMode.shared.isEnabled }, set: { vm.setDevModeEnabled($0) })) {
                 SettingsLabel(icon: "hammer", title: "Developer mode",
                               detail: "Off hides this section and puts the free limits back to their defaults. Tap the version \(DevMode.tapsToToggle) times to turn it on again.")

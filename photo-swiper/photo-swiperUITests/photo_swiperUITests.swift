@@ -827,7 +827,7 @@ final class photo_swiperUITests: XCTestCase {
         XCTAssertTrue(app.descendants(matching: .any)["settings.tuning.countdown"].exists)
 
         flip(devMode)
-        XCTAssertTrue(devMode.waitForNonExistence(timeout: 3), "Off hides the Debug section")
+        XCTAssertTrue(devMode.waitForNonExistence(timeout: 3), "Off hides the Admin Tools section")
         XCTAssertFalse(binSize.exists)
 
         let version = app.descendants(matching: .any)["settings.version"]

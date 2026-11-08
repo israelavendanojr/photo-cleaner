@@ -1352,9 +1352,9 @@ extension FeedViewModel {
 }
 #endif
 
-// MARK: - Settings' debug section
+// MARK: - Settings' Admin Tools
 
-/// Settings' Debug section, shown in Developer mode (see `DevMode`).
+/// Settings' Admin Tools section, shown in Developer mode (see `DevMode`).
 extension FeedViewModel {
     /// Replaces the free swipes left. Nil fills them to the cap.
     func debugSetSwipes(_ balance: Int?) {

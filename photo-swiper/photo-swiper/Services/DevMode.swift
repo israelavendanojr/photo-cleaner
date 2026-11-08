@@ -51,7 +51,7 @@ extension DefaultsKey {
     static let devModeEnabled = "devModeEnabled"
 }
 
-/// Developer mode: Settings' Debug section, the unlock override, and the free-tier tuning panel.
+/// Developer mode: Settings' Admin Tools section, the unlock override, and the free-tier tuning panel.
 ///
 /// Always available in debug builds, where it starts on. In TestFlight it's off until the version row
 /// in Settings is tapped `tapsToToggle` times. App Store builds never have it: the stored switch is
