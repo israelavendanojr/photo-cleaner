@@ -1,12 +1,21 @@
 import Foundation
 import Observation
 
-/// Owns the deck: cards, decisions, undo, and the running totals.
+/// Owns the deck: cards, decisions, drafts, marks, undo, the pile, paging, and the running totals.
 ///
 /// The deck is endless. When few cards are left ahead, the next page is built in the background
 /// and appended; it only ends at caught up, when a page comes back empty.
 /// Views read from it and call its intents. Animation and haptics stay in the views.
 /// Every decision is written through to `store` as it happens, so relaunching resumes in place.
+///
+/// The rest is done by collaborators it owns and forwards to, so views still read everything here:
+/// - `SwipeGate`: the free allowance, the wall and the unlock purchase, and the free pile limit.
+/// - `OnboardingFlow`: first-launch onboarding, which can hold `phase` while the first deck is dealt.
+/// - `ReminderController`: refill reminders and the clutter estimate they quote.
+/// - `FollowUpCoordinator`: the review prompt or unlock offer a delete earns.
+/// Collaborators never reach each other; effects that span them (a refill front-loading the deck,
+/// an unlock cancelling reminders) are sequenced here. Settings' Admin Tools live in
+/// `FeedViewModel+AdminTools.swift`, previews and mocks in `FeedViewModel+Mock.swift`.
 @Observable
 @MainActor
 final class FeedViewModel {
@@ -131,7 +140,7 @@ final class FeedViewModel {
     let defaults: UserDefaults // internal for FeedViewModel+AdminTools
     /// Shortest time onboarding shows its "preparing" state, so the step change can be read.
     private let firstSessionMinimum: Duration
-    let now: () -> Date // internal for FeedViewModel+AdminTools
+    private let now: () -> Date
     /// Where the free tier's limits come from: the swipe allowance and the pile limit.
     let freeTier: FreeTierTunables
     /// The allowance, the wall and the unlock purchase, and the free pile limit.
