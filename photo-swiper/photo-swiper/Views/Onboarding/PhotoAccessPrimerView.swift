@@ -133,7 +133,7 @@ struct PhotoAccessPrimerView: View {
 private enum Copy {
     static let headline = "One permission, then you're in."
     static let caption = "To find similar shots and blurry ones, \(AppInfo.name) needs to see your whole library."
-    static let keepsScanning = "Large libraries keep scanning in the background."
+    static let keepsScanning = "Large libraries keep scanning while you swipe."
     static let continueTitle = "Continue"
     static let preparing = "Finding your first photos…"
     static let preparingValue = "Finding your first photos"
