@@ -12,7 +12,8 @@ enum IndexGate {
 ///
 /// Pausing cancels the run; the indexer's work queue is rebuilt from what's stored, so the next run
 /// resumes without redoing anything. A run is due at access and on every return to the foreground,
-/// which picks up photos taken since. Removals reported by the library are forwarded as they happen.
+/// which picks up photos taken since. Removals reported by the library are forwarded as they happen,
+/// with full access only: a narrowed limited selection reports its unselected items as removed.
 /// Foreground only for now: no background tasks.
 @MainActor
 final class IndexScheduler {
@@ -40,8 +41,8 @@ final class IndexScheduler {
         isForeground = UIApplication.shared.applicationState != .background
         observe()
         let vanished = library.vanishedItems()
-        vanishedTask = Task { [indexer] in
-            for await ids in vanished { await indexer.remove(ids) }
+        vanishedTask = Task { [indexer, library] in
+            for await ids in vanished where library.currentAccess() == .full { await indexer.remove(ids) }
         }
         update()
     }

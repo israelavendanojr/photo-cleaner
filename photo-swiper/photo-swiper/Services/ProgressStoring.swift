@@ -13,6 +13,11 @@ protocol ProgressStoring: AnyObject {
     func save(_ changes: [LibraryItem.ID: StoredDecision?])
     /// Marks decided items as settled. Items already settled keep their first settlement.
     func settle(_ ids: Set<LibraryItem.ID>, as settlement: Settlement)
+    /// Items settled as gone from the library.
+    func goneIDs() -> Set<LibraryItem.ID>
+    /// Clears the settlement of items found to be still in the library, so their decision applies
+    /// again: a delete is back in the pile. Never deletes anything.
+    func reopen(_ ids: Set<LibraryItem.ID>)
 
     /// Decided delete, not yet settled, oldest decision first.
     func pile() -> [LibraryItem]

@@ -84,6 +84,23 @@ final class SwiftDataProgressStore: ProgressStoring {
         persist()
     }
 
+    func goneIDs() -> Set<LibraryItem.ID> {
+        let gone: String? = Settlement.gone.rawValue
+        var descriptor = FetchDescriptor<ItemProgress>(predicate: #Predicate { $0.settlementRaw == gone })
+        descriptor.propertiesToFetch = [\.itemID]
+        return Set(fetch(descriptor).map(\.itemID))
+    }
+
+    func reopen(_ ids: Set<LibraryItem.ID>) {
+        let settled = records(for: ids).filter { $0.settlementRaw != nil }
+        guard !settled.isEmpty else { return }
+        for record in settled {
+            record.settlementRaw = nil
+            record.settledAt = nil
+        }
+        persist()
+    }
+
     // MARK: Derived
 
     func pile() -> [LibraryItem] {

@@ -151,6 +151,19 @@ struct LibraryIndexerTests {
         #expect(await index.stamps().keys.sorted() == ["p1", "p3"])
     }
 
+    @Test func limitedAccessRemovesNothing() async {
+        source.assets = photos(4)
+        await indexer().run()
+
+        // Under limited access the source only lists the selection; the rest only looks gone.
+        source.assets = Array(photos(4).prefix(1))
+        let limited = LibraryIndexer(source: source, analyzer: analyzer, index: index, version: 1, batchSize: 2,
+                                     canPrune: { false }, now: { [base] in base })
+        await limited.run()
+
+        #expect(await index.stamps().keys.sorted() == ["p0", "p1", "p2", "p3"])
+    }
+
     @Test func screenshotsVideosAndCloudOnlyPhotosKeepMetadataWithoutImageSignals() async {
         source.assets = [
             IndexableAsset(id: "shot", createdAt: base, modifiedAt: base, kind: .screenshot),

@@ -1,5 +1,7 @@
 import Foundation
 import Photos
+import PhotosUI
+import UIKit
 
 /// The user's real library, through PhotoKit.
 ///
@@ -21,14 +23,13 @@ final class PhotoKitLibrary: NSObject, PhotoLibraryProviding, @unchecked Sendabl
         PHPhotoLibrary.authorizationStatus(for: .readWrite) == .notDetermined
     }
 
+    func currentAccess() -> LibraryAccess {
+        Self.access(for: PHPhotoLibrary.authorizationStatus(for: .readWrite))
+    }
+
     func requestAccess() async -> LibraryAccess {
         // Returns the current status without prompting once the user has answered.
-        let status = await PHPhotoLibrary.requestAuthorization(for: .readWrite)
-        let access: LibraryAccess = switch status {
-        case .authorized: .full
-        case .limited: .limited
-        default: .denied
-        }
+        let access = Self.access(for: await PHPhotoLibrary.requestAuthorization(for: .readWrite))
         if access != .denied { startObserving() }
         return access
     }
@@ -85,6 +86,16 @@ final class PhotoKitLibrary: NSObject, PhotoLibraryProviding, @unchecked Sendabl
         return ids.subtracting(found)
     }
 
+    @MainActor
+    func presentLimitedPicker() async {
+        let root = UIApplication.shared.connectedScenes
+            .compactMap { ($0 as? UIWindowScene)?.keyWindow?.rootViewController }
+            .first
+        guard var top = root else { return }
+        while let presented = top.presentedViewController { top = presented }
+        _ = await PHPhotoLibrary.shared().presentLimitedLibraryPicker(from: top)
+    }
+
     // MARK: Queries
 
     /// Photos and videos in the user's own library, newest first.
@@ -108,6 +119,14 @@ final class PhotoKitLibrary: NSObject, PhotoLibraryProviding, @unchecked Sendabl
             return true
         }
         if isNew { PHPhotoLibrary.shared().register(self) }
+    }
+
+    private static func access(for status: PHAuthorizationStatus) -> LibraryAccess {
+        switch status {
+        case .authorized: .full
+        case .limited: .limited
+        default: .denied
+        }
     }
 
     /// The cancel error has shipped under both the Photos and Cocoa domains, always code 3072.

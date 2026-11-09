@@ -111,6 +111,9 @@ final class FeedViewModel {
     private var carriedPending: [LibraryItem] = []
     /// Items deleted, gone from the library, or undeletable. They stay decided but are no longer pending.
     var settledIDs: Set<LibraryItem.ID> = [] // internal for FeedViewModel+AdminTools
+    /// Pending deletes outside a limited selection, which the app can't see or delete. They're hidden
+    /// from the pile but stay pending in the store, so they come back once the app can see them again.
+    private var outOfReachIDs: Set<LibraryItem.ID> = []
     /// The "whole library reviewed" confetti has played for this 100%. Cleared when progress drops below it,
     /// so the next 100% celebrates again. Saved in `defaults`.
     var hasCelebratedComplete = false // internal for FeedViewModel+AdminTools
@@ -307,7 +310,7 @@ final class FeedViewModel {
 
     var pendingItems: [LibraryItem] {
         let current = session?.items.filter { decisions[$0.id] == .delete } ?? []
-        return (carriedPending + current).filter { !settledIDs.contains($0.id) }
+        return (carriedPending + current).filter { !settledIDs.contains($0.id) && !outOfReachIDs.contains($0.id) }
     }
     var pendingBytes: Int64 { pendingItems.reduce(0) { $0 + $1.bytes } }
     var keptCount: Int { decisions.values.filter { $0 == .keep }.count }
@@ -433,6 +436,7 @@ final class FeedViewModel {
         let started = clock.now
         libraryStats = await library.stats()
         observeLibraryChanges()
+        await reopenWronglyGone()
         // The saved deck always comes back, on the exact card. With nothing saved, or nothing in it, a fresh one is dealt.
         let saved = store.loadSession().flatMap { $0.session.cards.isEmpty ? nil : $0 }
         // Captions can do without place names for the first page; they arrive with the next.
@@ -663,6 +667,17 @@ final class FeedViewModel {
         let next = await makeSession(number: nextPageNumber)
         guard !next.cards.isEmpty else { return }
         apply(next)
+    }
+
+    /// Under limited access, lets the user add photos to what the app can see. Pending deletes that
+    /// come back into view rejoin the pile.
+    func addMorePhotos() async {
+        await library.presentLimitedPicker()
+        if !outOfReachIDs.isEmpty {
+            outOfReachIDs.subtract(outOfReachIDs.subtracting(await library.missing(from: outOfReachIDs)))
+        }
+        await refreshLibraryTotal()
+        fillIfNeeded()
     }
 
     // MARK: Swipe allowance
@@ -937,12 +952,21 @@ final class FeedViewModel {
         }
 
         // Gone or undeletable items can't be cleared, so they leave the pile without counting as freed.
-        settle(Set(outcome.missing), as: .gone)
+        // Under limited access "not found" may only mean "not selected", so those stay pending, out of sight.
+        var notices: [String] = []
+        if library.currentAccess() == .full {
+            settle(Set(outcome.missing), as: .gone)
+        } else if !outcome.missing.isEmpty {
+            outOfReachIDs.formUnion(outcome.missing)
+            let n = outcome.missing.count
+            notices.append("\(n) \(n == 1 ? "item is" : "items are") outside the photos \(AppInfo.name) can access and \(n == 1 ? "wasn't" : "weren't") deleted.")
+        }
         settle(Set(outcome.undeletable), as: .undeletable)
         if !outcome.undeletable.isEmpty {
             let n = outcome.undeletable.count
-            deleteNotice = "\(n) \(n == 1 ? "item" : "items") can't be deleted from this app and stayed in your library."
+            notices.append("\(n) \(n == 1 ? "item" : "items") can't be deleted from this app and stayed in your library.")
         }
+        if !notices.isEmpty { deleteNotice = notices.joined(separator: " ") }
 
         let deleted = Set(outcome.deleted)
         let deletedItems = items.filter { deleted.contains($0.id) }
@@ -966,13 +990,19 @@ final class FeedViewModel {
 
     /// Drops items deleted outside the app from the pile and from cards not yet shown.
     /// The current and earlier cards stay put so undo history remains valid.
+    /// Under limited access a narrowed selection reports its unselected items as removed; they may
+    /// still be in the library, so they're only hidden, never settled.
     private func forget(_ ids: Set<LibraryItem.ID>) {
         // The library is smaller now, whoever deleted these, so its total is read again.
         Task { await refreshLibraryTotal() }
         // Our own confirmed deletes come back through here too; they're already settled.
         let gone = ids.subtracting(settledIDs)
         guard !gone.isEmpty else { return }
-        settle(gone, as: .gone)
+        if library.currentAccess() == .full {
+            settle(gone, as: .gone)
+        } else {
+            outOfReachIDs.formUnion(gone)
+        }
         guard var current = session, current.cards.count > index + 1 else { return }
         current.cards = Array(current.cards.prefix(index + 1))
             + current.cards.dropFirst(index + 1).compactMap { $0.removing(gone) }
@@ -1022,7 +1052,8 @@ final class FeedViewModel {
     }
 
     /// Picks up the saved deck on the card the user left it at, dropping anything deleted outside
-    /// the app while it was closed.
+    /// the app while it was closed. Under limited access, items outside the selection leave the deck
+    /// and are hidden from the pile, but stay pending in the store.
     private func restore(_ saved: SavedSession) async {
         var restored = saved.session
         var position = saved.index
@@ -1030,18 +1061,21 @@ final class FeedViewModel {
         position -= restored.cards.prefix(position).filter(\.isAdminMock).count
         restored.cards.removeAll(where: \.isAdminMock)
         let savedIndex = position
-        let gone = await library.missing(from: Set(restored.items.map(\.id)).union(store.pile().map(\.id)))
-        if !gone.isEmpty {
+        let unseen = await library.missing(from: Set(restored.items.map(\.id)).union(store.pile().map(\.id)))
+        // Only full access proves an item is gone; a limited selection just hides the rest.
+        let gone = library.currentAccess() == .full ? unseen : []
+        outOfReachIDs = unseen.subtracting(gone)
+        if !unseen.isEmpty {
             // Undo history starts empty, so earlier cards can be pruned too.
             var cards: [FeedCard] = []
             position = 0
             for (offset, card) in restored.cards.enumerated() {
-                guard let kept = card.removing(gone) else { continue }
+                guard let kept = card.removing(unseen) else { continue }
                 cards.append(kept)
                 if offset < savedIndex { position += 1 }
             }
             restored.cards = cards
-            store.settle(gone, as: .gone)
+            if !gone.isEmpty { store.settle(gone, as: .gone) }
         }
 
         position = min(position, restored.cards.count)
@@ -1063,7 +1097,22 @@ final class FeedViewModel {
         history = []
         returningCard = nil
         enterDeckPhase(cards.isEmpty ? .caughtUp : .feed)
-        if !gone.isEmpty || saved.finished { saveProgress() }
+        if !unseen.isEmpty || saved.finished { saveProgress() }
+    }
+
+    /// Before limited access was handled, items outside the selection were settled as gone and left
+    /// the pile and the feed for good. Once, with full access, any of those still in the library are
+    /// reopened so their decision applies again: a delete is back in the pile, still needing the
+    /// user's confirmation. Nothing is deleted here.
+    private func reopenWronglyGone() async {
+        guard library.currentAccess() == .full, !defaults.bool(forKey: DefaultsKey.reopenedLimitedAccessGone) else { return }
+        let gone = store.goneIDs()
+        let present = gone.subtracting(await library.missing(from: gone))
+        if !present.isEmpty {
+            store.reopen(present)
+            Self.log.info("Reopened \(present.count) items wrongly settled as gone")
+        }
+        defaults.set(true, forKey: DefaultsKey.reopenedLimitedAccessGone)
     }
 
     func saveProgress() { // internal for FeedViewModel+AdminTools

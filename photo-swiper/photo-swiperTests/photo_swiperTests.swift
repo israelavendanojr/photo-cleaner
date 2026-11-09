@@ -23,6 +23,10 @@ final class FakeLibrary: PhotoLibraryProviding, @unchecked Sendable {
     private var listeners: [AsyncStream<Set<LibraryItem.ID>>.Continuation] = []
 
     func needsAccessPrompt() -> Bool { needsPrompt }
+    func currentAccess() -> LibraryAccess { access }
+    /// Items the limited picker adds to the selection, taken out of `gone`.
+    var pickerAdds: Set<LibraryItem.ID> = []
+    func presentLimitedPicker() async { gone.subtract(pickerAdds) }
     func requestAccess() async -> LibraryAccess {
         requestCount += 1
         return access

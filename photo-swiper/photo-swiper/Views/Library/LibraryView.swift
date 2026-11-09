@@ -140,6 +140,16 @@ struct LibraryView: View {
                     .overlay(DS.Palette.line)
                     .padding(.leading, 52)
                 Button {
+                    Task { await vm.addMorePhotos() }
+                } label: {
+                    OverviewRow(icon: "plus.circle", title: "Add more photos", value: "", showsChevron: true)
+                }
+                .buttonStyle(.plain)
+                .accessibilityHint("Choose more photos for \(AppInfo.name) to look through")
+                Divider()
+                    .overlay(DS.Palette.line)
+                    .padding(.leading, 52)
+                Button {
                     if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
                 } label: {
                     OverviewRow(icon: "lock", title: "Photo access", value: "Selected photos only")
