@@ -17,9 +17,9 @@ enum AppInfo {
 
     /// Apple's standard EULA. Final.
     static let termsURL = URL(string: "https://www.apple.com/legal/internet-services/itunes/dev/stdeula/")!
-    static let privacyPolicyURL: URL? = URL(string: "https://israelavendanojr.github.io/photo-swiper-site/privacy/")
-    static let supportURL: URL? = URL(string: "https://israelavendanojr.github.io/photo-swiper-site/support/")
-    static let supportEmail: String? = "support@bristle.app"
+    static let privacyPolicyURL: URL? = URL(string: "https://getbristle.app/privacy")
+    static let supportURL: URL? = URL(string: "https://getbristle.app/support")
+    static let supportEmail: String? = "support@getbristle.app"
     /// The numeric App Store ID, e.g. "1234567890". Enables "Rate".
     static let appStoreID: String? = nil // TODO(launch)
 
