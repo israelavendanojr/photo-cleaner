@@ -5,8 +5,6 @@ import SwiftData
 /// Progress kept on device with SwiftData. Every mutating call saves before returning.
 @MainActor
 final class SwiftDataProgressStore: ProgressStoring {
-    /// Every model in the app's one container. The feature index shares it so both live in one file.
-    nonisolated static let schema: [any PersistentModel.Type] = [ItemProgress.self, SessionProgress.self, AssetFeatureRecord.self]
     private static let skipFavoritesKey = "skipFavorites"
     private static let log = Logger(subsystem: "com.israelavendanojr.photo-swiper", category: "progress")
 
@@ -24,9 +22,15 @@ final class SwiftDataProgressStore: ProgressStoring {
     }
 
     /// The app's container: the default on-disk store, a store at `url`, or one in memory.
+    /// Progress and the feature index share it, so both live in one file. Its models are versioned;
+    /// see `BristleSchemaV1` before changing any of them.
     nonisolated static func makeContainer(url: URL? = nil, inMemory: Bool = false) throws -> ModelContainer {
         let configuration = if let url { ModelConfiguration(url: url) } else { ModelConfiguration(isStoredInMemoryOnly: inMemory) }
-        return try ModelContainer(for: Schema(schema), configurations: configuration)
+        return try ModelContainer(
+            for: Schema(versionedSchema: BristleSchemaV1.self),
+            migrationPlan: BristleMigrationPlan.self,
+            configurations: configuration
+        )
     }
 
     /// The app's on-disk store, or one at `url` (tests).
