@@ -40,8 +40,8 @@ struct WelcomeView: View {
         VStack(alignment: .leading, spacing: DS.Spacing.m) {
             AssuranceRow(
                 systemImage: "lock",
-                title: "Everything stays on this iPhone.",
-                detail: "Photos are sorted on-device. Nothing is uploaded, and there's no account to make."
+                title: "Your photos stay on this iPhone.",
+                detail: "Photos are sorted on-device and never uploaded, and there's no account to make."
             )
             AssuranceRow(
                 systemImage: "arrow.uturn.backward",

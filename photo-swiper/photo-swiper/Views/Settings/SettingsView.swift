@@ -213,7 +213,7 @@ struct SettingsView: View {
 
     private var about: some View {
         SettingsSection("About") {
-            SettingsLabel(icon: "iphone", title: "Your photos are analyzed on this iPhone and never uploaded.")
+            SettingsLabel(icon: "iphone", title: "Your photos are analyzed on this iPhone and never leave it. Place names are looked up with Apple using approximate locations.")
                 .settingsRowPadding()
             SettingsLabel(icon: "info.circle", title: "Version \(AppInfo.version) (build \(AppInfo.build))")
                 .settingsRowPadding()
