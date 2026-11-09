@@ -384,7 +384,7 @@ struct DuplicatesCardTests {
         #expect(vm.swipeLabel(.left, for: .duplicates(group)) == "Clear \(group.others.count)")
         #expect(vm.bytesToClear(for: .duplicates(group)) == group.others.reduce(0) { $0 + $1.bytes })
 
-        vm.decide(.left)
+        vm.decideCurrent(.left)
 
         #expect(vm.index == start + 1)
         #expect(vm.swipesLeft == 4, "One decision, one swipe")
@@ -397,7 +397,7 @@ struct DuplicatesCardTests {
         let group = try duplicatesCard(vm)
         #expect(vm.swipeLabel(.right, for: .duplicates(group)) == "Keep all \(group.items.count)")
 
-        vm.decide(.right)
+        vm.decideCurrent(.right)
 
         #expect(group.items.allSatisfy { vm.decisions[$0.id] == .keep })
         #expect(vm.pendingItems.isEmpty)
@@ -426,7 +426,7 @@ struct DuplicatesCardTests {
         vm.saveDraft([group.keepID: .keep], for: group.id)
         #expect(vm.swipesLeft == 5, "Drafts cost nothing")
 
-        vm.decideIndividually([group.keepID: .keep, reached.id: .keep])
+        vm.decideCurrentIndividually([group.keepID: .keep, reached.id: .keep])
 
         #expect(vm.swipesLeft == 4)
         #expect(vm.decisions[reached.id] == .keep)
@@ -449,7 +449,7 @@ struct DuplicatesCardTests {
         let start = vm.index
         let group = try duplicatesCard(vm)
 
-        vm.decide(.left)
+        vm.decideCurrent(.left)
         vm.undo()
 
         #expect(vm.index == start)

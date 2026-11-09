@@ -143,7 +143,7 @@ struct OnboardingGatingTests {
         await vm.start()
         await vm.start()
         await finishOnboarding(vm)
-        while vm.cards.count - vm.index > FeedViewModel.pageAhead { vm.decide(.right) }
+        while vm.cards.count - vm.index > FeedViewModel.pageAhead { vm.decideCurrent(.right) }
         await vm.waitForPage()
         #expect(builder.requests.map(\.placeBudget) == [.zero, FeedOptions().placeBudget])
     }

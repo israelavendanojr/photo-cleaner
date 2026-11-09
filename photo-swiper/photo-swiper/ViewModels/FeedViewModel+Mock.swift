@@ -106,7 +106,7 @@ extension FeedViewModel {
             case 4 where index < 20: .up
             default: .left
             }
-            decide(direction)
+            if let card = currentCard { decide(direction, cardID: card.id) }
         }
         dismissChip()
     }

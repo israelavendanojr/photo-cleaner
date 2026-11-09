@@ -46,7 +46,7 @@ struct PileCapTests {
     private func keepUntilBatch(_ vm: FeedViewModel) throws -> ItemBatch {
         for _ in 0..<vm.cards.count {
             if case .batch(let batch) = try #require(vm.currentCard) { return batch }
-            vm.decide(.right)
+            vm.decideCurrent(.right)
         }
         Issue.record("No batch card in the mock deck")
         throw CancellationError()
@@ -91,9 +91,9 @@ struct PileCapTests {
         let start = vm.index
         #expect(vm.isPileFull)
         #expect(vm.pileLimitBytes == limit)
-        #expect(!vm.canDecide(.left))
+        #expect(!vm.canDecideCurrent(.left))
 
-        vm.decide(.left)
+        vm.decideCurrent(.left)
 
         #expect(vm.index == start, "Nothing was committed")
         #expect(vm.pendingItems.count == 1)
@@ -105,7 +105,7 @@ struct PileCapTests {
         let vm = vm(pile: limit)
         let swipes = vm.swipesLeft
 
-        vm.decide(.left)
+        vm.decideCurrent(.left)
 
         #expect(vm.swipesLeft == swipes)
         #expect(vm.decisions.isEmpty)
@@ -117,31 +117,31 @@ struct PileCapTests {
         let vm = vm(pile: limit - (try firstPhotoBytes()))
         try requirePhotoOnTop(vm)
         #expect(!vm.isPileFull)
-        #expect(vm.canDecide(.left))
+        #expect(vm.canDecideCurrent(.left))
 
-        vm.decide(.left)
+        vm.decideCurrent(.left)
 
         #expect(vm.pileCountedBytes == limit)
         #expect(vm.isPileFull)
         #expect(!vm.isPileFullNoticePresented)
         try requirePhotoOnTop(vm)
-        #expect(!vm.canDecide(.left))
+        #expect(!vm.canDecideCurrent(.left))
     }
 
     @Test func aDeleteOneByteTooBigIsRefused() throws {
         let vm = vm(pile: limit - (try firstPhotoBytes()) + 1)
         #expect(!vm.isPileFull, "Not full, but the photo doesn't fit")
-        #expect(!vm.canDecide(.left))
+        #expect(!vm.canDecideCurrent(.left))
     }
 
     @Test func keepAndLaterStillGoThroughAtTheLimit() throws {
         let vm = vm(pile: limit)
         let start = vm.index
-        #expect(vm.canDecide(.right))
-        #expect(vm.canDecide(.up))
+        #expect(vm.canDecideCurrent(.right))
+        #expect(vm.canDecideCurrent(.up))
 
-        vm.decide(.right)
-        vm.decide(.up)
+        vm.decideCurrent(.right)
+        vm.decideCurrent(.up)
 
         #expect(vm.index == start + 2)
         #expect(!vm.isPileFullNoticePresented)
@@ -152,9 +152,9 @@ struct PileCapTests {
         let vm = vm(pile: limit * 5, unlocked: true)
         #expect(vm.pileLimitBytes == nil)
         #expect(!vm.isPileFull)
-        #expect(vm.canDecide(.left))
+        #expect(vm.canDecideCurrent(.left))
 
-        vm.decide(.left)
+        vm.decideCurrent(.left)
 
         #expect(vm.pendingItems.count == 2)
         #expect(!vm.isPileFullNoticePresented)
@@ -166,27 +166,27 @@ struct PileCapTests {
         let vm = vm(limit: 1_000_000)
         let photo = try requirePhotoOnTop(vm)
         try #require(photo.bytes > 1_000_000)
-        #expect(vm.canDecide(.left))
+        #expect(vm.canDecideCurrent(.left))
 
-        vm.decide(.left)
+        vm.decideCurrent(.left)
 
         #expect(vm.pendingItems.map(\.id) == [photo.id])
         #expect(vm.isPileFull)
-        #expect(!vm.canDecide(.left), "Nothing more until it's cleared")
+        #expect(!vm.canDecideCurrent(.left), "Nothing more until it's cleared")
     }
 
     @Test func anItemBiggerThanTheLimitIsRefusedOnceThePileHasAnything() throws {
         let vm = vm(pile: 1, limit: 1_000_000)
         #expect(!vm.isPileFull)
-        #expect(!vm.canDecide(.left))
+        #expect(!vm.canDecideCurrent(.left))
     }
 
     @Test func aGroupBiggerThanTheLimitGoesWholeIntoAnEmptyPile() throws {
         let vm = vm(limit: 1_000_000)
         let batch = try keepUntilBatch(vm)
-        #expect(vm.canDecide(.left))
+        #expect(vm.canDecideCurrent(.left))
 
-        vm.decide(.left)
+        vm.decideCurrent(.left)
 
         #expect(Set(vm.pendingItems.map(\.id)) == Set(batch.items.map(\.id)))
     }
@@ -200,7 +200,7 @@ struct PileCapTests {
         #expect(vm.pendingBytes == 1_000_000, "What's shown stays the real size")
         #expect(vm.pileCountedBytes == 3 * FeedViewModel.unknownSizeBytes + 1_000_000)
         #expect(vm.isPileFull)
-        #expect(!vm.canDecide(.left))
+        #expect(!vm.canDecideCurrent(.left))
     }
 
     @Test func countedBytesOnlyReplacesZeroSizes() {
@@ -218,10 +218,10 @@ struct PileCapTests {
         let vm = vm(pile: limit - batchBytes + 1)
         let batch = try keepUntilBatch(vm)
         let start = vm.index
-        #expect(!vm.canDecide(.left))
-        #expect(vm.canDecide(.right))
+        #expect(!vm.canDecideCurrent(.left))
+        #expect(vm.canDecideCurrent(.right))
 
-        vm.decide(.left)
+        vm.decideCurrent(.left)
 
         #expect(vm.index == start)
         #expect(vm.pendingItems.count == 1, "No partial add")
@@ -234,9 +234,9 @@ struct PileCapTests {
 
         let vm = vm(pile: limit - batchBytes)
         _ = try keepUntilBatch(vm)
-        #expect(vm.canDecide(.left))
+        #expect(vm.canDecideCurrent(.left))
 
-        vm.decide(.left)
+        vm.decideCurrent(.left)
 
         #expect(vm.pendingItems.count == 1 + size)
         #expect(vm.pileCountedBytes == limit)
@@ -250,12 +250,12 @@ struct PileCapTests {
         var draft = Dictionary(uniqueKeysWithValues: batch.items.map { ($0.id, Decision.keep) })
         draft[batch.items[0].id] = .delete
         vm.saveDraft(draft, for: batch.id)
-        #expect(vm.canDecide(.left))
+        #expect(vm.canDecideCurrent(.left))
 
         draft[batch.items[1].id] = .delete
         vm.saveDraft(draft, for: batch.id)
-        #expect(!vm.canDecide(.left))
-        #expect(!vm.canDecide(.right), "Drafted deletes still clear on a right swipe")
+        #expect(!vm.canDecideCurrent(.left))
+        #expect(!vm.canDecideCurrent(.right), "Drafted deletes still clear on a right swipe")
     }
 
     @Test func aOneByOneReviewPastTheLimitIsKeptAsADraft() throws {
@@ -265,9 +265,9 @@ struct PileCapTests {
         let start = vm.index
         let swipes = vm.swipesLeft
         let outcome = Dictionary(uniqueKeysWithValues: batch.items.prefix(2).map { ($0.id, Decision.delete) })
-        #expect(!vm.canDecideIndividually(outcome))
+        #expect(!vm.canDecideCurrentIndividually(outcome))
 
-        vm.decideIndividually(outcome)
+        vm.decideCurrentIndividually(outcome)
 
         #expect(vm.index == start)
         #expect(vm.swipesLeft == swipes)
@@ -281,9 +281,9 @@ struct PileCapTests {
         let vm = vm(pile: limit - probe.items[0].bytes)
         let batch = try keepUntilBatch(vm)
         let outcome = [batch.items[0].id: Decision.delete]
-        #expect(vm.canDecideIndividually(outcome))
+        #expect(vm.canDecideCurrentIndividually(outcome))
 
-        vm.decideIndividually(outcome)
+        vm.decideCurrentIndividually(outcome)
 
         #expect(vm.pileCountedBytes == limit)
     }
@@ -292,9 +292,9 @@ struct PileCapTests {
 
     @Test func refusingWhenOutOfSwipesOpensTheWall() {
         let vm = vm(pile: limit, swipes: 0)
-        #expect(!vm.canDecide(.right))
+        #expect(!vm.canDecideCurrent(.right))
 
-        vm.refuse(.right)
+        vm.refuseCurrent(.right)
 
         #expect(vm.isWallPresented)
         #expect(!vm.isPileFullNoticePresented)
@@ -303,7 +303,7 @@ struct PileCapTests {
     @Test func refusingWithAFullPileShowsTheNotice() {
         let vm = vm(pile: limit)
 
-        vm.refuse(.left)
+        vm.refuseCurrent(.left)
 
         #expect(vm.isPileFullNoticePresented)
         #expect(!vm.isWallPresented)
@@ -311,11 +311,11 @@ struct PileCapTests {
 
     @Test func deletingFromAFullPileMakesRoom() async throws {
         let vm = vm(pile: limit)
-        #expect(!vm.canDecide(.left))
+        #expect(!vm.canDecideCurrent(.left))
 
         await vm.deleteNow(Array(vm.pendingItems.prefix(1)))
 
-        #expect(vm.canDecide(.left))
+        #expect(vm.canDecideCurrent(.left))
     }
 
     // MARK: Live limits
@@ -349,7 +349,7 @@ struct PileCapTests {
         let vm = FeedViewModel(library: library, builder: MockFeedBuilder(), entitlements: TestEntitlements(isUnlocked: unlocked), defaults: defaults,
                                freeTier: .fixed(FreeTierLimits(freeBinBytes: 10_000_000_000)), now: { clock.now })
         await vm.start()
-        for _ in 0..<6 { vm.decide(.left) }
+        for _ in 0..<6 { vm.decideCurrent(.left) }
         let big = try #require(vm.pendingItems.first { $0.bytes >= ReviewPrompt.minimumFreedBytes })
         return (vm, big)
     }
@@ -434,7 +434,7 @@ struct PileCapTests {
                                freeTier: .fixed(FreeTierLimits(freeBinBytes: 10_000_000_000, postDeleteUpsellInterval: 2 * 3600)),
                                now: { clock.now })
         await vm.start()
-        for _ in 0..<6 { vm.decide(.left) }
+        for _ in 0..<6 { vm.decideCurrent(.left) }
 
         #expect(try await deleteOne(vm), "The first delete offers it")
         vm.finishDeleteUpsell(shown: true)

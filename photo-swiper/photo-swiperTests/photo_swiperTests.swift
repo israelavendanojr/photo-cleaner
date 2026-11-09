@@ -157,7 +157,7 @@ struct FeedViewModelLibraryTests {
     @Test func cancellingTheSystemPromptKeepsEverythingPending() async {
         library.onDelete = { _ in throw DeletionError.cancelled }
         let vm = await started()
-        for _ in 0..<3 { vm.decide(.left) }
+        for _ in 0..<3 { vm.decideCurrent(.left) }
 
         #expect(await vm.deleteNow(vm.pendingItems) == nil)
         #expect(vm.pendingItems.count == 3)
@@ -167,7 +167,7 @@ struct FeedViewModelLibraryTests {
 
     @Test func onlyActuallyDeletedItemsCountAsFreed() async {
         let vm = await started()
-        for _ in 0..<3 { vm.decide(.left) }
+        for _ in 0..<3 { vm.decideCurrent(.left) }
         let pending = vm.pendingItems
         library.onDelete = { items in
             DeletionOutcome(deleted: [items[0].id], missing: [items[1].id], undeletable: [items[2].id])
@@ -182,7 +182,7 @@ struct FeedViewModelLibraryTests {
     @Test func failedDeleteRemovesNothing() async {
         library.onDelete = { _ in throw DeletionError.failed(CocoaError(.fileWriteUnknown)) }
         let vm = await started()
-        vm.decide(.left)
+        vm.decideCurrent(.left)
 
         #expect(await vm.deleteNow(vm.pendingItems) == nil)
         #expect(vm.pendingItems.count == 1)
@@ -191,7 +191,7 @@ struct FeedViewModelLibraryTests {
 
     @Test func deletingNowClearsOnlyThoseAndKeepsTheDeckGoing() async throws {
         let vm = await started()
-        for _ in 0..<3 { vm.decide(.left) }
+        for _ in 0..<3 { vm.decideCurrent(.left) }
         let deleted = try #require(vm.pendingItems.first)
         var asked: [LibraryItem.ID] = []
         library.onDelete = { items in
@@ -216,8 +216,8 @@ struct FeedViewModelLibraryTests {
 
     @Test func keepingTakesItemsOutOfThePileEvenAcrossUndo() async throws {
         let vm = await started()
-        vm.decide(.left)
-        vm.decide(.left)
+        vm.decideCurrent(.left)
+        vm.decideCurrent(.left)
         let kept = try #require(vm.pendingItems.first)
         let other = try #require(vm.pendingItems.last)
 
@@ -235,7 +235,7 @@ struct FeedViewModelLibraryTests {
     @Test func cancellingDeleteNowKeepsThemPending() async throws {
         library.onDelete = { _ in throw DeletionError.cancelled }
         let vm = await started()
-        vm.decide(.left)
+        vm.decideCurrent(.left)
 
         #expect(await vm.deleteNow(vm.pendingItems) == nil)
         #expect(vm.pendingItems.count == 1)
@@ -244,7 +244,7 @@ struct FeedViewModelLibraryTests {
 
     @Test func itemsDeletedOutsideTheAppLeaveUpcomingCardsAndThePile() async throws {
         let vm = await started()
-        vm.decide(.left)
+        vm.decideCurrent(.left)
         let pendingID = try #require(vm.pendingItems.first?.id)
         let current = try #require(vm.currentCard)
         let upcomingPhoto = vm.cards[5]
@@ -283,7 +283,7 @@ struct BatchReviewTests {
         var outcome = Dictionary(uniqueKeysWithValues: batch.items.map { ($0.id, Decision.keep) })
         for item in deleted { outcome[item.id] = .delete }
 
-        vm.decideIndividually(outcome)
+        vm.decideCurrentIndividually(outcome)
 
         #expect(vm.index == start + 1)
         #expect(Set(vm.pendingItems.map(\.id)) == Set(deleted.map(\.id)))
@@ -295,7 +295,7 @@ struct BatchReviewTests {
         let vm = FeedViewModel.mock(startingAt: .batch)
         let batch = try batchCard(vm)
 
-        vm.decideIndividually([batch.items[0].id: .delete])
+        vm.decideCurrentIndividually([batch.items[0].id: .delete])
 
         #expect(vm.pendingItems.map(\.id) == [batch.items[0].id])
         #expect(vm.laterCount == batch.items.count - 1)
@@ -306,7 +306,7 @@ struct BatchReviewTests {
         let start = vm.index
         let batch = try batchCard(vm)
 
-        vm.decideIndividually([batch.items[0].id: .delete, batch.items[1].id: .keep])
+        vm.decideCurrentIndividually([batch.items[0].id: .delete, batch.items[1].id: .keep])
         vm.undo()
 
         #expect(vm.index == start)
@@ -321,7 +321,7 @@ struct BatchReviewTests {
         let kept = batch.items[0], deleted = batch.items[1]
 
         vm.saveDraft([kept.id: .keep, deleted.id: .delete], for: batch.id)
-        vm.decide(.left)
+        vm.decideCurrent(.left)
 
         #expect(Set(vm.pendingItems.map(\.id)) == Set(batch.items.dropFirst().map(\.id)))
         #expect(vm.decisions[kept.id] == .keep)
@@ -335,7 +335,7 @@ struct BatchReviewTests {
 
         vm.saveDraft([deleted.id: .delete], for: batch.id)
         #expect(vm.bytesToClear(for: .batch(batch)) == batch.items.reduce(0) { $0 + $1.bytes })
-        vm.decide(.right)
+        vm.decideCurrent(.right)
 
         #expect(vm.pendingItems.map(\.id) == [deleted.id])
         #expect(vm.keptCount == batch.items.count - 1)
@@ -347,7 +347,7 @@ struct BatchReviewTests {
         let draft = [batch.items[0].id: Decision.delete]
 
         vm.saveDraft(draft, for: batch.id)
-        vm.decide(.up)
+        vm.decideCurrent(.up)
         vm.undo()
 
         #expect(vm.draft(for: batch.id) == draft)
@@ -359,7 +359,7 @@ struct BatchReviewTests {
         let batch = try batchCard(vm)
 
         vm.saveDraft([batch.items[0].id: .delete], for: batch.id)
-        vm.decideIndividually(Dictionary(uniqueKeysWithValues: batch.items.map { ($0.id, Decision.keep) }))
+        vm.decideCurrentIndividually(Dictionary(uniqueKeysWithValues: batch.items.map { ($0.id, Decision.keep) }))
 
         #expect(vm.draft(for: batch.id).isEmpty)
         #expect(vm.pendingItems.isEmpty)
@@ -369,7 +369,7 @@ struct BatchReviewTests {
         let vm = FeedViewModel.mock(startingAt: .first)
         let item = try #require(vm.currentCard?.items.first)
 
-        vm.decideIndividually([item.id: .delete])
+        vm.decideCurrentIndividually([item.id: .delete])
 
         #expect(vm.index == 0)
         #expect(vm.decisions.isEmpty)
@@ -447,7 +447,7 @@ struct SimilarReviewTests {
         let group = try similarCard(vm)
         let deletedBest = group.best, keptOther = group.others[0], unreached = group.others[1]
 
-        vm.decideIndividually([deletedBest.id: .delete, keptOther.id: .keep])
+        vm.decideCurrentIndividually([deletedBest.id: .delete, keptOther.id: .keep])
 
         #expect(vm.index == start + 1)
         #expect(vm.decisions[deletedBest.id] == .delete, "Deleting the best pick is the user's call")
@@ -502,7 +502,7 @@ struct SimilarReviewTests {
         let kept = group.others[0]
 
         vm.saveDraft([group.bestID: .keep, kept.id: .keep], for: group.id)
-        vm.decide(.left)
+        vm.decideCurrent(.left)
 
         #expect(vm.decisions[group.bestID] == .keep)
         #expect(vm.decisions[kept.id] == .keep)
@@ -517,7 +517,7 @@ struct SimilarReviewTests {
         vm.toggleMark(group.others[0].id, in: group)
         #expect(vm.swipesLeft == 5)
 
-        vm.decideIndividually(Dictionary(uniqueKeysWithValues: group.items.map { ($0.id, Decision.keep) }))
+        vm.decideCurrentIndividually(Dictionary(uniqueKeysWithValues: group.items.map { ($0.id, Decision.keep) }))
 
         #expect(vm.swipesLeft == 4)
     }
@@ -528,7 +528,7 @@ struct SimilarReviewTests {
         let group = try similarCard(vm)
         let outcome = Dictionary(uniqueKeysWithValues: group.items.map { ($0.id, Decision.keep) })
 
-        vm.decideIndividually(outcome)
+        vm.decideCurrentIndividually(outcome)
 
         #expect(vm.index == start)
         #expect(vm.draft(for: group.id) == outcome)
@@ -542,7 +542,7 @@ struct SimilarReviewTests {
         vm.saveDraft(draft, for: group.id)
         let marked = vm.markedForClearing(in: group)
 
-        vm.decideIndividually(Dictionary(uniqueKeysWithValues: group.items.map { ($0.id, Decision.delete) }))
+        vm.decideCurrentIndividually(Dictionary(uniqueKeysWithValues: group.items.map { ($0.id, Decision.delete) }))
         vm.undo()
 
         #expect(vm.draft(for: group.id) == draft)
