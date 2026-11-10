@@ -66,3 +66,6 @@ jobs:
         run: |
           make lint BASE="origin/${{ github.base_ref }}" \
             LINT_ARGS_FORMAT="--reporter github-actions-log" LINT_ARGS_LINT="--reporter github-actions-logging"
+
+      - name: ARCHITECTURE.md drift (warning only)
+        run: scripts/check-architecture-drift.sh "origin/${{ github.base_ref }}"
