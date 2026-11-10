@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import OSLog
 
 /// Owns the deck: cards, decisions, drafts, marks, undo, the pile, paging, and the running totals.
 ///
@@ -497,25 +498,31 @@ final class FeedViewModel {
         if let next = onboarding.route(next) { phase = next }
     }
 
-    /// Whether swiping the current card this way would go through. The deck asks before letting a card fly.
-    /// False out of swipes, or for a free user when it would take the pile past its limit.
-    func canDecide(_ direction: SwipeDirection) -> Bool {
-        if currentCard?.isAdminMock == true { return true }
+    /// Whether swiping card `cardID` this way would go through. The deck asks before letting a card fly.
+    /// False out of swipes, for a free user when it would take the pile past its limit, or when
+    /// `cardID` is no longer the current card.
+    func canDecide(_ direction: SwipeDirection, cardID: FeedCard.ID) -> Bool {
+        guard let card = currentCard else { return gate.admitsSwipe }
+        guard card.id == cardID else { return false }
+        if card.isAdminMock { return true }
         guard gate.admitsSwipe else { return false }
-        guard let card = currentCard else { return true }
         return fitsInPile(itemDecisions(for: card, direction: direction), card: card)
     }
 
-    /// Whether a finished one-by-one review of the current card would go through, like `canDecide`.
-    func canDecideIndividually(_ outcome: [LibraryItem.ID: Decision]) -> Bool {
-        if currentCard?.isAdminMock == true { return true }
+    /// Whether a finished one-by-one review of card `cardID` would go through, like `canDecide`.
+    func canDecideIndividually(_ outcome: [LibraryItem.ID: Decision], cardID: FeedCard.ID) -> Bool {
+        guard let card = currentCard else { return gate.admitsSwipe }
+        guard card.id == cardID else { return false }
+        if card.isAdminMock { return true }
         guard gate.admitsSwipe else { return false }
-        guard let card = currentCard, let complete = completed(outcome, for: card) else { return true }
+        guard let complete = completed(outcome, for: card) else { return true }
         return fitsInPile(complete, card: card)
     }
 
-    /// The deck refused a swipe: opens the wall when out of swipes, or says the pile is full.
-    func refuse(_ direction: SwipeDirection) {
+    /// The deck refused a swipe on `cardID`: opens the wall when out of swipes, or says the pile is full.
+    /// Nothing happens if that card is no longer the current one.
+    func refuse(_ direction: SwipeDirection, cardID: FeedCard.ID) {
+        guard currentCard?.id == cardID else { return }
         refreshAllowance()
         if !gate.admitsSwipe {
             presentWall()
@@ -524,10 +531,13 @@ final class FeedViewModel {
         }
     }
 
+    /// Decides card `cardID`, the one the user swiped. If it's no longer the current card, nothing happens.
     /// Out of free swipes, nothing is committed and the wall opens instead.
     /// A free user's delete that won't fit in the pile is refused whole, and says so.
-    func decide(_ direction: SwipeDirection) {
-        guard phase == .feed, let card = currentCard, card.isAdminMock || admitSwipe() else { return }
+    func decide(_ direction: SwipeDirection, cardID: FeedCard.ID) {
+        guard phase == .feed, let top = currentCard else { return }
+        // Admitting can credit a refill, which reorders the deck, so the card is only read after it.
+        guard top.isAdminMock || admitSwipe(), let card = currentCard(matching: cardID) else { return }
         let outcome = itemDecisions(for: card, direction: direction)
         guard fitsInPile(outcome, card: card) else {
             isPileFullNoticePresented = true
@@ -536,13 +546,17 @@ final class FeedViewModel {
         commit(outcome, card: card, direction: direction)
     }
 
-    /// Settles the current batch or similar-shots card from a one-by-one review. Items left out
-    /// count as "later" in a batch, and follow their marks in a similar set.
+    /// Settles batch or similar-shots card `cardID` from a one-by-one review. Items left out
+    /// count as "later" in a batch, and follow their marks in a similar set. If that card is no longer
+    /// the current one, nothing happens.
     /// It costs one swipe like any card; out of swipes, or past a free user's pile limit, the review
     /// is kept as a draft and the wall or the pile notice opens.
-    func decideIndividually(_ outcome: [LibraryItem.ID: Decision]) {
-        guard phase == .feed, let card = currentCard, let complete = completed(outcome, for: card) else { return }
-        guard card.isAdminMock || admitSwipe() else {
+    func decideIndividually(_ outcome: [LibraryItem.ID: Decision], cardID: FeedCard.ID) {
+        guard phase == .feed, let top = currentCard, completed(outcome, for: top) != nil else { return }
+        // Admitting can credit a refill, which reorders the deck, so the card is only read after it.
+        let admitted = top.isAdminMock || admitSwipe()
+        guard let card = currentCard(matching: cardID), let complete = completed(outcome, for: card) else { return }
+        guard admitted else {
             saveDraft(outcome, for: card.id)
             return
         }
@@ -695,6 +709,18 @@ final class FeedViewModel {
 
     // MARK: Internals
 
+    /// The current card if it's `cardID`. Otherwise the gesture was for a card that has since moved,
+    /// and is dropped rather than applied to whatever is on top now.
+    private func currentCard(matching cardID: FeedCard.ID) -> FeedCard? {
+        guard let card = currentCard, card.id == cardID else {
+            #if DEBUG
+            Self.log.debug("Dropped a decision for \(cardID, privacy: .public): the current card is \(self.currentCard?.id ?? "none", privacy: .public)")
+            #endif
+            return nil
+        }
+        return card
+    }
+
     /// Lets a card decision through, or refuses it and opens the wall when no swipes are left.
     private func admitSwipe() -> Bool {
         refreshAllowance()
@@ -716,19 +742,24 @@ final class FeedViewModel {
         return true
     }
 
-    /// Moves the strongest cards still to come to the front, or leaves it to the next deck dealt.
+    /// Moves the strongest cards still to come to right after the current one, or leaves it to the
+    /// next deck dealt.
     private func frontLoad() {
         guard deckPhase == .feed, var current = session else {
             refilledSinceDeal = true
             return
         }
         refilledSinceDeal = false
-        let reordered = FrontLoad.reordered(current.cards, from: index)
+        let reordered = FrontLoad.reordered(current.cards, from: frontLoadStart)
         guard reordered != current.cards else { return }
         current.cards = reordered
         session = current
         saveProgress()
     }
+
+    /// Where a refill's reordering starts. The current card never moves: the user may be looking at it
+    /// full screen, or reviewing it one by one. With none showing, the next card dealt can move too.
+    private var frontLoadStart: Int { currentCard == nil ? index : index + 1 }
 
     /// Records per-item decisions for the current card and moves on.
     /// `direction` is the side the card left from, so undo brings it back the same way.
@@ -806,7 +837,7 @@ final class FeedViewModel {
         current.number = page.number
         current.cards += fresh
         if refilledSinceDeal {
-            current.cards = FrontLoad.reordered(current.cards, from: index)
+            current.cards = FrontLoad.reordered(current.cards, from: frontLoadStart)
             refilledSinceDeal = false
         }
         session = current
@@ -1114,4 +1145,5 @@ extension FeedViewModel {
     static let pageAhead = 5
     /// Decided cards kept behind the current one, for undo. Older ones are trimmed when a page lands.
     static let keptBehind = 30
+    fileprivate static let log = Logger(subsystem: "com.israelavendanojr.photo-swiper", category: "feed")
 }

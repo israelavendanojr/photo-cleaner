@@ -28,7 +28,7 @@ struct LibraryProgressTests {
     private func advance(_ vm: FeedViewModel, to match: (FeedCard) -> Bool) async throws -> FeedCard {
         for _ in 0..<200 {
             if let card = vm.currentCard, match(card) { return card }
-            vm.decide(.right)
+            vm.decideCurrent(.right)
             await vm.waitForPage()
         }
         throw CardNotFound()
@@ -47,28 +47,28 @@ struct LibraryProgressTests {
 
     @Test func laterIsNotReviewed() async throws {
         let vm = await started()
-        vm.decide(.up)
+        vm.decideCurrent(.up)
         #expect(vm.libraryReviewedCount == 0)
         #expect(vm.laterCount > 0)
 
         let next = try #require(vm.currentCard)
-        vm.decide(.right)
+        vm.decideCurrent(.right)
         #expect(vm.libraryReviewedCount == next.items.count)
     }
 
     @Test func undoThenRedoCountsOnce() async throws {
         let vm = await started()
         let card = try #require(vm.currentCard)
-        vm.decide(.right)
+        vm.decideCurrent(.right)
         #expect(vm.libraryReviewedCount == card.items.count)
 
         vm.undo()
         #expect(vm.libraryReviewedCount == 0)
 
-        vm.decide(.right)
+        vm.decideCurrent(.right)
         #expect(vm.libraryReviewedCount == card.items.count)
         vm.undo()
-        vm.decide(.left)
+        vm.decideCurrent(.left)
         #expect(vm.libraryReviewedCount == card.items.count, "Changing the answer doesn't add it again")
     }
 
@@ -76,7 +76,7 @@ struct LibraryProgressTests {
         let vm = await started()
         let card = try await advance(vm, to: { isSingle($0) })
         let before = vm.libraryReviewedCount
-        vm.decide(.left)
+        vm.decideCurrent(.left)
         #expect(vm.libraryReviewedCount == before + 1)
 
         // Seen again in the pile and kept instead.
@@ -97,7 +97,7 @@ struct LibraryProgressTests {
 
         // Finished: each item once, though the bundle and its review both showed it.
         let all = Dictionary(uniqueKeysWithValues: card.items.map { ($0.id, Decision.keep) })
-        vm.decideIndividually(all)
+        vm.decideCurrentIndividually(all)
         #expect(vm.currentCard?.id != card.id)
         #expect(vm.libraryReviewedCount == before + card.items.count)
     }
@@ -105,9 +105,9 @@ struct LibraryProgressTests {
     @Test func itemsDeletedHereStopCounting() async throws {
         let vm = await started()
         _ = try await advance(vm, to: { isSingle($0) })
-        vm.decide(.left)
+        vm.decideCurrent(.left)
         _ = try await advance(vm, to: { isSingle($0) })
-        vm.decide(.left)
+        vm.decideCurrent(.left)
         let pending = vm.pendingItems
         #expect(pending.count == 2)
         let before = vm.libraryReviewedCount
@@ -123,7 +123,7 @@ struct LibraryProgressTests {
     @Test func itemsDeletedElsewhereStopCounting() async throws {
         let vm = await started()
         let card = try #require(vm.currentCard)
-        vm.decide(.right)
+        vm.decideCurrent(.right)
         #expect(vm.libraryReviewedCount == card.items.count)
 
         library.totalItems = 100 - card.items.count
@@ -137,7 +137,7 @@ struct LibraryProgressTests {
     @Test func neverMoreThanTheTotal() async throws {
         library.totalItems = 3
         let vm = await started()
-        for _ in 0..<6 { vm.decide(.right) }
+        for _ in 0..<6 { vm.decideCurrent(.right) }
         #expect(store.reviewedCount() > 3)
         #expect(vm.libraryReviewedCount == 3)
         #expect(vm.libraryReviewedFraction == 1)
@@ -146,7 +146,7 @@ struct LibraryProgressTests {
     @Test func mockBaselineIsNotAddedToSwipes() {
         let vm = FeedViewModel.mock()
         #expect(vm.libraryReviewedCount == MockPhotoLibrary().reviewedItems)
-        vm.decide(.right)
+        vm.decideCurrent(.right)
         #expect(vm.libraryReviewedCount == MockPhotoLibrary().reviewedItems)
     }
 
@@ -157,7 +157,7 @@ struct LibraryProgressTests {
         let vm = await started()
         #expect(!vm.isCompleteCelebrationDue)
 
-        vm.decide(.right)
+        vm.decideCurrent(.right)
         #expect(vm.isLibraryComplete)
         #expect(vm.isCompleteCelebrationDue)
 
@@ -175,13 +175,13 @@ struct LibraryProgressTests {
         #expect(!vm.isLibraryComplete)
         #expect(!vm.hasCelebratedComplete)
         #expect(!defaults.bool(forKey: DefaultsKey.celebratedComplete))
-        vm.decide(.right)
+        vm.decideCurrent(.right)
         #expect(vm.isCompleteCelebrationDue)
     }
 
     @Test func simulatedCompleteIsDisplayOnly() async throws {
         let vm = await started()
-        vm.decide(.up)
+        vm.decideCurrent(.up)
         let saved = store.decisions(for: Set(vm.decisions.keys))
 
         vm.debugSetSimulatesComplete(true)

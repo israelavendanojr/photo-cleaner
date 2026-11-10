@@ -7,7 +7,7 @@ struct CardStackView: View {
     @State private var request: SwipeDirection?
     /// The card being gone through one by one, and its outcome once finished.
     @State private var reviewing: ReviewSet?
-    @State private var reviewOutcome: [LibraryItem.ID: Decision]?
+    @State private var finishedReview: FinishedReview?
     @AppStorage(DefaultsKey.hasSeenSwipeHint) private var hasSeenSwipeHint = false
     @Environment(\.dealsInFirstDeck) private var dealsIn
 
@@ -31,7 +31,7 @@ struct CardStackView: View {
         #endif
         .fullScreenCover(item: $reviewing, onDismiss: flyOutReviewedCard) { set in
             ItemReviewView(set: set, draft: vm.draft(for: set.id)) { outcome in
-                reviewOutcome = outcome
+                finishedReview = FinishedReview(cardID: set.id, outcome: outcome)
                 reviewing = nil
             }
         }
@@ -39,36 +39,46 @@ struct CardStackView: View {
 
     /// Once the review cover is gone, the card leaves like a normal swipe.
     private func flyOutReviewedCard() {
-        guard let outcome = reviewOutcome else { return }
-        request = outcome.values.contains(.delete) ? .left : .right
+        guard let review = finishedReview else { return }
+        request = review.outcome.values.contains(.delete) ? .left : .right
     }
 
     /// A finished one-by-one review is judged by its own outcome, which isn't a draft yet.
-    private func canDecide(_ direction: SwipeDirection) -> Bool {
-        reviewOutcome.map(vm.canDecideIndividually) ?? vm.canDecide(direction)
+    private func canDecide(_ direction: SwipeDirection, card: FeedCard) -> Bool {
+        if let review = finishedReview {
+            return vm.canDecideIndividually(review.outcome, cardID: review.cardID)
+        }
+        return vm.canDecide(direction, cardID: card.id)
     }
 
     /// Out of swipes or a full pile. A finished one-by-one review waits as a draft for the next swipe.
-    private func refused(_ direction: SwipeDirection) {
-        if let outcome = reviewOutcome, let card = vm.currentCard {
-            vm.saveDraft(outcome, for: card.id)
+    private func refused(_ direction: SwipeDirection, card: FeedCard) {
+        if let review = finishedReview {
+            vm.saveDraft(review.outcome, for: review.cardID)
         }
-        reviewOutcome = nil
-        vm.refuse(direction)
+        finishedReview = nil
+        vm.refuse(direction, cardID: card.id)
     }
 
+    /// Decisions always name their card, so one that moved meanwhile is never decided by mistake.
     private func decide(_ direction: SwipeDirection, card: FeedCard) {
         hasSeenSwipeHint = true
-        if let outcome = reviewOutcome {
-            reviewOutcome = nil
-            vm.decideIndividually(outcome)
+        if let review = finishedReview {
+            finishedReview = nil
+            vm.decideIndividually(review.outcome, cardID: review.cardID)
             return
         }
         if direction == .left, vm.bytesToClear(for: card) > 0 {
             Haptics.delete()
         }
-        vm.decide(direction)
+        vm.decide(direction, cardID: card.id)
     }
+}
+
+/// A one-by-one review's outcome, kept with the card it was for until the card flies out.
+private struct FinishedReview {
+    let cardID: FeedCard.ID
+    let outcome: [LibraryItem.ID: Decision]
 }
 
 #if DEBUG

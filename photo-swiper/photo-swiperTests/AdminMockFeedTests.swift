@@ -29,7 +29,7 @@ struct AdminMockFeedTests {
 
     @Test func anAddedCardGoesOnTop() async throws {
         let vm = await launch()
-        vm.decide(.right)
+        vm.decideCurrent(.right)
         let next = try #require(vm.currentCard)
         let requests = vm.adminShowFeedRequest
 
@@ -48,8 +48,8 @@ struct AdminMockFeedTests {
         vm.adminInsertMockCard(card)
         let swipesBefore = vm.allowance.remaining
 
-        #expect(vm.canDecide(.left), "Even past the pile limit")
-        vm.decide(.left)
+        #expect(vm.canDecideCurrent(.left), "Even past the pile limit")
+        vm.decideCurrent(.left)
 
         #expect(vm.currentCard != card, "Moved on")
         #expect(vm.pendingItems.isEmpty, "Nothing in the pile")
@@ -62,7 +62,7 @@ struct AdminMockFeedTests {
         let vm = await launch(swipes: 0)
         vm.adminInsertMockCard(mock(.photo))
 
-        vm.decide(.left)
+        vm.decideCurrent(.left)
 
         #expect(!vm.isWallPresented)
         #expect(vm.allowance.remaining == 0)
@@ -74,8 +74,8 @@ struct AdminMockFeedTests {
         vm.adminInsertMockCard(card)
 
         let outcome = Dictionary(uniqueKeysWithValues: card.items.map { ($0.id, Decision.delete) })
-        #expect(vm.canDecideIndividually(outcome))
-        vm.decideIndividually(outcome)
+        #expect(vm.canDecideCurrentIndividually(outcome))
+        vm.decideCurrentIndividually(outcome)
 
         #expect(vm.currentCard != card)
         #expect(vm.pendingItems.isEmpty)
@@ -86,7 +86,7 @@ struct AdminMockFeedTests {
         let vm = await launch()
         let card = mock(.duplicates)
         vm.adminInsertMockCard(card)
-        vm.decide(.left)
+        vm.decideCurrent(.left)
 
         vm.undo()
 
@@ -98,7 +98,7 @@ struct AdminMockFeedTests {
         let vm = await launch()
         let swiped = mock(.photo)
         vm.adminInsertMockCard(swiped)
-        vm.decide(.right)
+        vm.decideCurrent(.right)
         let real = try #require(vm.currentCard)
         vm.adminInsertMockCard(mock(.video))
         vm.adminInsertMockCard(mock(.similar))
@@ -113,8 +113,8 @@ struct AdminMockFeedTests {
     @Test func aRelaunchLeavesMockCardsOut() async throws {
         let vm = await launch()
         vm.adminInsertMockCard(mock(.photo))
-        vm.decide(.right)
-        vm.decide(.right)
+        vm.decideCurrent(.right)
+        vm.decideCurrent(.right)
         let real = try #require(vm.currentCard)
         vm.adminInsertMockCard(mock(.similar))
 

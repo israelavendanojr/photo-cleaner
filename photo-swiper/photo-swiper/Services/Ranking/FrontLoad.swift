@@ -10,6 +10,9 @@ enum FrontLoad {
     static let minVideoBytes: Int64 = 50_000_000
 
     /// `cards` with the strong ones from `start` on moved to `start`. Cards before `start` stay put.
+    ///
+    /// The feed passes one past the current card, so the card on top never changes under the user's
+    /// finger; only a freshly dealt deck reorders from 0.
     static func reordered(_ cards: [FeedCard], from start: Int) -> [FeedCard] {
         guard start < cards.count else { return cards }
         let head = Array(cards[..<start])

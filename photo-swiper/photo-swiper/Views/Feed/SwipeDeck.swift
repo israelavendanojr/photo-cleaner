@@ -24,8 +24,9 @@ struct SwipeDeck: View {
     var dealsIn = false
     /// False when the top card can't be swiped that way. Asked as a swipe commits. The card then
     /// flies out and rewinds into place, nothing is decided, and `onRefused` is called once it's back.
-    var canSwipe: (SwipeDirection) -> Bool = { _ in true }
-    var onRefused: (SwipeDirection) -> Void = { _ in }
+    /// Both get the card, so the answer is about the card being swiped, not whatever is on top by then.
+    var canSwipe: (SwipeDirection, FeedCard) -> Bool = { _, _ in true }
+    var onRefused: (SwipeDirection, FeedCard) -> Void = { _, _ in }
     /// Shown in place of the top card while the deck waits on more, e.g. "Finding more…".
     var waitingText: String?
 
@@ -39,8 +40,9 @@ struct SwipeDeck: View {
     @State private var previewingVideo: LibraryItem?
     /// The photo open full screen.
     @State private var previewingPhoto: LibraryItem?
-    /// A swipe made in full screen. The top card flies off that way once the preview closes.
-    @State private var previewDecision: SwipeDirection?
+    /// A swipe made in full screen, and the item it was made on. The top card flies off that way once
+    /// the preview closes, if it still holds that item.
+    @State private var previewDecision: (direction: SwipeDirection, itemID: LibraryItem.ID)?
     /// What was pre-cached before this deck appeared, handed back when it goes (a nested deck).
     @State private var outerPreheat: [String: CGSize]?
     @State private var hasDealt = false
@@ -72,8 +74,8 @@ struct SwipeDeck: View {
                         onRelease: { release($0, card: card) },
                         onSwipe: { finish($0, card: card) },
                         nudges: isTop && showsHint,
-                        canCommit: { !isTop || canSwipe($0) },
-                        onRefused: onRefused
+                        canCommit: { !isTop || canSwipe($0, card) },
+                        onRefused: { onRefused($0, card) }
                     ) {
                         CardContentView(
                             card: card,
@@ -108,13 +110,13 @@ struct SwipeDeck: View {
         }
         .fullScreenCover(item: $previewingVideo, onDismiss: flyOutPreviewDecision) { item in
             VideoPreviewView(item: item, label: previewLabel) { direction in
-                previewDecision = direction
+                previewDecision = (direction, item.id)
                 previewingVideo = nil
             }
         }
         .fullScreenCover(item: $previewingPhoto, onDismiss: flyOutPreviewDecision) { item in
             PhotoPreviewView(item: item, label: previewLabel) { direction in
-                previewDecision = direction
+                previewDecision = (direction, item.id)
                 previewingPhoto = nil
             }
         }
@@ -167,10 +169,12 @@ struct SwipeDeck: View {
     }
 
     /// Once a preview closes on a decision, the card leaves like an action-button swipe.
+    /// If the deck changed meanwhile and the previewed item isn't on top any more, nothing flies.
     private func flyOutPreviewDecision() {
-        guard let direction = previewDecision else { return }
+        guard let decision = previewDecision else { return }
         previewDecision = nil
-        request = direction
+        guard currentCard?.items.contains(where: { $0.id == decision.itemID }) == true else { return }
+        request = decision.direction
     }
 
     private func entrance(for card: FeedCard) -> SwipeDirection? {

@@ -48,7 +48,7 @@ struct FeedViewModelPersistenceTests {
     private func swipe(_ vm: FeedViewModel, until done: (FeedViewModel) -> Bool) async throws {
         for _ in 0..<500 {
             if done(vm) { return }
-            vm.decide(.right)
+            vm.decideCurrent(.right)
             await vm.waitForPage()
         }
         Issue.record("Never got there")
@@ -58,7 +58,7 @@ struct FeedViewModelPersistenceTests {
     func decisionsIndexAndMarksSurviveARelaunch(_ kind: ProgressStoreTests.Kind) async throws {
         let store = try makeStore(kind)
         let vm = await launch(store)
-        for direction: SwipeDirection in [.left, .right, .up, .right, .left, .left] { vm.decide(direction) }
+        for direction: SwipeDirection in [.left, .right, .up, .right, .left, .left] { vm.decideCurrent(direction) }
         guard case .similar(let group) = try #require(vm.currentCard) else {
             Issue.record("Expected the similar group on top")
             return
@@ -82,7 +82,7 @@ struct FeedViewModelPersistenceTests {
     func aPartialBatchReviewSurvivesARelaunch(_ kind: ProgressStoreTests.Kind) async throws {
         let store = try makeStore(kind)
         let vm = await launch(store)
-        while vm.phase == .feed, !{ if case .batch = vm.currentCard { true } else { false } }() { vm.decide(.right) }
+        while vm.phase == .feed, !{ if case .batch = vm.currentCard { true } else { false } }() { vm.decideCurrent(.right) }
         guard case .batch(let batch) = try #require(vm.currentCard) else {
             Issue.record("Expected a batch card on top")
             return
@@ -100,7 +100,7 @@ struct FeedViewModelPersistenceTests {
     func aBatchDraftSavedByBatchIDStillLoads(_ kind: ProgressStoreTests.Kind) async throws {
         let store = try makeStore(kind)
         let vm = await launch(store)
-        while vm.phase == .feed, !{ if case .batch = vm.currentCard { true } else { false } }() { vm.decide(.right) }
+        while vm.phase == .feed, !{ if case .batch = vm.currentCard { true } else { false } }() { vm.decideCurrent(.right) }
         guard case .batch(let batch) = try #require(vm.currentCard), let session = vm.session else {
             Issue.record("Expected a batch card on top")
             return
@@ -118,7 +118,7 @@ struct FeedViewModelPersistenceTests {
     func aPartialSimilarReviewSurvivesARelaunch(_ kind: ProgressStoreTests.Kind) async throws {
         let store = try makeStore(kind)
         let vm = await launch(store)
-        while vm.phase == .feed, !{ if case .similar = vm.currentCard { true } else { false } }() { vm.decide(.right) }
+        while vm.phase == .feed, !{ if case .similar = vm.currentCard { true } else { false } }() { vm.decideCurrent(.right) }
         guard case .similar(let group) = try #require(vm.currentCard) else {
             Issue.record("Expected a similar card on top")
             return
@@ -137,7 +137,7 @@ struct FeedViewModelPersistenceTests {
         let store = try makeStore(kind)
         library.onDelete = { _ in throw DeletionError.cancelled }
         let vm = await launch(store)
-        for _ in 0..<3 { vm.decide(.left) }
+        for _ in 0..<3 { vm.decideCurrent(.left) }
         #expect(await vm.deleteNow(vm.pendingItems) == nil)
 
         let relaunched = await launch(store)
@@ -151,7 +151,7 @@ struct FeedViewModelPersistenceTests {
     func deletesAddToFreedAndLeaveThePileForGood(_ kind: ProgressStoreTests.Kind) async throws {
         let store = try makeStore(kind)
         let vm = await launch(store)
-        for _ in 0..<3 { vm.decide(.left) }
+        for _ in 0..<3 { vm.decideCurrent(.left) }
         let freed = vm.pendingBytes
         #expect(await vm.deleteNow(vm.pendingItems) == freed)
         #expect(vm.freedBytes == freed)
@@ -169,7 +169,7 @@ struct FeedViewModelPersistenceTests {
     func itemsDeletedWhileClosedLeaveTheDeckAndThePile(_ kind: ProgressStoreTests.Kind) async throws {
         let store = try makeStore(kind)
         let vm = await launch(store)
-        vm.decide(.left)
+        vm.decideCurrent(.left)
         let first = vm.cards[0], second = vm.cards[1], upcoming = vm.cards[5]
         guard case .batch(let batch) = vm.cards[8] else {
             Issue.record("Expected a batch at card 9")
@@ -218,11 +218,11 @@ struct FeedViewModelPersistenceTests {
         let vm = FeedViewModel(library: library, builder: exhausting, store: store, entitlements: TestEntitlements(), now: { clock.now })
         await vm.start()
         let kept = vm.cards[0].items[0].id, later = vm.cards[1].items[0].id, deleted = vm.cards[2].items[0].id
-        vm.decide(.right)
-        vm.decide(.up)
-        vm.decide(.left)
+        vm.decideCurrent(.right)
+        vm.decideCurrent(.up)
+        vm.decideCurrent(.left)
         exhausting.isExhausted = true
-        while vm.currentCard != nil { vm.decide(.right) }
+        while vm.currentCard != nil { vm.decideCurrent(.right) }
         await vm.waitForPage()
         #expect(vm.phase == .caughtUp)
 
@@ -250,7 +250,7 @@ struct FeedViewModelPersistenceTests {
         let vm = await launch(store)
         #expect(vm.decisions.isEmpty, "A later from an earlier deck isn't decided in this one")
 
-        vm.decide(.left)
+        vm.decideCurrent(.left)
         #expect(store.decisions(for: [item.id])[item.id]?.decision == .delete)
         vm.undo()
 
@@ -263,7 +263,7 @@ struct FeedViewModelPersistenceTests {
         let store = try makeStore(kind)
         let vm = await launch(store)
         // Synchronous swipes outrun paging, so the deck is saved with nothing ahead.
-        while vm.currentCard != nil { vm.decide(.right) }
+        while vm.currentCard != nil { vm.decideCurrent(.right) }
         #expect(vm.isFindingMore)
         // Read before relaunching: the first model's page fetch can land meanwhile and append page two.
         let firstPage = Set(vm.cards.map(\.id))
@@ -291,11 +291,11 @@ struct FeedViewModelPersistenceTests {
     func pendingDeletesTrimmedFromBehindTheDeckStayInThePile(_ kind: ProgressStoreTests.Kind) async throws {
         let store = try makeStore(kind)
         let vm = await launch(store)
-        for _ in 0..<3 { vm.decide(.left) }
+        for _ in 0..<3 { vm.decideCurrent(.left) }
         let early = vm.pendingItems.map(\.id)
         // Once deep enough into the deck, the first cards are let go.
         try await swipe(vm, until: { vm in !vm.cards.contains { $0.items.contains { $0.id == early[0] } } })
-        vm.decide(.left)
+        vm.decideCurrent(.left)
         let current = try #require(vm.pendingItems.last)
         #expect(Array(vm.pendingItems.map(\.id).prefix(3)) == early, "Trimmed deletes are still pending")
 
@@ -328,7 +328,7 @@ struct FeedViewModelPersistenceTests {
         let container = try SwiftDataProgressStore.makeContainer(inMemory: true)
         let store = SwiftDataProgressStore(container: container, defaults: nil)
         let vm = await launch(store)
-        vm.decide(.left)
+        vm.decideCurrent(.left)
         let decided = try #require(vm.cards.first?.items.first)
 
         let row = try #require(try container.mainContext.fetch(FetchDescriptor<SessionProgress>()).first)

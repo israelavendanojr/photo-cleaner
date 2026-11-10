@@ -36,7 +36,7 @@ struct ReviewPromptTests {
     private func vmWithPile() async throws -> (FeedViewModel, small: [LibraryItem], big: LibraryItem) {
         let vm = FeedViewModel(library: library, builder: MockFeedBuilder(), entitlements: entitlements, defaults: defaults)
         await vm.start()
-        for _ in 0..<6 { vm.decide(.left) }
+        for _ in 0..<6 { vm.decideCurrent(.left) }
         let big = try #require(vm.pendingItems.first { $0.bytes >= ReviewPrompt.minimumFreedBytes })
         let small = vm.pendingItems.filter { $0.bytes < ReviewPrompt.minimumFreedBytes }
         try #require(!small.isEmpty)
