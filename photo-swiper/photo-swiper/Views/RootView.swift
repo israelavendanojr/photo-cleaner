@@ -55,6 +55,11 @@ struct RootView: View {
             // Admin Tools put a mock card on the deck.
             tab = .feed
         }
+        .alert("Couldn't load your saved progress", isPresented: progressLoadNotice) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("Your photos are untouched.")
+        }
         .sheet(isPresented: $isPilePresented) {
             PendingPileView(showsDone: true)
                 .presentationDetents([.large])
@@ -128,6 +133,11 @@ struct RootView: View {
     }
 
     /// Both tabs stay mounted so the deck keeps its place while the library is up.
+    /// Shown once when saved progress couldn't be opened at launch.
+    private var progressLoadNotice: Binding<Bool> {
+        Binding(get: { vm.isProgressLoadNoticePresented }, set: { if !$0 { vm.dismissProgressLoadNotice() } })
+    }
+
     private var tabs: some View {
         ZStack {
             feedTab

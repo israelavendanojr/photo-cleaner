@@ -97,6 +97,9 @@ final class FeedViewModel {
     var isPileFullNoticePresented = false
     /// Something about the last delete the user should know, e.g. items the system refused.
     var deleteNotice: String?
+    /// Saved progress couldn't be opened at launch, so this launch runs on a throwaway store.
+    /// RootView says so once.
+    private(set) var isProgressLoadNoticePresented = false
     /// Applies to the next page built.
     var skipFavorites = true {
         didSet { store.skipFavorites = skipFavorites }
@@ -160,6 +163,7 @@ final class FeedViewModel {
     ///   - allowanceTunables: Fixed swipe tunables, used when `freeTier` is nil.
     ///   - freeTier: The live free-tier limits. Nil fixes them at `allowanceTunables` and the standard pile limit.
     ///   - features: Live feature availability. Nil gives everyone every feature.
+    ///   - progressLoadFailed: Saved progress couldn't be opened, so `store` is a stand-in. The user is told once.
     init(
         library: any PhotoLibraryProviding,
         builder: any FeedBuilding,
@@ -173,6 +177,7 @@ final class FeedViewModel {
         freeTier: FreeTierTunables? = nil,
         features: FeatureAvailabilityTunables? = nil,
         notifier: RefillNotifier? = nil,
+        progressLoadFailed: Bool = false,
         now: @escaping () -> Date = Date.init
     ) {
         self.library = library
@@ -192,6 +197,7 @@ final class FeedViewModel {
         gate = SwipeGate(entitlements: entitlements, allowanceStore: allowanceStore ?? SwipeAllowanceStore(), freeTier: freeTier, now: now)
         skipFavorites = store.skipFavorites
         hasCelebratedComplete = defaults.bool(forKey: DefaultsKey.celebratedComplete)
+        isProgressLoadNoticePresented = progressLoadFailed
     }
 
     /// Starts already loaded. Used by previews and launch-time setup.
@@ -383,6 +389,10 @@ final class FeedViewModel {
     }
 
     // MARK: Intents
+
+    func dismissProgressLoadNotice() {
+        isProgressLoadNoticePresented = false
+    }
 
     /// The 100% confetti has played; it won't again until progress drops and comes back.
     func markCompleteCelebrated() {
