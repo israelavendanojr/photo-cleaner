@@ -62,21 +62,21 @@ extension FeedViewModel {
         case .first:
             break
         case .video:
-            vm.index = vm.cards.firstIndex { if case .video = $0 { true } else { false } } ?? 0
+            vm.debugMoveToFirstCard { if case .video = $0 { true } else { false } }
         case .similar:
-            vm.index = vm.cards.firstIndex { if case .similar = $0 { true } else { false } } ?? 0
+            vm.debugMoveToFirstCard { if case .similar = $0 { true } else { false } }
         case .batch:
-            vm.index = vm.cards.firstIndex { if case .batch = $0 { true } else { false } } ?? 0
+            vm.debugMoveToFirstCard { if case .batch = $0 { true } else { false } }
         case .duplicates:
-            vm.index = vm.cards.firstIndex { if case .duplicates = $0 { true } else { false } } ?? 0
+            vm.debugMoveToFirstCard { if case .duplicates = $0 { true } else { false } }
         case .pending:
             vm.simulateSwipes(10)
         case .outOfSwipes:
-            vm.index = 4
+            vm.debugMove(to: 4)
             vm.gate.allowance = SwipeAllowance(balance: 0, tunables: allowanceTunables, now: .now)
             vm.presentWall()
         case .caughtUp:
-            vm.apply(Session(number: 2, cards: []))
+            vm.debugDeal(Session(number: 2, cards: []))
         case .onboarding:
             break
         }

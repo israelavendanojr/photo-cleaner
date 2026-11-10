@@ -9,7 +9,7 @@ struct UnlockOffer: View {
     var dismissTitle = "Not now"
     let onDismiss: () -> Void
 
-    private var status: FeedViewModel.PaywallStatus { vm.paywallStatus }
+    private var status: PaywallStatus { vm.paywallStatus }
     private var isPurchasing: Bool { status == .purchasing }
     private var isRestoring: Bool { status == .restoring }
     private var isBusy: Bool { vm.isPurchaseBusy }

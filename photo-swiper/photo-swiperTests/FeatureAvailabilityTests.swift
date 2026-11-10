@@ -114,7 +114,7 @@ struct FeatureAvailabilityTests {
         #expect(free.contains { $0.feature == .duplicates })
 
         entitlements.isUnlocked = true
-        await vm.adminRebuildDeck()
+        await vm.admin.adminRebuildDeck()
         #expect(vm.session?.cards.contains { $0.feature == .similarShots } == true)
     }
 }

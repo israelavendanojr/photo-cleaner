@@ -12,14 +12,14 @@ struct FreeLimitsPanel: View {
                     tunable: tunable,
                     value: vm.freeTier.value(tunable),
                     defaultValue: vm.freeTier.defaultValue(tunable)
-                ) { vm.setFreeTierValue(tunable, $0) }
+                ) { vm.admin.setFreeTierValue(tunable, $0) }
             }
             SettingsLabel(icon: "calendar", title: "Per day", value: perDay)
                 .settingsRowPadding()
                 .accessibilityIdentifier("settings.tuning.perDay")
             refillCountdown
             Button {
-                vm.resetFreeTierToDefaults()
+                vm.admin.resetFreeTierToDefaults()
             } label: {
                 SettingsLabel(icon: "arrow.counterclockwise", title: "Reset to defaults",
                               detail: vm.freeTier.isCustomized ? nil : "Using the defaults.")

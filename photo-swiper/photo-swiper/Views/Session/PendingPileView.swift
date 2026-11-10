@@ -180,7 +180,7 @@ struct PendingPileView: View {
     }
 
     private var hasDeleteNotice: Binding<Bool> {
-        Binding(get: { vm.deleteNotice != nil }, set: { if !$0 { vm.deleteNotice = nil } })
+        Binding(get: { vm.deleteNotice != nil }, set: { if !$0 { vm.dismissDeleteNotice() } })
     }
 
     private func toggle(_ item: LibraryItem) {

@@ -7,18 +7,16 @@ import Observation
 @Observable
 @MainActor
 final class OnboardingFlow {
-    typealias Phase = FeedViewModel.Phase
-    typealias Step = FeedViewModel.OnboardingStep
 
     /// Photo access was granted from onboarding. The primer can't be left backward from here.
     private(set) var isOnboardingAccessGranted = false
-    private(set) var onboardingStep = Step.intro
+    private(set) var onboardingStep = OnboardingStep.intro
     /// Onboarding will offer reminders after photo access. Re-checked when it gets there.
     private(set) var offersReminderStep = false
     /// Onboarding stays up after access is granted until its last step, while the deck is dealt underneath.
     private(set) var holdsOnboarding = false
     /// Where the deck stands while onboarding holds the screen. Becomes `phase` when onboarding finishes.
-    private(set) var heldPhase: Phase?
+    private(set) var heldPhase: FeedPhase?
     /// Debug builds: this onboarding is a replay, so every step shows whatever was decided before.
     private var isReplayingOnboarding = false
 
@@ -98,7 +96,7 @@ final class OnboardingFlow {
 
     /// Lets the feed replace onboarding. Returns the deck's held phase to apply, or nil if the first
     /// deck is still being built, in which case `route(_:)` passes it straight through once it's ready.
-    func finish() -> Phase? {
+    func finish() -> FeedPhase? {
         guard holdsOnboarding else { return nil }
         holdsOnboarding = false
         isReplayingOnboarding = false
@@ -108,7 +106,7 @@ final class OnboardingFlow {
     }
 
     /// Holds the deck's next phase while onboarding is still up. Otherwise returns it, for `phase`.
-    func route(_ next: Phase) -> Phase? {
+    func route(_ next: FeedPhase) -> FeedPhase? {
         guard holdsOnboarding else { return next }
         heldPhase = next
         return nil

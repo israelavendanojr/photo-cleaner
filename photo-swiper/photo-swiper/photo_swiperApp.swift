@@ -41,8 +41,8 @@ private extension FeedViewModel {
         let vm = launchServices()
         #if DEBUG
         if UserDefaults.standard.bool(forKey: "simulateComplete") {
-            vm.debugResetCelebration()
-            vm.debugSetSimulatesComplete(true)
+            vm.admin.debugResetCelebration()
+            vm.admin.debugSetSimulatesComplete(true)
         }
         #endif
         return vm

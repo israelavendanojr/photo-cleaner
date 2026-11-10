@@ -28,7 +28,7 @@ struct AdminUpsellPanel: View {
     var body: some View {
         SettingsSection("Admin Tools · Upsell") {
             Button {
-                vm.adminResetDeleteUpsell()
+                vm.admin.adminResetDeleteUpsell()
                 didReset = true
             } label: {
                 SettingsLabel(icon: "arrow.uturn.backward", title: "Re-enable post-delete upsell",
@@ -47,7 +47,7 @@ struct AdminUpsellPanel: View {
             .settingsRowPadding()
             .accessibilityIdentifier("settings.admin.upsellScreen")
             Button {
-                vm.adminRaiseUpsell(screen)
+                vm.admin.adminRaiseUpsell(screen)
                 onClose()
             } label: {
                 SettingsLabel(icon: "sparkles.rectangle.stack", title: "Raise upsell", detail: screen.title)
@@ -78,14 +78,14 @@ struct AdminMockCardsPanel: View {
             }
             row("Remove mock cards", icon: "xmark.bin", id: "settings.admin.mock.remove",
                 detail: "Mock cards never save a decision, fill the pile or cost a swipe.") {
-                vm.adminRemoveMockCards()
+                vm.admin.adminRemoveMockCards()
             }
         }
     }
 
     private func add(_ kind: AdminMockKind) {
         var rng = SystemRandomNumberGenerator()
-        vm.adminInsertMockCard(AdminMockCards.card(kind, using: &rng))
+        vm.admin.adminInsertMockCard(AdminMockCards.card(kind, using: &rng))
         onClose()
     }
 

@@ -73,7 +73,7 @@ struct OnboardingGatingTests {
         let first = await launched()
         #expect(first.phase == .feed)
 
-        first.debugResetOnboarding()
+        first.admin.debugResetOnboarding()
         let relaunched = await launched()
         #expect(relaunched.phase == .onboarding)
         await relaunched.start()
@@ -346,7 +346,7 @@ struct OnboardingGatingTests {
         let first = await launched(center: center)
         #expect(first.phase == .feed)
 
-        first.debugResetOnboarding()
+        first.admin.debugResetOnboarding()
         let replay = await launched(entitlements: TestEntitlements(isUnlocked: true), center: center)
         #expect(replay.phase == .onboarding)
         #expect(replay.offersReminderStep && replay.offersUpsellStep)
