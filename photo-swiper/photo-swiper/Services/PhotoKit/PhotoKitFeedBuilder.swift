@@ -22,6 +22,8 @@ actor PhotoKitFeedBuilder: FeedBuilding {
     static let minBatch = 3
     static let maxBatch = 40
     private static let log = Logger(subsystem: "com.israelavendanojr.photo-swiper", category: "feed")
+    /// Intervals for each stage of a page build, for Instruments' os_signpost track.
+    private static let signposter = OSSignposter(logger: log)
 
     private let index: (any FeatureIndexReading)?
     private let places = PlaceNamer()
@@ -50,13 +52,20 @@ actor PhotoKitFeedBuilder: FeedBuilding {
 
     func makeSession(number: Int, options: FeedOptions) async -> Session {
         let started = Date.now
+        let signposts = Self.signposter
+        let build = signposts.beginInterval("makeSession", id: signposts.makeSignpostID(), "page \(number)")
+        defer { signposts.endInterval("makeSession", build) }
+
         let pool = await candidatePool(options)
-        let duplicates = await duplicateGroups(in: pool)
-        let similar = await similarGroups(in: pool, excluding: duplicates.planned)
-        let slots = planner.plan(pool.candidates, groups: similar.planned, duplicates: duplicates.planned, now: .now)
-        similarGroupsLeft = similar.planned.count - slots.filter(\.isSimilar).count
+        let grouping = signposts.beginInterval("grouping")
+        let groups = await groups(in: pool)
+        signposts.endInterval("grouping", grouping, "\(groups.duplicatePrintCount + groups.similarPrintCount) prints")
+        let planning = signposts.beginInterval("plan")
+        let slots = planner.plan(pool.candidates, groups: groups.similar, duplicates: groups.duplicates, now: .now)
+        signposts.endInterval("plan", planning)
+        similarGroupsLeft = groups.similar.count - slots.filter(\.isSimilar).count
         #if DEBUG
-        if UserDefaults.standard.bool(forKey: "logSimilarity") { logSimilarity(similar, session: number) }
+        if UserDefaults.standard.bool(forKey: "logSimilarity") { logSimilarity(groups, session: number) }
         #endif
 
         let chosenIDs = slots.flatMap(\.ids)
@@ -68,7 +77,9 @@ actor PhotoKitFeedBuilder: FeedBuilding {
             assets.compactMap { id, asset in asset.location.map { (id, $0) } },
             uniquingKeysWith: { first, _ in first }
         )
+        let placing = signposts.beginInterval("places")
         let names = await places.names(for: locations, within: options.placeBudget)
+        signposts.endInterval("places", placing)
         let item = { (id: LibraryItem.ID) -> LibraryItem? in
             guard let asset = assets[id], let features = pool.features[id] else { return nil }
             return AssetMapper.item(for: asset, features: features, location: names[id])
@@ -83,7 +94,7 @@ actor PhotoKitFeedBuilder: FeedBuilding {
                 guard shots.count > 1, shots.contains(where: { $0.id == bestID }) else { return nil }
                 return FeedCard.similar(SimilarGroup(
                     id: Self.similarID(shots.map(\.id)), items: shots, bestID: bestID, reason: reason,
-                    maxDistance: similar.maxDistance[Self.similarID(ids)]
+                    maxDistance: groups.maxDistance[Self.similarID(ids)]
                 ))
             case .duplicates(let ids, let keepID, let reason):
                 let copies = ids.compactMap(item)
@@ -103,7 +114,7 @@ actor PhotoKitFeedBuilder: FeedBuilding {
                 ))
             }
         }
-        Self.log.info("Session \(number): \(pool.cachedCount) cached + \(pool.liveCount) live candidates, index \(pool.scanPercent.map { "\($0)%" } ?? "complete"), \(similar.planned.count) similar groups from \(similar.printCount) prints (\(similar.seconds, format: .fixed(precision: 2))s), \(duplicates.planned.count) duplicate sets from \(duplicates.printCount) prints (\(duplicates.seconds, format: .fixed(precision: 2))s), built in \(Date.now.timeIntervalSince(started), format: .fixed(precision: 2))s")
+        Self.log.info("Session \(number): \(pool.cachedCount) cached + \(pool.liveCount) live candidates, index \(pool.scanPercent.map { "\($0)%" } ?? "complete"), \(groups.similar.count) similar groups from \(groups.similarPrintCount) prints (\(groups.similarSeconds, format: .fixed(precision: 2))s), \(groups.duplicates.count) duplicate sets from \(groups.duplicatePrintCount) prints (\(groups.duplicateSeconds, format: .fixed(precision: 2))s), built in \(Date.now.timeIntervalSince(started), format: .fixed(precision: 2))s")
         return Session(number: number, cards: cards, scanPercentAtStart: pool.scanPercent)
     }
 
@@ -120,20 +131,27 @@ actor PhotoKitFeedBuilder: FeedBuilding {
     /// Lists the library once for membership, favorites, and edit dates, then reads live metadata
     /// only for the unindexed items that compete.
     private func candidatePool(_ options: FeedOptions) async -> Pool {
+        let signposts = Self.signposter
+        let enumerating = signposts.beginInterval("enumerate")
         let result = PHAsset.fetchAssets(with: PhotoKitLibrary.fetchOptions(skipFavorites: options.skipFavorites))
         var library: [CandidatePool.Entry] = []
         library.reserveCapacity(result.count)
         result.enumerateObjects { asset, _, _ in
             library.append(CandidatePool.Entry(id: asset.localIdentifier, modifiedAt: asset.modificationDate, isFavorite: asset.isFavorite))
         }
+        signposts.endInterval("enumerate", enumerating, "\(library.count) assets")
+        let reading = signposts.beginInterval("indexed")
         let indexed = await index?.indexed() ?? [:]
+        signposts.endInterval("indexed", reading, "\(indexed.count) records")
         let chosen = CandidatePool.build(library: library, excluding: options.excluding, indexed: indexed, poolSize: Self.poolSize)
 
         var candidates = chosen.cached
         var live: [LibraryItem.ID: AssetFeatures] = [:]
+        let readingLive = signposts.beginInterval("live")
         PHAsset.fetchAssets(withLocalIdentifiers: chosen.live, options: nil).enumerateObjects { asset, _, _ in
             live[asset.localIdentifier] = AssetMapper.features(for: asset)
         }
+        signposts.endInterval("live", readingLive, "\(live.count) assets")
         // Keep newest-first order for the live part.
         candidates += chosen.live.compactMap { id in live[id].map { RankCandidate(id: id, features: $0) } }
         let features = Dictionary(candidates.map { ($0.id, $0.features) }, uniquingKeysWith: { first, _ in first })
@@ -141,69 +159,23 @@ actor PhotoKitFeedBuilder: FeedBuilding {
                     liveCount: live.count, scanPercent: index == nil ? nil : chosen.scanPercent)
     }
 
-    private struct Similar {
-        var planned: [PlannedGroup] = []
-        /// By `SimilarGroup.id`.
-        var maxDistance: [SimilarGroup.ID: Double] = [:]
-        var result = SimilarGrouper.Result()
-        var printCount = 0
-        var seconds = 0.0
+    /// Duplicate sets, then similar groups, among the indexed candidates. Nothing groups without an index.
+    private func groups(in pool: Pool) async -> PageGroups {
+        guard let index else { return PageGroups() }
+        return await PageGrouping.uncached(pool.cached, duplicateGrouper: duplicateGrouper, similarGrouper: grouper) { ids in
+            await index.featurePrints(for: ids)
+        }
     }
 
-    private struct Duplicates {
-        /// Keeper first in each.
-        var planned: [PlannedGroup] = []
-        var printCount = 0
-        var seconds = 0.0
-    }
-
-    /// Copies of one photo among the indexed candidates, whenever they were saved. Sets with two or
-    /// more favorites are dropped, so those photos compete as usual.
-    private func duplicateGroups(in pool: Pool) async -> Duplicates {
-        guard let index else { return Duplicates() }
-        let started = Date.now
-        let candidates = duplicateGrouper.candidateIDs(pool.cached)
-        guard !candidates.isEmpty else { return Duplicates(seconds: Date.now.timeIntervalSince(started)) }
-        let prints = await index.featurePrints(for: Array(candidates))
-        let planned = Self.duplicatePlans(pool.cached.filter { candidates.contains($0.id) }, prints: prints, grouper: duplicateGrouper)
-        return Duplicates(planned: planned, printCount: prints.count, seconds: Date.now.timeIntervalSince(started))
-    }
-
-    /// Duplicate sets ready to plan, keeper first. Sets with two or more favorites are dropped.
+    /// Duplicate sets ready to plan, keeper first. See `PageGrouping.duplicatePlans`.
     static func duplicatePlans(_ candidates: [RankCandidate], prints: [LibraryItem.ID: FeaturePrint],
                                grouper: DuplicateGrouper = DuplicateGrouper()) -> [PlannedGroup] {
-        let features = Dictionary(candidates.map { ($0.id, $0.features) }, uniquingKeysWith: { first, _ in first })
-        return grouper.group(candidates, prints: prints).compactMap { group in
-            let members = group.ids.compactMap { id in features[id].map { RankCandidate(id: id, features: $0) } }
-            guard let choice = DuplicatePick.choose(members) else { return nil }
-            let ids = [choice.keepID] + group.ids.filter { $0 != choice.keepID }
-            return PlannedGroup(ids: ids, bestID: choice.keepID, reason: choice.reason.rawValue)
-        }
+        PageGrouping.duplicatePlans(candidates, prints: prints, grouper: grouper)
     }
 
-    /// What similar grouping may use: every candidate not already in a duplicate set.
+    /// What similar grouping may use. See `PageGrouping.similarCandidates`.
     static func similarCandidates(_ candidates: [RankCandidate], excluding duplicates: [PlannedGroup]) -> [RankCandidate] {
-        let excluded = Set(duplicates.flatMap(\.ids))
-        return excluded.isEmpty ? candidates : candidates.filter { !excluded.contains($0.id) }
-    }
-
-    /// Groups indexed photos that have a neighbor in time or a burst, leaving out `excluded` (photos
-    /// in a duplicate set). Groups with two or more favorites are dropped, so those photos compete as singles.
-    private func similarGroups(in pool: Pool, excluding duplicates: [PlannedGroup]) async -> Similar {
-        guard let index else { return Similar() }
-        let started = Date.now
-        let cached = Self.similarCandidates(pool.cached, excluding: duplicates)
-        let neighbors = grouper.neighborIDs(cached)
-        let prints = await index.featurePrints(for: Array(neighbors))
-        var similar = Similar(result: grouper.group(cached.filter { neighbors.contains($0.id) }, prints: prints), printCount: prints.count)
-        for group in similar.result.groups {
-            let members = group.ids.compactMap { id in pool.features[id].map { RankCandidate(id: id, features: $0) } }
-            guard let choice = BestPick.choose(members) else { continue }
-            similar.planned.append(PlannedGroup(ids: group.ids, bestID: choice.bestID, reason: choice.reason.rawValue))
-            similar.maxDistance[Self.similarID(group.ids)] = Double(group.maxDistance)
-        }
-        similar.seconds = Date.now.timeIntervalSince(started)
-        return similar
+        PageGrouping.similarCandidates(candidates, excluding: duplicates)
     }
 
     #if DEBUG
@@ -211,17 +183,17 @@ actor PhotoKitFeedBuilder: FeedBuilding {
 
     /// `-logSimilarity YES`: every group found and the near misses just past the threshold, for
     /// tuning `SimilarGrouper.Tunables` on a real library.
-    private func logSimilarity(_ similar: Similar, session: Int) {
+    private func logSimilarity(_ page: PageGroups, session: Int) {
         let log = Self.similarityLog
         let t = grouper.tunables
-        let groups = similar.result.groups
-        let picks = Dictionary(similar.planned.map { (Self.similarID($0.ids), $0) }, uniquingKeysWith: { first, _ in first })
-        log.info("Session \(session): threshold \(t.maxDistance, format: .fixed(precision: 2)), gap \(Int(t.maxGap))s, span \(Int(t.maxSpan))s; \(similar.printCount) prints, \(groups.count) groups (\(groups.filter(\.isBurst).count) burst), \(groups.count - similar.planned.count) dropped for 2+ favorites")
+        let groups = page.similarResult.groups
+        let picks = Dictionary(page.similar.map { (Self.similarID($0.ids), $0) }, uniquingKeysWith: { first, _ in first })
+        log.info("Session \(session): threshold \(t.maxDistance, format: .fixed(precision: 2)), gap \(Int(t.maxGap))s, span \(Int(t.maxSpan))s; \(page.similarPrintCount) prints, \(groups.count) groups (\(groups.filter(\.isBurst).count) burst), \(groups.count - page.similar.count) dropped for 2+ favorites")
         for (n, group) in groups.enumerated() {
             let pick = picks[Self.similarID(group.ids)]
             log.info("  group \(n + 1): \(group.ids.count) shots, \(group.isBurst ? "burst" : "time", privacy: .public), span \(group.span, format: .fixed(precision: 1))s, max d \(group.maxDistance, format: .fixed(precision: 3)), best \(pick?.bestID ?? "none (favorites)", privacy: .public) (\(pick?.reason ?? "-", privacy: .public)) of \(group.ids.joined(separator: ", "), privacy: .public)")
         }
-        let misses = similar.result.nearMisses.sorted { $0.distance < $1.distance }
+        let misses = page.similarResult.nearMisses.sorted { $0.distance < $1.distance }
         log.info("  \(misses.count) near misses up to \(t.maxDistance + t.nearMissMargin, format: .fixed(precision: 2)); closest \(min(misses.count, 50)):")
         for miss in misses.prefix(50) {
             log.info("  near miss d \(miss.distance, format: .fixed(precision: 3)), gap \(miss.gap, format: .fixed(precision: 1))s: \(miss.seed, privacy: .public) ~ \(miss.other, privacy: .public)")
