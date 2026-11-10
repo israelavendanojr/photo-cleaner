@@ -3,16 +3,17 @@ import Photos
 
 /// `PHAsset` → `LibraryItem` and `AssetFeatures`. Review flags come from `ImageFlags`.
 enum AssetMapper {
-    static func item(for asset: PHAsset, features: AssetFeatures, location: String?) -> LibraryItem {
+    /// Only the identifier is needed of the asset itself; everything else comes from `features`.
+    static func item(id: LibraryItem.ID, features: AssetFeatures, location: String?) -> LibraryItem {
         LibraryItem(
-            id: asset.localIdentifier,
+            id: id,
             kind: features.isVideo ? .video(duration: features.duration) : .photo,
             date: features.createdAt,
             location: location,
             bytes: features.bytes,
             flags: (features.isScreenshot ? [.screenshot] : []) + ImageFlags.classify(features),
             isFavorite: features.isFavorite,
-            image: .photoKit(localIdentifier: asset.localIdentifier),
+            image: .photoKit(localIdentifier: id),
             features: features
         )
     }
