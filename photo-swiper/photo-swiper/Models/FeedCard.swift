@@ -83,7 +83,7 @@ extension KeeperGroup {
     }
 }
 
-/// A burst of near-identical shots with one suggested keeper.
+/// A burst of near-identical shots with one suggested keeper, which is always one of `items`.
 struct SimilarGroup: Identifiable, Hashable, Sendable, Codable {
     let id: String
     let items: [LibraryItem]
@@ -93,7 +93,30 @@ struct SimilarGroup: Identifiable, Hashable, Sendable, Codable {
     /// Largest feature-print distance between two members, for tuning. Nil for mock groups.
     var maxDistance: Double? = nil
 
-    var best: LibraryItem { items.first { $0.id == bestID } ?? items[0] }
+    init(id: String, items: [LibraryItem], bestID: LibraryItem.ID, reason: String, maxDistance: Double? = nil) {
+        precondition(items.contains { $0.id == bestID }, "A similar group must contain its best shot")
+        self.id = id
+        self.items = items
+        self.bestID = bestID
+        self.reason = reason
+        self.maxDistance = maxDistance
+    }
+
+    /// A saved group without its best shot is unreadable rather than shown with the wrong one.
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let items = try container.decode([LibraryItem].self, forKey: .items)
+        let bestID = try container.decode(LibraryItem.ID.self, forKey: .bestID)
+        guard items.contains(where: { $0.id == bestID }) else {
+            throw DecodingError.dataCorruptedError(forKey: .bestID, in: container, debugDescription: "The best shot isn't in the group")
+        }
+        self.init(id: try container.decode(String.self, forKey: .id), items: items, bestID: bestID,
+                  reason: try container.decode(String.self, forKey: .reason),
+                  maxDistance: try container.decodeIfPresent(Double.self, forKey: .maxDistance))
+    }
+
+    // Every way to make a group checks the best shot is in it.
+    var best: LibraryItem { items.first { $0.id == bestID }! }
 }
 
 extension SimilarGroup: KeeperGroup {
@@ -104,7 +127,7 @@ extension SimilarGroup: KeeperGroup {
     }
 }
 
-/// The same photo saved more than once, with the copy to keep.
+/// The same photo saved more than once, with the copy to keep, which is always one of `items`.
 struct DuplicateGroup: Identifiable, Hashable, Sendable, Codable {
     let id: String
     /// The keeper first, then the other copies oldest first.
@@ -113,7 +136,28 @@ struct DuplicateGroup: Identifiable, Hashable, Sendable, Codable {
     /// Why that copy is the keeper, e.g. "Highest resolution".
     let reason: String
 
-    var keep: LibraryItem { items.first { $0.id == keepID } ?? items[0] }
+    init(id: String, items: [LibraryItem], keepID: LibraryItem.ID, reason: String) {
+        precondition(items.contains { $0.id == keepID }, "A duplicate set must contain its keeper")
+        self.id = id
+        self.items = items
+        self.keepID = keepID
+        self.reason = reason
+    }
+
+    /// A saved set without its keeper is unreadable rather than shown with the wrong one.
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let items = try container.decode([LibraryItem].self, forKey: .items)
+        let keepID = try container.decode(LibraryItem.ID.self, forKey: .keepID)
+        guard items.contains(where: { $0.id == keepID }) else {
+            throw DecodingError.dataCorruptedError(forKey: .keepID, in: container, debugDescription: "The keeper isn't in the set")
+        }
+        self.init(id: try container.decode(String.self, forKey: .id), items: items, keepID: keepID,
+                  reason: try container.decode(String.self, forKey: .reason))
+    }
+
+    // Every way to make a set checks the keeper is in it.
+    var keep: LibraryItem { items.first { $0.id == keepID }! }
 }
 
 extension DuplicateGroup: KeeperGroup {

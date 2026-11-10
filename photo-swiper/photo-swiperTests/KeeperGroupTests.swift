@@ -38,6 +38,22 @@ struct KeeperGroupTests {
         #expect(session.cards.last?.keeperGroup == nil)
     }
 
+    /// The keeper is always one of the items (JUN-45, Q-9): a saved group without it doesn't load,
+    /// so the deck is dropped and rebuilt instead of showing the wrong photo as the keeper.
+    @Test func aSavedGroupWithoutItsKeeperDoesNotDecode() {
+        let noBest = Self.savedDeck.replacingOccurrences(of: #""bestID":"B""#, with: #""bestID":"Z""#)
+        let noKeeper = Self.savedDeck.replacingOccurrences(of: #""keepID":"C""#, with: #""keepID":"Z""#)
+        #expect(noBest != Self.savedDeck && noKeeper != Self.savedDeck)
+        #expect(throws: DecodingError.self) { try JSONDecoder().decode(Session.self, from: Data(noBest.utf8)) }
+        #expect(throws: DecodingError.self) { try JSONDecoder().decode(Session.self, from: Data(noKeeper.utf8)) }
+    }
+
+    @Test func theKeeperIsAlwaysAnItem() throws {
+        let session = try JSONDecoder().decode(Session.self, from: Data(Self.savedDeck.utf8))
+        for case .similar(let group) in session.cards { #expect(group.best.id == group.bestID) }
+        for case .duplicates(let group) in session.cards { #expect(group.keep.id == group.keepID) }
+    }
+
     @Test func removingKeepsTheGroupUntilTwoAreLeftAndTheKeeperStays() {
         let group = DuplicateGroup(id: "dup-x", items: [item("C"), item("D"), item("F")], keepID: "C", reason: "Highest resolution")
         #expect(group.removing(["F"]) == DuplicateGroup(id: "dup-x", items: [item("C"), item("D")], keepID: "C", reason: "Highest resolution"))
