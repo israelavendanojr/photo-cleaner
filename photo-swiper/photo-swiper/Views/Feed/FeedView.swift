@@ -24,7 +24,7 @@ struct FeedView: View {
                 .presentationCornerRadius(DS.Radius.card)
         }
         // Free users clear the pile to go on; the unlock is offered after the delete instead.
-        .alert("Your pile is full", isPresented: Bindable(vm).isPileFullNoticePresented) {
+        .alert("Your pile is full", isPresented: Binding(get: { vm.isPileFullNoticePresented }, set: { if !$0 { vm.dismissPileFullNotice() } })) {
             Button("Review pile", action: onOpenPile)
             Button("Not now", role: .cancel) {}
         } message: {

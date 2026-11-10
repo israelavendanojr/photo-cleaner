@@ -34,7 +34,7 @@ struct AdminMockFeedTests {
         let requests = vm.adminShowFeedRequest
 
         let card = mock(.similar)
-        vm.adminInsertMockCard(card)
+        vm.admin.adminInsertMockCard(card)
 
         #expect(vm.currentCard == card)
         #expect(vm.nextCard == next, "The card that was on top comes right after")
@@ -45,7 +45,7 @@ struct AdminMockFeedTests {
     func swipingAMockCardSavesNothing(_ kind: AdminMockKind) async throws {
         let vm = await launch(swipes: 1)
         let card = mock(kind)
-        vm.adminInsertMockCard(card)
+        vm.admin.adminInsertMockCard(card)
         let swipesBefore = vm.allowance.remaining
 
         #expect(vm.canDecideCurrent(.left), "Even past the pile limit")
@@ -60,7 +60,7 @@ struct AdminMockFeedTests {
 
     @Test func aMockCardSwipesEvenWithNoSwipesLeft() async throws {
         let vm = await launch(swipes: 0)
-        vm.adminInsertMockCard(mock(.photo))
+        vm.admin.adminInsertMockCard(mock(.photo))
 
         vm.decideCurrent(.left)
 
@@ -71,7 +71,7 @@ struct AdminMockFeedTests {
     @Test func aOneByOneReviewOfAMockCardSavesNothing() async throws {
         let vm = await launch(swipes: 0)
         let card = mock(.screenshots)
-        vm.adminInsertMockCard(card)
+        vm.admin.adminInsertMockCard(card)
 
         let outcome = Dictionary(uniqueKeysWithValues: card.items.map { ($0.id, Decision.delete) })
         #expect(vm.canDecideCurrentIndividually(outcome))
@@ -85,7 +85,7 @@ struct AdminMockFeedTests {
     @Test func undoBringsAMockCardBack() async throws {
         let vm = await launch()
         let card = mock(.duplicates)
-        vm.adminInsertMockCard(card)
+        vm.admin.adminInsertMockCard(card)
         vm.decideCurrent(.left)
 
         vm.undo()
@@ -97,13 +97,13 @@ struct AdminMockFeedTests {
     @Test func removingMockCardsDropsOnlyTheOnesAhead() async throws {
         let vm = await launch()
         let swiped = mock(.photo)
-        vm.adminInsertMockCard(swiped)
+        vm.admin.adminInsertMockCard(swiped)
         vm.decideCurrent(.right)
         let real = try #require(vm.currentCard)
-        vm.adminInsertMockCard(mock(.video))
-        vm.adminInsertMockCard(mock(.similar))
+        vm.admin.adminInsertMockCard(mock(.video))
+        vm.admin.adminInsertMockCard(mock(.similar))
 
-        vm.adminRemoveMockCards()
+        vm.admin.adminRemoveMockCards()
 
         #expect(vm.currentCard == real)
         #expect(vm.cards.contains(swiped), "Already swiped, so it stays behind")
@@ -112,11 +112,11 @@ struct AdminMockFeedTests {
 
     @Test func aRelaunchLeavesMockCardsOut() async throws {
         let vm = await launch()
-        vm.adminInsertMockCard(mock(.photo))
+        vm.admin.adminInsertMockCard(mock(.photo))
         vm.decideCurrent(.right)
         vm.decideCurrent(.right)
         let real = try #require(vm.currentCard)
-        vm.adminInsertMockCard(mock(.similar))
+        vm.admin.adminInsertMockCard(mock(.similar))
 
         let relaunched = await launch()
 
@@ -131,7 +131,7 @@ struct AdminMockFeedTests {
         #expect(vm.phase == .caughtUp)
 
         let card = mock(.similar)
-        vm.adminInsertMockCard(card)
+        vm.admin.adminInsertMockCard(card)
 
         #expect(vm.phase == .feed)
         #expect(vm.currentCard == card)

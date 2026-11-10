@@ -184,30 +184,30 @@ struct LibraryProgressTests {
         vm.decideCurrent(.up)
         let saved = store.decisions(for: Set(vm.decisions.keys))
 
-        vm.debugSetSimulatesComplete(true)
+        vm.admin.debugSetSimulatesComplete(true)
         #expect(vm.libraryReviewedCount == vm.stats.totalItems)
         #expect(vm.libraryReviewedFraction == 1)
         #expect(vm.isCompleteCelebrationDue)
         #expect(store.reviewedCount() == 0, "Nothing is saved")
         #expect(store.decisions(for: Set(vm.decisions.keys)) == saved)
 
-        vm.debugSetSimulatesComplete(false)
+        vm.admin.debugSetSimulatesComplete(false)
         #expect(vm.libraryReviewedCount == 0, "The real numbers come straight back")
         #expect(vm.libraryReviewedFraction == 0)
     }
 
     @Test func debugResetCelebrationClearsTheFlag() async throws {
         let vm = await started()
-        vm.debugSetSimulatesComplete(true)
+        vm.admin.debugSetSimulatesComplete(true)
         vm.markCompleteCelebrated()
         #expect(!vm.isCompleteCelebrationDue)
 
-        vm.debugResetCelebration()
+        vm.admin.debugResetCelebration()
         #expect(vm.isCompleteCelebrationDue)
         #expect(!defaults.bool(forKey: DefaultsKey.celebratedComplete))
 
         let before = vm.celebrationRequest
-        vm.debugPlayCelebration()
+        vm.admin.debugPlayCelebration()
         #expect(vm.celebrationRequest == before + 1)
     }
 }

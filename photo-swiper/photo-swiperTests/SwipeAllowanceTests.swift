@@ -292,15 +292,15 @@ struct FreeTierTunablesTests {
         )
         #expect(vm.swipesLeft == 20)
 
-        vm.setFreeTierValue(.swipeCap, 5)
+        vm.admin.setFreeTierValue(.swipeCap, 5)
         #expect(vm.swipesLeft == 5)
         #expect(vm.allowanceTunables.cap == 5)
 
-        vm.setFreeTierValue(.swipeCap, 8)
+        vm.admin.setFreeTierValue(.swipeCap, 8)
         #expect(vm.swipesLeft == 5)
         #expect(vm.nextRefillAt != nil, "Below the new cap, the refill timer runs")
 
-        vm.resetFreeTierToDefaults()
+        vm.admin.resetFreeTierToDefaults()
         #expect(vm.allowanceTunables == .standard)
     }
 }

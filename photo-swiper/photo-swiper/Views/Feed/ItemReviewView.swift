@@ -17,7 +17,7 @@ struct ItemReviewView: View {
     @State private var decisions: [LibraryItem.ID: Decision]
     @State private var request: SwipeDirection?
     @State private var addedBytes: Int64?
-    @State private var returning: FeedViewModel.ReturningCard?
+    @State private var returning: ReturningCard?
 
     init(set: ReviewSet, draft: [LibraryItem.ID: Decision] = [:], onFinish: @escaping ([LibraryItem.ID: Decision]) -> Void) {
         self.set = set
@@ -104,7 +104,7 @@ struct ItemReviewView: View {
             case .later: .up
             case .keep, nil: .right
             }
-            returning = FeedViewModel.ReturningCard(cardID: FeedCard(item: item).id, direction: direction)
+            returning = ReturningCard(cardID: FeedCard(item: item).id, direction: direction)
             decisions[item.id] = nil
             addedBytes = nil
         }

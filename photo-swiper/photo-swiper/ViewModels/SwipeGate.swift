@@ -7,7 +7,6 @@ import Observation
 @Observable
 @MainActor
 final class SwipeGate {
-    typealias PaywallStatus = FeedViewModel.PaywallStatus
 
     /// What an item of unknown size (zero bytes) counts as toward the free pile limit: a typical photo.
     static let unknownSizeBytes: Int64 = 3_000_000

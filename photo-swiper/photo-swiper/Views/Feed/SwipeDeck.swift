@@ -9,7 +9,7 @@ struct SwipeDeck: View {
     let cards: [FeedCard]
     let index: Int
     /// The card an undo just restored, and the side it comes back from.
-    let returning: FeedViewModel.ReturningCard?
+    let returning: ReturningCard?
     /// Overlay text for each direction on a card.
     let label: (SwipeDirection, FeedCard) -> String
     /// Called inside the deck's animation once a swipe commits. The caller advances `index`.

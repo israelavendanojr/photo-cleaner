@@ -225,7 +225,7 @@ struct SettingsView: View {
 
     private var debugSection: some View {
         SettingsSection("Admin Tools") {
-            Toggle(isOn: Binding(get: { DevMode.shared.isEnabled }, set: { vm.setDevModeEnabled($0) })) {
+            Toggle(isOn: Binding(get: { DevMode.shared.isEnabled }, set: { vm.admin.setDevModeEnabled($0) })) {
                 SettingsLabel(icon: "hammer", title: "Developer mode",
                               detail: "Off hides this section and puts the free limits back to their defaults. Tap the version \(DevMode.tapsToToggle) times to turn it on again.")
             }
@@ -237,13 +237,13 @@ struct SettingsView: View {
                 .settingsRowPadding()
                 .accessibilityIdentifier("settings.debug.swipesLeft")
             debugButton("Reset swipes to full", icon: "arrow.counterclockwise", id: "settings.debug.resetSwipes") {
-                vm.debugSetSwipes(nil)
+                vm.admin.debugSetSwipes(nil)
             }
             debugButton("Set swipes to 0", icon: "0.circle", id: "settings.debug.zeroSwipes") {
-                vm.debugSetSwipes(0)
+                vm.admin.debugSetSwipes(0)
             }
             debugUnlocked
-            Toggle(isOn: Binding(get: { vm.debugSimulatesComplete }, set: { vm.debugSetSimulatesComplete($0) })) {
+            Toggle(isOn: Binding(get: { vm.debugSimulatesComplete }, set: { vm.admin.debugSetSimulatesComplete($0) })) {
                 SettingsLabel(icon: "checkmark.circle", title: "Simulate 100% complete",
                               detail: "Only what the Library shows. Nothing is saved.")
             }
@@ -251,15 +251,15 @@ struct SettingsView: View {
             .settingsRowPadding()
             .accessibilityIdentifier("settings.debug.simulateComplete")
             debugButton("Play 100% confetti", icon: "party.popper", id: "settings.debug.playConfetti") {
-                vm.debugPlayCelebration()
+                vm.admin.debugPlayCelebration()
                 // It plays over the Library, so Settings gets out of the way.
                 dismiss()
             }
             debugButton("Reset 100% celebration", icon: "arrow.uturn.backward", id: "settings.debug.resetCelebration") {
-                vm.debugResetCelebration()
+                vm.admin.debugResetCelebration()
             }
             Button {
-                vm.debugResetOnboarding()
+                vm.admin.debugResetOnboarding()
                 didResetOnboarding = true
             } label: {
                 SettingsLabel(icon: "sparkles", title: "Reset onboarding",
@@ -278,7 +278,7 @@ struct SettingsView: View {
             .accessibilityIdentifier("settings.debug.clearDecisions")
             .confirmationDialog("Clear all saved decisions?", isPresented: $isConfirmingClear, titleVisibility: .visible) {
                 Button("Clear everything", role: .destructive) {
-                    Task { await vm.debugClearAllDecisions() }
+                    Task { await vm.admin.debugClearAllDecisions() }
                 }
                 Button("Cancel", role: .cancel) {}
             } message: {
@@ -290,12 +290,12 @@ struct SettingsView: View {
     /// The real store gets a three-way override with StoreKit's own answer beside it; mocks a plain switch.
     @ViewBuilder
     private var debugUnlocked: some View {
-        if let override = vm.debugUnlockOverride {
-            Picker(selection: Binding(get: { override }, set: { vm.debugSetUnlockOverride($0) })) {
+        if let override = vm.admin.debugUnlockOverride {
+            Picker(selection: Binding(get: { override }, set: { vm.admin.debugSetUnlockOverride($0) })) {
                 ForEach(UnlockOverride.allCases) { Text($0.title).tag($0) }
             } label: {
                 SettingsLabel(icon: "lock.open", title: "Unlocked",
-                              detail: vm.debugStoreKitUnlocked == true ? "StoreKit: purchased" : "StoreKit: not purchased")
+                              detail: vm.admin.debugStoreKitUnlocked == true ? "StoreKit: purchased" : "StoreKit: not purchased")
             }
             .pickerStyle(.menu)
             .tint(DS.Palette.secondary)
@@ -303,7 +303,7 @@ struct SettingsView: View {
             .accessibilityIdentifier("settings.debug.unlocked")
         } else {
             #if DEBUG
-            Toggle(isOn: Binding(get: { vm.isUnlocked }, set: { vm.debugSetUnlocked($0) })) {
+            Toggle(isOn: Binding(get: { vm.isUnlocked }, set: { vm.admin.debugSetUnlocked($0) })) {
                 SettingsLabel(icon: "lock.open", title: "Unlocked")
             }
             .tint(DS.Palette.ink)
@@ -363,7 +363,7 @@ struct SettingsView: View {
 
     /// Counts toward Developer mode's hidden switch, and says so when it flips.
     private func versionTapped() {
-        guard let message = vm.registerVersionTap() else { return }
+        guard let message = vm.admin.registerVersionTap() else { return }
         Haptics.confirm()
         AccessibilityNotification.Announcement(message).post()
         withAnimation(DS.Motion.calm) { devModeToast = message }

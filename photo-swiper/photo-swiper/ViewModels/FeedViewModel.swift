@@ -16,51 +16,11 @@ import OSLog
 /// - `FollowUpCoordinator`: the review prompt or unlock offer a delete earns.
 /// Collaborators never reach each other; effects that span them (a refill front-loading the deck,
 /// an unlock cancelling reminders) are sequenced here. Settings' Admin Tools live in
-/// `FeedViewModel+AdminTools.swift`, previews and mocks in `FeedViewModel+Mock.swift`.
+/// `AdminController` (`vm.admin`), which changes the deck only through this class's admin intents;
+/// previews and mocks are in `FeedViewModel+Mock.swift`. No state here is settable from outside.
 @Observable
 @MainActor
 final class FeedViewModel {
-    enum Phase: Equatable {
-        case loading
-        /// First launch: explains the app before the system asks for photo access.
-        case onboarding
-        /// The user denied photo access.
-        case noAccess
-        case feed
-        /// The whole library is reviewed: a page build found nothing to show.
-        case caughtUp
-    }
-
-    enum PaywallStatus: Equatable {
-        case idle, purchasing, restoring, purchaseFailed
-        /// Ask to Buy: waiting for approval. Unlocks on its own if approved.
-        case purchasePending
-        /// Restore outcomes. A restore that unlocks also closes the wall.
-        case restored, nothingToRestore, restoreFailed
-    }
-
-    /// Where onboarding is. `intro` is Welcome and the photo access primer, which the view steps between;
-    /// the rest follow once access is granted, each only when it applies.
-    enum OnboardingStep: Equatable {
-        case intro
-        /// Offers refill reminders, before the system has been asked.
-        case notifications
-        /// The unlock, with a way to carry on for free. Never shown once unlocked.
-        case upsell
-    }
-
-    /// The "+3.4 MB" chip shown briefly after a delete.
-    struct DeleteChip: Equatable {
-        let id = UUID()
-        let bytes: Int64
-    }
-
-    /// The card an undo just restored, and the side it left from.
-    struct ReturningCard: Equatable {
-        let cardID: FeedCard.ID
-        let direction: SwipeDirection
-    }
-
     private struct Snapshot {
         var index: Int
         var decisions: [LibraryItem.ID: Decision]
@@ -76,14 +36,14 @@ final class FeedViewModel {
 
     // MARK: State
 
-    private(set) var phase: Phase = .loading
-    var session: Session? { // internal for FeedViewModel+AdminTools
+    private(set) var phase: FeedPhase = .loading
+    private(set) var session: Session? {
         didSet { cardsRevision &+= 1 }
     }
-    var index = 0 // internal for FeedViewModel+AdminTools and +Mock
+    private(set) var index = 0
     private(set) var decisions: [LibraryItem.ID: Decision] = [:]
     private(set) var deleteChip: DeleteChip?
-    var returningCard: ReturningCard? // internal for FeedViewModel+AdminTools
+    private(set) var returningCard: ReturningCard?
     private(set) var stats = LibraryStats(totalItems: 0, reviewedItems: 0, freedBytes: 0)
     private(set) var access = LibraryAccess.full
     /// The system access prompt is up.
@@ -92,13 +52,13 @@ final class FeedViewModel {
     /// Onboarding stays up meanwhile instead of a loading screen.
     private(set) var isPreparingFirstSession = false
     /// Admin Tools asked for an upsell screen. RootView shows it and clears this.
-    var adminUpsellRequest: AdminUpsell? // internal for FeedViewModel+AdminTools
+    private(set) var adminUpsellRequest: AdminUpsell?
     /// Bumped when Admin Tools puts a mock card on the deck, so RootView switches to the feed.
-    var adminShowFeedRequest = 0 // internal for FeedViewModel+AdminTools
+    private(set) var adminShowFeedRequest = 0
     /// A free user's swipe was refused because the pile is full. FeedView shows it.
-    var isPileFullNoticePresented = false
+    private(set) var isPileFullNoticePresented = false
     /// Something about the last delete the user should know, e.g. items the system refused.
-    var deleteNotice: String?
+    private(set) var deleteNotice: String?
     /// Saved progress couldn't be opened at launch, so this launch runs on a throwaway store.
     /// RootView says so once.
     private(set) var isProgressLoadNoticePresented = false
@@ -115,17 +75,17 @@ final class FeedViewModel {
     /// Pending deletes that are no longer in the deck: from earlier decks, or trimmed from behind this one.
     private var carriedPending: [LibraryItem] = []
     /// Items deleted, gone from the library, or undeletable. They stay decided but are no longer pending.
-    var settledIDs: Set<LibraryItem.ID> = [] // internal for FeedViewModel+AdminTools
+    private var settledIDs: Set<LibraryItem.ID> = []
     /// Pending deletes outside a limited selection, which the app can't see or delete. They're hidden
     /// from the pile but stay pending in the store, so they come back once the app can see them again.
     private var outOfReachIDs: Set<LibraryItem.ID> = []
     /// The "whole library reviewed" confetti has played for this 100%. Cleared when progress drops below it,
     /// so the next 100% celebrates again. Saved in `defaults`.
-    var hasCelebratedComplete = false // internal for FeedViewModel+AdminTools
+    private(set) var hasCelebratedComplete = false
     /// Bumped to play the confetti right away, whatever the progress. Only Settings' debug section does.
-    var celebrationRequest = 0 // internal for FeedViewModel+AdminTools
+    private(set) var celebrationRequest = 0
     /// Developer mode: progress reads 100% without any decision being saved. Off shows the real numbers again.
-    var debugSimulatesComplete = false // internal for FeedViewModel+AdminTools
+    private(set) var debugSimulatesComplete = false
     /// Totals the library reports itself. Reviewed counts come from saved progress.
     private var libraryStats = LibraryStats(totalItems: 0, reviewedItems: 0, freedBytes: 0)
     private var chipTask: Task<Void, Never>?
@@ -146,12 +106,12 @@ final class FeedViewModel {
 
     private let library: any PhotoLibraryProviding
     private let builder: any FeedBuilding
-    let store: any ProgressStoring // internal for FeedViewModel+AdminTools
-    let entitlements: any EntitlementStore // internal for FeedViewModel+AdminTools
+    private let store: any ProgressStoring
+    private let entitlements: any EntitlementStore
     /// Runs the background feature index on the real library. Nil for mocks, previews, and tests.
     private let indexScheduler: IndexScheduler?
     /// Holds whether onboarding is done.
-    let defaults: UserDefaults // internal for FeedViewModel+AdminTools
+    private let defaults: UserDefaults
     /// Shortest time onboarding shows its "preparing" state, so the step change can be read.
     private let firstSessionMinimum: Duration
     private let now: () -> Date
@@ -167,6 +127,8 @@ final class FeedViewModel {
     let reminders: ReminderController
     /// First-launch onboarding, which can hold the screen while the first deck is dealt.
     let onboarding: OnboardingFlow
+    /// Settings' Admin Tools.
+    @ObservationIgnored private(set) lazy var admin = AdminController(vm: self, entitlements: entitlements, defaults: defaults)
 
     /// - Parameters:
     ///   - allowanceStore: Where the free swipes are saved. Nil keeps them in memory, starting full.
@@ -211,7 +173,7 @@ final class FeedViewModel {
     }
 
     /// Starts already loaded. Used by previews and launch-time setup.
-    init(
+    convenience init(
         library: any PhotoLibraryProviding,
         builder: any FeedBuilding,
         store: any ProgressStoring = InMemoryProgressStore(),
@@ -224,23 +186,8 @@ final class FeedViewModel {
         features: FeatureAvailabilityTunables? = nil,
         notifier: RefillNotifier? = nil
     ) {
-        self.library = library
-        self.builder = builder
-        self.store = store
-        self.entitlements = entitlements
-        indexScheduler = nil
-        defaults = .standard
-        firstSessionMinimum = .zero
-        now = Date.init
-        let freeTier = freeTier ?? .fixed(FreeTierLimits(allowance: allowanceTunables))
-        self.freeTier = freeTier
-        self.features = features ?? .fixed()
-        followUps = FollowUpCoordinator(defaults: defaults, freeTier: freeTier, now: now)
-        onboarding = OnboardingFlow(defaults: defaults, notifier: notifier, library: library)
-        reminders = ReminderController(notifier: notifier, builder: builder, store: store, now: now)
-        gate = SwipeGate(entitlements: entitlements, allowanceStore: allowanceStore ?? SwipeAllowanceStore(), freeTier: freeTier, now: now)
-        skipFavorites = store.skipFavorites
-        hasCelebratedComplete = defaults.bool(forKey: DefaultsKey.celebratedComplete)
+        self.init(library: library, builder: builder, store: store, entitlements: entitlements, allowanceStore: allowanceStore,
+                  allowanceTunables: allowanceTunables, freeTier: freeTier, features: features, notifier: notifier)
         libraryStats = stats
         apply(session)
         refreshTotals()
@@ -269,7 +216,8 @@ final class FeedViewModel {
         await reminders.setRemindersEnabled(on, state: { reminderAllowance }, similarAhead: { similarAhead })
     }
     func refreshReminderPermission() async { await reminders.refreshReminderPermission() }
-    func scheduleReminders() async { // internal for FeedViewModel+AdminTools
+    /// Schedules the refill reminder for the current allowance, if the user opted in.
+    func scheduleReminders() async {
         await reminders.scheduleReminders(state: { reminderAllowance }, similarAhead: { similarAhead })
     }
     private var reminderAllowance: ReminderController.AllowanceState {
@@ -349,10 +297,10 @@ final class FeedViewModel {
 
     /// The deck's phase, even while onboarding holds the screen. Paging and reordering go by this;
     /// swiping still needs `phase` itself to be the feed.
-    var deckPhase: Phase { onboarding.heldPhase ?? phase } // internal for FeedViewModel+AdminTools
+    private var deckPhase: FeedPhase { onboarding.heldPhase ?? phase }
 
     /// The number the next page gets. Pages are numbered across decks, so saved decisions can tell them apart.
-    var nextPageNumber: Int { max(session?.number ?? 0, store.lastSessionNumber()) + 1 } // internal for FeedViewModel+AdminTools
+    private var nextPageNumber: Int { max(session?.number ?? 0, store.lastSessionNumber()) + 1 }
 
     // MARK: Card helpers
 
@@ -402,6 +350,14 @@ final class FeedViewModel {
 
     func dismissProgressLoadNotice() {
         isProgressLoadNoticePresented = false
+    }
+
+    func dismissPileFullNotice() {
+        isPileFullNoticePresented = false
+    }
+
+    func dismissDeleteNotice() {
+        deleteNotice = nil
     }
 
     /// The 100% confetti has played; it won't again until progress drops and comes back.
@@ -515,7 +471,7 @@ final class FeedViewModel {
     }
 
     /// Sets the deck's phase, or holds it while onboarding is still up.
-    func enterDeckPhase(_ next: Phase) { // internal for FeedViewModel+AdminTools
+    private func enterDeckPhase(_ next: FeedPhase) {
         if let next = onboarding.route(next) { phase = next }
     }
 
@@ -738,6 +694,88 @@ final class FeedViewModel {
         returningCard = nil
     }
 
+    // MARK: Admin Tools
+
+    // Intents `AdminController` changes the deck through, so it never needs settable state.
+
+    /// RootView showed the requested upsell.
+    func finishAdminUpsell() {
+        adminUpsellRequest = nil
+    }
+
+    func adminRequestUpsell(_ screen: AdminUpsell) {
+        adminUpsellRequest = screen
+    }
+
+    /// Puts an Admin Tools mock card on top of the deck, even from caught up.
+    func adminInsertMockCard(_ card: FeedCard) {
+        guard var current = session else { return }
+        current.cards.insert(card, at: min(index, current.cards.count))
+        session = current
+        returningCard = nil
+        if deckPhase == .caughtUp { enterDeckPhase(.feed) }
+        saveProgress()
+        adminShowFeedRequest += 1
+    }
+
+    /// Takes the mock cards still ahead out of the deck. Swiped ones stay behind until trimmed.
+    func adminRemoveMockCards() {
+        guard var current = session, current.cards[index...].contains(where: \.isAdminMock) else { return }
+        current.cards = Array(current.cards[..<index]) + current.cards[index...].filter { !$0.isAdminMock }
+        session = current
+        returningCard = nil
+        saveProgress()
+        fillIfNeeded()
+    }
+
+    /// Forgets every saved decision, the pile, and preferences, then deals a fresh first deck.
+    func adminClearAllDecisions() async {
+        store.reset()
+        settledIDs = []
+        skipFavorites = store.skipFavorites
+        apply(await makeSession(number: 1))
+        refreshTotals()
+    }
+
+    /// Deals a fresh deck on the current rules, keeping every decision.
+    func adminRebuildDeck() async {
+        apply(await makeSession(number: nextPageNumber))
+    }
+
+    /// Progress reads 100% while on. Only what's shown changes; nothing is saved.
+    func adminSetSimulatesComplete(_ on: Bool) {
+        debugSimulatesComplete = on
+        updateCelebration()
+    }
+
+    /// Plays the 100% confetti now.
+    func adminRequestCelebration() {
+        celebrationRequest += 1
+    }
+
+    /// Forgets that the 100% confetti played, so it plays again at 100%.
+    func adminResetCelebration() {
+        hasCelebratedComplete = false
+        defaults.removeObject(forKey: DefaultsKey.celebratedComplete)
+    }
+
+    #if DEBUG
+    /// Moves to the first card matching `isWanted`, or stays put. For mock states and previews.
+    func debugMoveToFirstCard(where isWanted: (FeedCard) -> Bool) {
+        index = cards.firstIndex(where: isWanted) ?? index
+    }
+
+    /// Moves to card `position`, for mock states and previews.
+    func debugMove(to position: Int) {
+        index = position
+    }
+
+    /// Deals `session` as a fresh deck, for mock states and previews.
+    func debugDeal(_ session: Session) {
+        apply(session)
+    }
+    #endif
+
     // MARK: Internals
 
     /// The current card if it's `cardID`. Otherwise the gesture was for a card that has since moved,
@@ -830,7 +868,7 @@ final class FeedViewModel {
     }
 
     /// Starts building the next page once few undecided cards are left ahead.
-    func fillIfNeeded() { // internal for FeedViewModel+AdminTools
+    private func fillIfNeeded() {
         guard deckPhase == .feed, session != nil, pageTask == nil, cards.count - index <= Self.pageAhead else { return }
         // An empty build isn't retried while cards remain; running out tries once more.
         guard !isLibraryExhausted || currentCard == nil else { return }
@@ -1027,7 +1065,7 @@ final class FeedViewModel {
     }
 
     /// - Parameter placeBudget: Overrides how long to wait on place names; nil keeps the default.
-    func makeSession(number: Int, placeBudget: Duration? = nil) async -> Session { // internal for FeedViewModel+AdminTools
+    private func makeSession(number: Int, placeBudget: Duration? = nil) async -> Session {
         var options = FeedOptions(skipFavorites: skipFavorites, excluding: store.excludedFromNewSession(asOf: now()))
         if let placeBudget { options.placeBudget = placeBudget }
         return gated(await builder.makeSession(number: number, options: options))
@@ -1041,7 +1079,7 @@ final class FeedViewModel {
         return session
     }
 
-    func apply(_ next: Session) { // internal for FeedViewModel+AdminTools and +Mock
+    private func apply(_ next: Session) {
         var next = next
         if refilledSinceDeal {
             next.cards = FrontLoad.reordered(next.cards, from: 0)
@@ -1132,7 +1170,7 @@ final class FeedViewModel {
 
     /// Writes `changes` and the deck, durably. The cards are encoded again only when they changed
     /// since they were last written whole; otherwise just the position, marks, and drafts are.
-    func saveProgress(with changes: [LibraryItem.ID: StoredDecision?] = [:]) { // internal for FeedViewModel+AdminTools
+    private func saveProgress(with changes: [LibraryItem.ID: StoredDecision?] = [:]) {
         guard let session else {
             if !changes.isEmpty { store.save(changes) }
             return
@@ -1146,7 +1184,7 @@ final class FeedViewModel {
     }
 
     /// Recomputes library totals from saved progress. The freed sum only changes on confirm.
-    func refreshTotals(includingFreed: Bool = true) { // internal for FeedViewModel+AdminTools
+    private func refreshTotals(includingFreed: Bool = true) {
         stats.totalItems = libraryStats.totalItems
         // Each item counts once. The real library reports no baseline; debug mocks report a pretend one,
         // which stands until real decisions pass it, so it's never added to them.
@@ -1162,7 +1200,7 @@ final class FeedViewModel {
     }
 
     /// Below 100% again, so reaching it next time celebrates again.
-    func updateCelebration() { // internal for FeedViewModel+AdminTools
+    private func updateCelebration() {
         guard stats.totalItems > 0, !isLibraryComplete, hasCelebratedComplete else { return }
         hasCelebratedComplete = false
         defaults.removeObject(forKey: DefaultsKey.celebratedComplete)
@@ -1179,7 +1217,8 @@ final class FeedViewModel {
         }
     }
 
-    func dismissChip() { // internal for FeedViewModel+Mock
+    /// Hides the "+3.4 MB" chip now.
+    func dismissChip() {
         chipTask?.cancel()
         deleteChip = nil
     }

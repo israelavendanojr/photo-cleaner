@@ -13,7 +13,7 @@ struct FeatureAvailabilityPanel: View {
                     feature: feature,
                     availability: vm.features.availability(feature),
                     defaultAvailability: vm.features.defaultAvailability(feature)
-                ) { vm.setFeatureAvailability(feature, $0) }
+                ) { vm.admin.setFeatureAvailability(feature, $0) }
             }
             SettingsLabel(icon: vm.isUnlocked ? "lock.open" : "lock", title: vm.isUnlocked ? "Unlocked gets" : "Free gets",
                           value: enabledSummary)
@@ -22,7 +22,7 @@ struct FeatureAvailabilityPanel: View {
             Button {
                 Task {
                     isRebuilding = true
-                    await vm.adminRebuildDeck()
+                    await vm.admin.adminRebuildDeck()
                     isRebuilding = false
                 }
             } label: {
@@ -34,7 +34,7 @@ struct FeatureAvailabilityPanel: View {
             .disabled(isRebuilding)
             .accessibilityIdentifier("settings.features.rebuild")
             Button {
-                vm.resetFeatureAvailability()
+                vm.admin.resetFeatureAvailability()
             } label: {
                 SettingsLabel(icon: "arrow.counterclockwise", title: "Reset to defaults",
                               detail: vm.features.isCustomized ? nil : "Using the defaults.")
