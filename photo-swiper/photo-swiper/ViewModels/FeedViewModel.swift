@@ -77,7 +77,9 @@ final class FeedViewModel {
     // MARK: State
 
     private(set) var phase: Phase = .loading
-    var session: Session? // internal for FeedViewModel+AdminTools
+    var session: Session? { // internal for FeedViewModel+AdminTools
+        didSet { cardsRevision &+= 1 }
+    }
     var index = 0 // internal for FeedViewModel+AdminTools and +Mock
     private(set) var decisions: [LibraryItem.ID: Decision] = [:]
     private(set) var deleteChip: DeleteChip?
@@ -136,6 +138,11 @@ final class FeedViewModel {
     private var isLibraryExhausted = false
     /// Changes whenever a different deck is dealt, so a page built for the old one is dropped.
     private var deckGeneration = 0
+    /// Changes whenever `session` is set, so a save can tell whether the cards changed since the
+    /// last time they were written whole.
+    private var cardsRevision = 0
+    /// `cardsRevision` when the cards were last written whole; nil before the first write.
+    private var savedCardsRevision: Int?
 
     private let library: any PhotoLibraryProviding
     private let builder: any FeedBuilding
@@ -610,12 +617,11 @@ final class FeedViewModel {
         decisions = last.decisions
         marks = last.marks
         drafts = last.drafts
-        store.save(last.stored)
         if last.charged { gate.refund() }
         returningCard = ReturningCard(cardID: last.cardID, direction: last.direction)
         dismissChip()
         phase = .feed
-        saveProgress()
+        saveProgress(with: last.stored)
         refreshTotals(includingFreed: false)
     }
 
@@ -630,10 +636,10 @@ final class FeedViewModel {
 
         let saved = store.decisions(for: ids)
         let decidedAt = now()
-        store.save(Dictionary(uniqueKeysWithValues: items.map { item in
+        let kept = Dictionary(uniqueKeysWithValues: items.map { item in
             let sessionNumber = saved[item.id]?.sessionNumber ?? session?.number ?? 0
-            return (item.id, StoredDecision(decision: .keep, decidedAt: decidedAt, sessionNumber: sessionNumber, item: item))
-        }))
+            return (item.id, Optional(StoredDecision(decision: .keep, decidedAt: decidedAt, sessionNumber: sessionNumber, item: item)))
+        })
 
         // Undoing a later swipe must not put them back in the pile.
         for i in history.indices {
@@ -647,7 +653,7 @@ final class FeedViewModel {
             for group in history[i].marks.keys { history[i].marks[group]?.subtract(ids) }
         }
         for group in marks.keys { marks[group]?.subtract(ids) }
-        saveProgress()
+        saveProgress(with: kept)
         refreshTotals(includingFreed: false)
     }
 
@@ -802,17 +808,16 @@ final class FeedViewModel {
 
         let decidedAt = now()
         let sessionNumber = session?.number ?? 0
-        if !isMock {
-            store.save(Dictionary(uniqueKeysWithValues: card.items.compactMap { item in
-                outcome[item.id].map { (item.id, StoredDecision(decision: $0, decidedAt: decidedAt, sessionNumber: sessionNumber, item: item)) }
-            }))
-        }
+        let changes: [LibraryItem.ID: StoredDecision?] = isMock ? [:] : Dictionary(uniqueKeysWithValues: card.items.compactMap { item in
+            outcome[item.id].map { (item.id, StoredDecision(decision: $0, decidedAt: decidedAt, sessionNumber: sessionNumber, item: item)) }
+        })
 
         let cleared = card.items.filter { outcome[$0.id] == .delete }.reduce(0) { $0 + $1.bytes }
         if cleared > 0 { showChip(bytes: cleared) }
 
         index += 1
-        saveProgress()
+        // The decisions and the deck's new position, in one save, before returning.
+        saveProgress(with: changes)
         refreshTotals(includingFreed: false)
         fillIfNeeded()
     }
@@ -1125,9 +1130,19 @@ final class FeedViewModel {
         defaults.set(true, forKey: DefaultsKey.reopenedLimitedAccessGone)
     }
 
-    func saveProgress() { // internal for FeedViewModel+AdminTools
-        guard let session else { return }
-        store.saveSession(SavedSession(session: session, index: index, marks: marks, finished: false, drafts: drafts))
+    /// Writes `changes` and the deck, durably. The cards are encoded again only when they changed
+    /// since they were last written whole; otherwise just the position, marks, and drafts are.
+    func saveProgress(with changes: [LibraryItem.ID: StoredDecision?] = [:]) { // internal for FeedViewModel+AdminTools
+        guard let session else {
+            if !changes.isEmpty { store.save(changes) }
+            return
+        }
+        if savedCardsRevision == cardsRevision,
+           store.commit(changes, deck: .position(number: session.number, index: index, marks: marks, drafts: drafts)) {
+            return
+        }
+        store.commit(changes, deck: .full(SavedSession(session: session, index: index, marks: marks, finished: false, drafts: drafts)))
+        savedCardsRevision = cardsRevision
     }
 
     /// Recomputes library totals from saved progress. The freed sum only changes on confirm.

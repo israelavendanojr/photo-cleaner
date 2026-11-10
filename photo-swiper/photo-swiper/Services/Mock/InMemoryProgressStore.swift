@@ -56,6 +56,23 @@ final class InMemoryProgressStore: ProgressStoring {
 
     func saveSession(_ saved: SavedSession?) { self.saved = saved }
 
+    @discardableResult
+    func commit(_ changes: [LibraryItem.ID: StoredDecision?], deck: DeckWrite) -> Bool {
+        switch deck {
+        case .full(let next):
+            saved = next
+        case .position(let number, let index, let marks, let drafts):
+            guard var current = saved, current.session.number == number else { return false }
+            current.index = index
+            current.marks = marks
+            current.drafts = drafts
+            current.finished = false
+            saved = current
+        }
+        save(changes)
+        return true
+    }
+
     func reset() {
         records = [:]
         saved = nil
