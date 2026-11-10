@@ -56,7 +56,7 @@ The list is in `CLAUDE.md` → Needs human review. The PR template has the check
 
 ### Permissions
 
-`.claude/settings.json` allows the `make` targets, `xcodebuild`, `simctl`, the linters, read-only git and `gh pr create|view|list|checks`. It denies force pushes, `git reset --hard`, `rm -rf` (use `make clean`) and edits under `.git/`. Deny rules match the command text, so they're guard rails, not a sandbox. Put personal additions in `.claude/settings.local.json`.
+`.claude/settings.json` allows the `make` targets, `xcodebuild`, `simctl`, the linters, read-only git and `gh pr create|view|list|checks`. It denies force pushes, `git reset --hard`, `rm -rf` (use `make clean`) and edits under `.git/`. Deny rules match the command text, so they're guard rails, not a sandbox. Put personal additions in `.claude/settings.local.json`. The shared allow rules apply only after you've trusted the folder once in an interactive `claude` session; until then headless runs (`claude -p`) still prompt or refuse. Deny rules apply right away.
 
 ### Bumping the XcodeBuildMCP pin
 
