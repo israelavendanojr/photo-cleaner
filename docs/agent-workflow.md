@@ -41,7 +41,7 @@ The list is in `CLAUDE.md` → Needs human review. The PR template has the check
 | Skill `privacy-destructive-guard` | When the guard hook says so, or the change touches a safety property |
 | `/linear-to-pr JUN-NN` | "Take JUN-NN" end to end. Only you can start it; the model won't on its own |
 | Subagent `reviewer` | Fresh-context review of a branch; `pre-pr` calls it for sensitive changes |
-| XcodeBuildMCP | Run the app and look at it: `session_show_defaults` / `session_set_defaults` once, then `build_run_sim`, `launch_app_sim` (with `-mockLibrary YES`, `-startAt …`), `screenshot`, `snapshot_ui`. `build_sim` / `test_sim` also work, but `make` is the reference |
+| XcodeBuildMCP | Run the app and look at it. Defaults don't persist between server starts, so begin each session with `session_set_defaults` (`projectPath` = `photo-swiper/photo-swiper.xcodeproj`, `scheme` = `photo-swiper`, `simulatorName` = e.g. `iPhone 16 Pro`). Then `build_run_sim` with `launchArgs: ["-mockLibrary", "YES", "-startAt", "similar"]`, `screenshot`, `snapshot_ui`. `test_sim` works too (with `-only-testing:` in `extraArgs`), but `make` is the reference. It builds into its own DerivedData |
 | Linear MCP (account connector) | Read issues and comment PR links. Never change status |
 
 ### Hooks (`.claude/settings.json`)
