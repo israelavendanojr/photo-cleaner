@@ -4,7 +4,6 @@ import UIKit
 /// Shown when photo access is denied, with a way back through Settings.
 struct LibraryAccessView: View {
     @Environment(FeedViewModel.self) private var vm
-    @Environment(\.openURL) private var openURL
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
@@ -23,9 +22,7 @@ struct LibraryAccessView: View {
                 .foregroundStyle(DS.Palette.secondary)
                 .padding(.top, DS.Spacing.xs)
             Spacer()
-            Button("Open Settings") {
-                if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
-            }
+            OpenSettingsButton("Open Settings")
             .buttonStyle(.pill(.ink))
         }
         .multilineTextAlignment(.center)

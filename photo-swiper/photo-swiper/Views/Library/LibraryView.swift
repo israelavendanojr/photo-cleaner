@@ -8,7 +8,6 @@ struct LibraryView: View {
     var isActive = true
 
     @Environment(FeedViewModel.self) private var vm
-    @Environment(\.openURL) private var openURL
     @State private var isSettingsPresented = false
     /// The confetti burst playing, if one is. A new value starts a new burst.
     @State private var celebration: Int?
@@ -149,9 +148,7 @@ struct LibraryView: View {
                 Divider()
                     .overlay(DS.Palette.line)
                     .padding(.leading, 52)
-                Button {
-                    if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
-                } label: {
+                OpenSettingsButton {
                     OverviewRow(icon: "lock", title: "Photo access", value: "Selected photos only")
                 }
                 .buttonStyle(.plain)
