@@ -17,5 +17,5 @@ description: Use before opening any pull request in this repo, and before saying
    - [ ] a sensitive path touched (the list in `scripts/hooks/guard-sensitive-paths.sh`) without "Needs human review" in the PR body;
    - [ ] Swift files added, removed or renamed under `Services/`, `ViewModels/` or `Models/`, or a data-flow change, without an `ARCHITECTURE.md` update;
    - [ ] non-code files added under `photo-swiper/photo-swiper*/` (they ship in the bundle).
-3. **Fresh review.** If a sensitive path changed, run the `reviewer` subagent on the branch and address what it finds.
+3. **Sensitive paths.** If one changed, load `privacy-destructive-guard` and put its proof for each affected property in the PR, then run the `reviewer` subagent on the branch and address what it finds.
 4. **PR body.** Fill `.github/pull_request_template.md`: What / Why / How tested (paste the `make verify` summary lines) / Risk, the human-review checkbox, the ARCHITECTURE checkbox, and the Linear issue. Title: `feat|bug|chore|perf(scope): summary [JUN-NN]`.
