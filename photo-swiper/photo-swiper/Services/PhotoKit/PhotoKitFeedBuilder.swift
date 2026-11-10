@@ -2,7 +2,6 @@ import CoreLocation
 import CryptoKit
 import Foundation
 import OSLog
-import Photos
 
 /// Builds sessions from the real library, most worth reviewing first.
 ///
@@ -13,6 +12,9 @@ import Photos
 /// is never in both.
 /// `FeedRanker` scores the rest and `SessionPlanner` takes the top `photosPerSession`, batching
 /// screenshots by week. Items in `FeedOptions.excluding`, such as ones already decided, are skipped.
+///
+/// The library comes through `catalog` and place names through `geocoder`, so tests build whole
+/// pages without PhotoKit or the network.
 ///
 /// The library is listed afresh every page (membership, favorites, and edits change), but the index's
 /// records and the grouping work are kept between pages until the index changes; see `GroupingCache`.
@@ -29,7 +31,8 @@ actor PhotoKitFeedBuilder: FeedBuilding {
     private static let signposter = OSSignposter(logger: log)
 
     private let index: (any FeatureIndexReading)?
-    private let places = PlaceNamer()
+    private let catalog: any AssetCatalog
+    private let places: PlaceNamer
     private let grouper = SimilarGrouper()
     private let duplicateGrouper = DuplicateGrouper()
     private let cache: GroupingCache
@@ -45,8 +48,11 @@ actor PhotoKitFeedBuilder: FeedBuilding {
     /// Similar groups the last session found but didn't show, for the clutter estimate.
     private var similarGroupsLeft = 0
 
-    init(index: (any FeatureIndexReading)? = nil) {
+    init(index: (any FeatureIndexReading)? = nil, catalog: any AssetCatalog = PhotoKitAssetCatalog(),
+         geocoder: any Geocoding = CLGeocoding()) {
         self.index = index
+        self.catalog = catalog
+        places = PlaceNamer(geocoder: geocoder)
         cache = GroupingCache(duplicateGrouper: duplicateGrouper, similarGrouper: grouper)
     }
 
@@ -75,21 +81,15 @@ actor PhotoKitFeedBuilder: FeedBuilding {
         if UserDefaults.standard.bool(forKey: "logSimilarity") { logSimilarity(groups, session: number) }
         #endif
 
-        let chosenIDs = slots.flatMap(\.ids)
-        var assets: [LibraryItem.ID: PHAsset] = [:]
-        PHAsset.fetchAssets(withLocalIdentifiers: chosenIDs, options: nil).enumerateObjects { asset, _, _ in
-            assets[asset.localIdentifier] = asset
-        }
-        let locations = Dictionary(
-            assets.compactMap { id, asset in asset.location.map { (id, $0) } },
-            uniquingKeysWith: { first, _ in first }
-        )
+        // Chosen items deleted meanwhile are left out.
+        let present = catalog.locations(for: slots.flatMap(\.ids))
+        let locations = present.compactMapValues { $0 }
         let placing = signposts.beginInterval("places")
         let names = await places.names(for: locations, within: options.placeBudget)
         signposts.endInterval("places", placing)
         let item = { (id: LibraryItem.ID) -> LibraryItem? in
-            guard let asset = assets[id], let features = pool.features[id] else { return nil }
-            return AssetMapper.item(for: asset, features: features, location: names[id])
+            guard present.index(forKey: id) != nil, let features = pool.features[id] else { return nil }
+            return AssetMapper.item(id: id, features: features, location: names[id])
         }
 
         let cards: [FeedCard] = slots.compactMap { slot in
@@ -142,12 +142,7 @@ actor PhotoKitFeedBuilder: FeedBuilding {
     private func candidatePool(_ options: FeedOptions) async -> Pool {
         let signposts = Self.signposter
         let enumerating = signposts.beginInterval("enumerate")
-        let result = PHAsset.fetchAssets(with: PhotoKitLibrary.fetchOptions(skipFavorites: options.skipFavorites))
-        var library: [CandidatePool.Entry] = []
-        library.reserveCapacity(result.count)
-        result.enumerateObjects { asset, _, _ in
-            library.append(CandidatePool.Entry(id: asset.localIdentifier, modifiedAt: asset.modificationDate, isFavorite: asset.isFavorite))
-        }
+        let library = catalog.entries(skipFavorites: options.skipFavorites)
         signposts.endInterval("enumerate", enumerating, "\(library.count) assets")
         let reading = signposts.beginInterval("indexed")
         let (generation, indexed) = await indexedRecords()
@@ -155,11 +150,8 @@ actor PhotoKitFeedBuilder: FeedBuilding {
         let chosen = CandidatePool.build(library: library, excluding: options.excluding, indexed: indexed, poolSize: Self.poolSize)
 
         var candidates = chosen.cached
-        var live: [LibraryItem.ID: AssetFeatures] = [:]
         let readingLive = signposts.beginInterval("live")
-        PHAsset.fetchAssets(withLocalIdentifiers: chosen.live, options: nil).enumerateObjects { asset, _, _ in
-            live[asset.localIdentifier] = AssetMapper.features(for: asset)
-        }
+        let live = catalog.features(for: chosen.live)
         signposts.endInterval("live", readingLive, "\(live.count) assets")
         // Keep newest-first order for the live part.
         candidates += chosen.live.compactMap { id in live[id].map { RankCandidate(id: id, features: $0) } }

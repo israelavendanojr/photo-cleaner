@@ -46,12 +46,10 @@ final class PhotoKitLibrary: NSObject, PhotoLibraryProviding, @unchecked Sendabl
         PHAsset.fetchAssets(withLocalIdentifiers: ids, options: nil).enumerateObjects { asset, _, _ in
             found.append(asset)
         }
-        let foundIDs = Set(found.map(\.localIdentifier))
         let deletable = found.filter { $0.canPerform(.delete) }
 
-        var outcome = DeletionOutcome()
-        outcome.missing = ids.filter { !foundIDs.contains($0) }
-        outcome.undeletable = found.filter { !$0.canPerform(.delete) }.map(\.localIdentifier)
+        var outcome = DeletionOutcome.make(requested: ids, found: found.map(\.localIdentifier),
+                                           deletable: Set(deletable.map(\.localIdentifier)))
         guard !deletable.isEmpty else { return outcome }
 
         // All or nothing: iOS shows its own confirmation for the whole request.

@@ -47,6 +47,20 @@ struct DeletionOutcome: Sendable {
     var undeletable: [LibraryItem.ID] = []
 }
 
+extension DeletionOutcome {
+    /// What a delete request reports before anything is deleted: `requested` items the library didn't
+    /// find are missing, and found ones the system won't let this app delete are undeletable. The
+    /// rest, `deletable`, go to the system prompt; they're `deleted` only once the user confirms.
+    /// Order follows `requested` and `found`. Pure, so it's tested without PhotoKit.
+    static func make(requested: [LibraryItem.ID], found: [LibraryItem.ID], deletable: Set<LibraryItem.ID>) -> DeletionOutcome {
+        let foundIDs = Set(found)
+        var outcome = DeletionOutcome()
+        outcome.missing = requested.filter { !foundIDs.contains($0) }
+        outcome.undeletable = found.filter { !deletable.contains($0) }
+        return outcome
+    }
+}
+
 enum DeletionError: Error {
     /// The user dismissed the system confirmation.
     case cancelled
