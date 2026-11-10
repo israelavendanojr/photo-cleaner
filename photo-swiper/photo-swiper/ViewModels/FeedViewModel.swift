@@ -1237,5 +1237,5 @@ extension FeedViewModel {
     static let pageAhead = 5
     /// Decided cards kept behind the current one, for undo. Older ones are trimmed when a page lands.
     static let keptBehind = 30
-    fileprivate static let log = Logger(subsystem: "com.israelavendanojr.photo-swiper", category: "feed")
+    fileprivate static let log = Logger.app(category: "feed")
 }

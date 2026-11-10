@@ -25,7 +25,7 @@ actor PhotoKitFeedBuilder: FeedBuilding {
     /// Fewer screenshots than this in a week show up as ordinary photo cards.
     static let minBatch = 3
     static let maxBatch = 40
-    private static let log = Logger(subsystem: "com.israelavendanojr.photo-swiper", category: "feed")
+    private static let log = Logger.app(category: "feed")
     /// Intervals for each stage of a page build, for Instruments' os_signpost track.
     private static let signposter = OSSignposter(logger: log)
 
@@ -189,7 +189,7 @@ actor PhotoKitFeedBuilder: FeedBuilding {
     }
 
     #if DEBUG
-    private static let similarityLog = Logger(subsystem: "com.israelavendanojr.photo-swiper", category: "similar")
+    private static let similarityLog = Logger.app(category: "similar")
 
     /// `-logSimilarity YES`: every group found and the near misses just past the threshold, for
     /// tuning `SimilarGrouper.Tunables` on a real library.

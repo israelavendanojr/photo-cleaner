@@ -10,7 +10,7 @@ import os
 @Observable
 @MainActor
 final class DebugEntitlementStore: EntitlementStore {
-    private static let log = Logger(subsystem: "com.israelavendanojr.photo-swiper", category: "entitlement")
+    private static let log = Logger.app(category: "entitlement")
 
     private(set) var isUnlocked: Bool
     let displayPrice = "$9.99"

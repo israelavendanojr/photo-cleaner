@@ -97,7 +97,7 @@ private extension FeedViewModel {
         } catch {
             // Keep the app usable; progress just won't outlive this launch, and nothing is indexed.
             // The saved file is left alone, and the user is told rather than seeing their pile vanish.
-            Logger(subsystem: "com.israelavendanojr.photo-swiper", category: "progress").error("Couldn't open saved progress: \(error)")
+            Logger.app(category: "progress").error("Couldn't open saved progress: \(error)")
             assertionFailure("Couldn't open saved progress: \(error)")
             return FeedViewModel(
                 library: library, builder: PhotoKitFeedBuilder(), store: InMemoryProgressStore(), entitlements: entitlements,

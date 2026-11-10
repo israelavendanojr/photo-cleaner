@@ -37,7 +37,7 @@ enum FileSizeReader {
                 return !logged
             }
             guard first else { return }
-            Logger(subsystem: "com.israelavendanojr.photo-swiper", category: "size")
+            Logger.app(category: "size")
                 .warning("PHAssetResource fileSize didn't resolve; sizes fall back to estimates")
         }
     }

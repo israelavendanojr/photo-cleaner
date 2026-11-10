@@ -7,7 +7,7 @@ import SwiftData
 /// A plain actor that owns its `ModelContext`, never the main context, so reads and writes stay off
 /// the main thread. Every write saves before returning.
 actor FeatureIndex: FeatureIndexReading {
-    private static let log = Logger(subsystem: "com.israelavendanojr.photo-swiper", category: "index")
+    private static let log = Logger.app(category: "index")
     /// Keeps `IN (...)` predicates well under SQLite's variable limit.
     private static let chunk = 500
 
