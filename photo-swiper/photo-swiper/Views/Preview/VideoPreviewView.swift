@@ -450,6 +450,8 @@ private struct PlayerLayerView: UIViewRepresentable {
 
     final class LayerView: UIView {
         override class var layerClass: AnyClass { AVPlayerLayer.self }
+        // `layerClass` guarantees the layer's type, so this cast can't fail.
+        // swiftlint:disable:next force_cast
         var playerLayer: AVPlayerLayer { layer as! AVPlayerLayer }
     }
 }

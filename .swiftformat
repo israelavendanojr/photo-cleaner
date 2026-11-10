@@ -1,0 +1,26 @@
+# SwiftFormat config, inferred from the existing code. Lint only for now: CI runs
+# `swiftformat --lint` on changed files and only warns. See docs/ci.md.
+
+--swiftversion 5.10
+--exclude photo-swiper-context,photo-swiper/Tools,**/DerivedData
+
+# Layout
+--indent 4
+--indentcase false
+--maxwidth 140
+--wraparguments preserve
+--wrapparameters preserve
+--wrapcollections preserve
+--closingparen balanced
+--commas always
+--ifdef no-indent
+
+# Style
+--self remove
+--stripunusedargs closure-only
+--header ignore
+--importgrouping testable-last
+--ranges no-space
+
+# Rules that would churn the codebase without making it clearer.
+--disable wrapMultilineStatementBraces,wrap,wrapArguments,redundantReturn,blankLinesAtStartOfScope,blankLinesAtEndOfScope,docComments,andOperator,preferKeyPath,redundantType,unusedArguments,wrapSingleLineComments,trailingClosures,hoistPatternLet,organizeDeclarations,redundantParens,conditionalAssignment,numberFormatting,wrapIfStatementBodies,wrapPropertyBodies,wrapLoopBodies,wrapIfExpressionBodies,wrapFunctionBodies,redundantThrows,redundantAsync,blankLinesBetweenScopes,hoistTry,hoistAwait,noForceUnwrapInTests,swiftTestingTestCaseNames,opaqueGenericParameters,genericExtensions

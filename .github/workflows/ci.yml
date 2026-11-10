@@ -1,0 +1,90 @@
+# Build and unit tests on every pull request to main. UI tests don't run here: they're slow and
+# flaky on shared runners. Run them locally (docs/ci.md). Lint and format only warn for now.
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.head_ref }}
+  cancel-in-progress: true
+
+env:
+  PROJECT: photo-swiper/photo-swiper.xcodeproj
+  SCHEME: photo-swiper
+  DERIVED_DATA: ${{ github.workspace }}/DerivedData
+
+jobs:
+  test:
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Select Xcode 16.4
+        run: sudo xcode-select -s /Applications/Xcode_16.4.app
+
+      - name: Pick a simulator
+        # The first available iPhone, so a runner image update doesn't break a hard-coded name.
+        run: |
+          UDID=$(xcrun simctl list -j devices available \
+            | jq -r '[.devices | to_entries[] | select(.key | contains("iOS")) | .value[] | select(.name | startswith("iPhone"))][0].udid')
+          test -n "$UDID" && test "$UDID" != "null"
+          echo "DESTINATION=platform=iOS Simulator,id=$UDID" >> "$GITHUB_ENV"
+          xcrun simctl list devices available | grep "$UDID"
+
+      - name: Cache DerivedData
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.DERIVED_DATA }}
+          key: deriveddata-${{ runner.os }}-xcode16.4-${{ hashFiles('photo-swiper/photo-swiper.xcodeproj/project.pbxproj') }}-${{ hashFiles('photo-swiper/**/*.swift') }}
+          restore-keys: |
+            deriveddata-${{ runner.os }}-xcode16.4-${{ hashFiles('photo-swiper/photo-swiper.xcodeproj/project.pbxproj') }}-
+            deriveddata-${{ runner.os }}-xcode16.4-
+
+      - name: Build for testing
+        run: |
+          set -o pipefail
+          xcodebuild -project "$PROJECT" -scheme "$SCHEME" -destination "$DESTINATION" \
+            -derivedDataPath "$DERIVED_DATA" build-for-testing | tee build.log | grep -E "warning:|error:|BUILD" || true
+          grep -q "TEST BUILD SUCCEEDED\|BUILD SUCCEEDED" build.log
+
+      - name: Unit tests
+        # ScalingTests are benchmarks over 50k synthetic items; run them locally (docs/ci.md).
+        run: |
+          set -o pipefail
+          xcodebuild -project "$PROJECT" -scheme "$SCHEME" -destination "$DESTINATION" \
+            -derivedDataPath "$DERIVED_DATA" test-without-building \
+            -only-testing:photo-swiperTests -skip-testing:photo-swiperTests/ScalingTests \
+            | grep -E "Test (Suite|case).*(passed|failed)|✔|✘|error:|TEST (SUCCEEDED|FAILED)|\*\* TEST"
+
+  lint:
+    # Warnings only for this first pass: the job never fails the PR.
+    runs-on: macos-15
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install SwiftLint and SwiftFormat
+        run: brew install swiftlint swiftformat
+
+      - name: Changed Swift files
+        run: |
+          git diff --name-only --diff-filter=ACMR "origin/${{ github.base_ref }}...HEAD" -- '*.swift' \
+            | grep -v '^photo-swiper-context/' > changed.txt || true
+          echo "Changed Swift files:"; cat changed.txt
+
+      - name: SwiftFormat (lint)
+        run: |
+          [ -s changed.txt ] || exit 0
+          xargs swiftformat --lint --reporter github-actions-log < changed.txt || true
+
+      - name: SwiftLint
+        run: |
+          [ -s changed.txt ] || exit 0
+          xargs swiftlint lint --quiet --reporter github-actions-logging < changed.txt || true
