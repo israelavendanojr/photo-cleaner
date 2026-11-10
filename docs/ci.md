@@ -4,8 +4,14 @@ CI (`.github/workflows/ci.yml`) runs on every pull request to `main`:
 
 | Job | What it does | Fails the PR? |
 |---|---|---|
-| `test` | Builds the app and test targets, then runs the unit tests (`photo-swiperTests`), skipping `ScalingTests` | Yes |
+| `test` | Builds the app and test targets, then runs the unit tests (`photo-swiperTests`), skipping the three below | Yes |
 | `lint` | Runs SwiftFormat (lint mode) and SwiftLint on the Swift files the PR changes | No, warnings only |
+
+CI skips three unit tests that only work on a real Mac, so run them locally:
+
+- `ScalingTests`: benchmarks over 50,000 synthetic items. They're slow, and their numbers are only meaningful on known hardware.
+- `StoreKitEntitlementStoreTests`: StoreKitTest sessions hang on hosted runners, so every test hits its time limit.
+- `FeaturePrintTests/distanceMatchesVision()`: this compares against live Vision, whose prints differ on virtualized runners.
 
 UI tests (`photo-swiperUITests`) don't run in CI. Run them locally before merging anything that touches views or `FeedViewModel`.
 
@@ -17,7 +23,13 @@ Pick a simulator with `xcrun simctl list devices available`, then:
 # Unit tests, as CI runs them
 xcodebuild -project photo-swiper/photo-swiper.xcodeproj -scheme photo-swiper \
   -destination 'platform=iOS Simulator,name=iPhone 16' \
-  test -only-testing:photo-swiperTests -skip-testing:photo-swiperTests/ScalingTests
+  test -only-testing:photo-swiperTests -skip-testing:photo-swiperTests/ScalingTests \
+  -skip-testing:photo-swiperTests/StoreKitEntitlementStoreTests \
+  '-skip-testing:photo-swiperTests/FeaturePrintTests/distanceMatchesVision()'
+
+# Everything, the way to run it on your Mac before merging
+xcodebuild -project photo-swiper/photo-swiper.xcodeproj -scheme photo-swiper \
+  -destination 'platform=iOS Simulator,name=iPhone 16' test -only-testing:photo-swiperTests
 
 # UI tests (slow; run alone, with nothing else building, and with -parallel-testing-enabled NO)
 xcodebuild -project photo-swiper/photo-swiper.xcodeproj -scheme photo-swiper \
