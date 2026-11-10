@@ -53,8 +53,13 @@ struct ScalingTests {
         let pages = await PageRun.run(Self.library.candidates, pages: Self.pages) { cached in
             await PageGrouping.uncached(cached) { ids in await loads.load(ids) }
         }
-        for page in pages {
-            ScalingReport.line("uncached page \(page.number): \(page.printsLoaded) prints (\(page.printsLoaded * Self.library.dimensions * 4 / 1_000_000) MB) in \(page.seconds.ms)")
+        let cache = GroupingCache()
+        let cached = await PageRun.run(Self.library.candidates, pages: Self.pages) { cached in
+            await cache.groups(cached, key: .init(generation: 1, skipFavorites: true)) { ids in await loads.load(ids) }
+        }
+        for (before, after) in zip(pages, cached) {
+            ScalingReport.line("page \(before.number) from memory: uncached \(before.printsLoaded) prints (\(before.printsLoaded * Self.library.dimensions * 4 / 1_000_000) MB) in \(before.seconds.ms); cached \(after.printsLoaded) prints in \(after.seconds.ms)")
+            #expect(after.slots == before.slots)
         }
         #expect(pages.allSatisfy { !$0.slots.isEmpty })
     }
@@ -65,9 +70,17 @@ struct ScalingTests {
         let pages = await PageRun.run(Self.library.candidates, pages: Self.pages) { cached in
             await PageGrouping.uncached(cached) { ids in await index.featurePrints(for: ids) }
         }
-        for page in pages {
-            ScalingReport.line("uncached on-disk page \(page.number): \(page.printsLoaded) prints in \(page.seconds.ms)")
+        let cache = GroupingCache()
+        let cached = await PageRun.run(Self.library.candidates, pages: Self.pages) { cached in
+            await cache.groups(cached, key: .init(generation: 1, skipFavorites: true)) { ids in await index.featurePrints(for: ids) }
         }
+        for (before, after) in zip(pages, cached) {
+            ScalingReport.line("page \(before.number) on disk: uncached \(before.printsLoaded) prints in \(before.seconds.ms); cached \(after.printsLoaded) prints in \(after.seconds.ms) (\(String(format: "%.1f", before.seconds / max(after.seconds, 0.0001)))x)")
+            #expect(after.slots == before.slots)
+        }
+        let warm = cached.dropFirst().map(\.seconds).reduce(0, +) / Double(max(cached.count - 1, 1))
+        let uncached = pages.dropFirst().map(\.seconds).reduce(0, +) / Double(max(pages.count - 1, 1))
+        ScalingReport.line("warm pages on disk: \(String(format: "%.1f", uncached / max(warm, 0.0001)))x faster than uncached (\(uncached.ms) vs \(warm.ms) a page)")
         #expect(pages.allSatisfy { !$0.slots.isEmpty })
     }
 

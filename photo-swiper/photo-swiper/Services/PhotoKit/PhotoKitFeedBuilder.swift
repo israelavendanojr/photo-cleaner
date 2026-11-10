@@ -13,6 +13,9 @@ import Photos
 /// is never in both.
 /// `FeedRanker` scores the rest and `SessionPlanner` takes the top `photosPerSession`, batching
 /// screenshots by week. Items in `FeedOptions.excluding`, such as ones already decided, are skipped.
+///
+/// The library is listed afresh every page (membership, favorites, and edits change), but the index's
+/// records and the grouping work are kept between pages until the index changes; see `GroupingCache`.
 actor PhotoKitFeedBuilder: FeedBuilding {
     static let photosPerSession = 20
     /// How many of the newest unindexed undecided items compete, with metadata read live. Indexed
@@ -29,6 +32,9 @@ actor PhotoKitFeedBuilder: FeedBuilding {
     private let places = PlaceNamer()
     private let grouper = SimilarGrouper()
     private let duplicateGrouper = DuplicateGrouper()
+    private let cache: GroupingCache
+    /// The index's records at a generation, until it changes.
+    private var indexed: (generation: Int, records: [LibraryItem.ID: IndexedFeatures])?
     private let planner = SessionPlanner(
         limit: PhotoKitFeedBuilder.photosPerSession,
         minBatch: PhotoKitFeedBuilder.minBatch,
@@ -41,6 +47,7 @@ actor PhotoKitFeedBuilder: FeedBuilding {
 
     init(index: (any FeatureIndexReading)? = nil) {
         self.index = index
+        cache = GroupingCache(duplicateGrouper: duplicateGrouper, similarGrouper: grouper)
     }
 
     func clutterEstimate(excluding: Set<LibraryItem.ID>, now: Date) async -> ClutterEstimate? {
@@ -58,7 +65,7 @@ actor PhotoKitFeedBuilder: FeedBuilding {
 
         let pool = await candidatePool(options)
         let grouping = signposts.beginInterval("grouping")
-        let groups = await groups(in: pool)
+        let groups = await groups(in: pool, skipFavorites: options.skipFavorites)
         signposts.endInterval("grouping", grouping, "\(groups.duplicatePrintCount + groups.similarPrintCount) prints")
         let planning = signposts.beginInterval("plan")
         let slots = planner.plan(pool.candidates, groups: groups.similar, duplicates: groups.duplicates, now: .now)
@@ -126,6 +133,8 @@ actor PhotoKitFeedBuilder: FeedBuilding {
         var cachedCount: Int
         var liveCount: Int
         var scanPercent: Int?
+        /// The index's generation the cached features were read at.
+        var generation = 0
     }
 
     /// Lists the library once for membership, favorites, and edit dates, then reads live metadata
@@ -141,7 +150,7 @@ actor PhotoKitFeedBuilder: FeedBuilding {
         }
         signposts.endInterval("enumerate", enumerating, "\(library.count) assets")
         let reading = signposts.beginInterval("indexed")
-        let indexed = await index?.indexed() ?? [:]
+        let (generation, indexed) = await indexedRecords()
         signposts.endInterval("indexed", reading, "\(indexed.count) records")
         let chosen = CandidatePool.build(library: library, excluding: options.excluding, indexed: indexed, poolSize: Self.poolSize)
 
@@ -156,15 +165,25 @@ actor PhotoKitFeedBuilder: FeedBuilding {
         candidates += chosen.live.compactMap { id in live[id].map { RankCandidate(id: id, features: $0) } }
         let features = Dictionary(candidates.map { ($0.id, $0.features) }, uniquingKeysWith: { first, _ in first })
         return Pool(candidates: candidates, cached: chosen.cached, features: features, cachedCount: chosen.cached.count,
-                    liveCount: live.count, scanPercent: index == nil ? nil : chosen.scanPercent)
+                    liveCount: live.count, scanPercent: index == nil ? nil : chosen.scanPercent, generation: generation)
+    }
+
+    /// Every index record, read again only when the index has changed since the last read.
+    private func indexedRecords() async -> (generation: Int, records: [LibraryItem.ID: IndexedFeatures]) {
+        guard let index else { return (0, [:]) }
+        // The generation first: records read after it are at least that new.
+        let generation = await index.generation
+        if let indexed, indexed.generation == generation { return indexed }
+        let fresh = (generation: generation, records: await index.indexed())
+        indexed = fresh
+        return fresh
     }
 
     /// Duplicate sets, then similar groups, among the indexed candidates. Nothing groups without an index.
-    private func groups(in pool: Pool) async -> PageGroups {
+    private func groups(in pool: Pool, skipFavorites: Bool) async -> PageGroups {
         guard let index else { return PageGroups() }
-        return await PageGrouping.uncached(pool.cached, duplicateGrouper: duplicateGrouper, similarGrouper: grouper) { ids in
-            await index.featurePrints(for: ids)
-        }
+        let key = GroupingCache.Key(generation: pool.generation, skipFavorites: skipFavorites)
+        return await cache.groups(pool.cached, key: key) { ids in await index.featurePrints(for: ids) }
     }
 
     /// Duplicate sets ready to plan, keeper first. See `PageGrouping.duplicatePlans`.

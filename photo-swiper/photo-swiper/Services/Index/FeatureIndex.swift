@@ -12,6 +12,8 @@ actor FeatureIndex: FeatureIndexReading {
     private static let chunk = 500
 
     private let context: ModelContext
+    /// See `FeatureIndexReading.generation`. Starts over each launch, like the readers' caches.
+    private(set) var generation = 0
 
     init(container: ModelContainer) {
         context = ModelContext(container)
@@ -74,6 +76,7 @@ actor FeatureIndex: FeatureIndexReading {
             record.dHash = entry.dHash.map { Int64(bitPattern: $0) }
             record.dHashVersion = entry.version
         }
+        generation += 1
         persist()
     }
 
@@ -92,12 +95,14 @@ actor FeatureIndex: FeatureIndexReading {
                 context.insert(AssetFeatureRecord(entry))
             }
         }
+        generation += 1
         persist()
     }
 
     func remove(_ ids: Set<LibraryItem.ID>) {
         guard !ids.isEmpty else { return }
         for record in records(for: Array(ids)) { context.delete(record) }
+        generation += 1
         persist()
     }
 

@@ -121,6 +121,56 @@ struct SimilarGrouper: Sendable {
         return result
     }
 
+    /// The candidates `neighborIDs` returns, split into sets `group` handles independently, each oldest
+    /// first. No group spans a wait longer than `maxGap` between consecutive eligible shots (a seed's
+    /// look-alikes must follow within `maxGap` of the last one taken), and a burst's frames always land
+    /// in one set. So grouping each set on its own and `merge`-ing the results gives exactly what
+    /// grouping them all at once does.
+    func components(_ candidates: [RankCandidate]) -> [[RankCandidate]] {
+        let eligible = sorted(candidates.filter { Self.isEligible($0.features) })
+        let neighbors = neighborIDs(candidates)
+        var parent = Array(eligible.indices)
+        func root(_ i: Int) -> Int {
+            var i = i
+            while parent[i] != i {
+                parent[i] = parent[parent[i]]
+                i = parent[i]
+            }
+            return i
+        }
+        func join(_ a: Int, _ b: Int) {
+            let ra = root(a), rb = root(b)
+            if ra != rb { parent[max(ra, rb)] = min(ra, rb) }
+        }
+        for i in eligible.indices.dropFirst()
+        where eligible[i].features.createdAt.timeIntervalSince(eligible[i - 1].features.createdAt) <= tunables.maxGap {
+            join(i - 1, i)
+        }
+        var firstFrame: [String: Int] = [:]
+        for (i, candidate) in eligible.enumerated() {
+            guard let burst = candidate.features.burstID else { continue }
+            if let first = firstFrame[burst] { join(first, i) } else { firstFrame[burst] = i }
+        }
+        var sets: [Int: [RankCandidate]] = [:]
+        for (i, candidate) in eligible.enumerated() where neighbors.contains(candidate.id) {
+            sets[root(i), default: []].append(candidate)
+        }
+        return sets.sorted { $0.key < $1.key }.map(\.value)
+    }
+
+    /// `group` results for separate `components` of `candidates`, as one `group` call on all of them
+    /// would return them: oldest group first.
+    func merge(_ results: [Result], of candidates: [RankCandidate]) -> Result {
+        let position = Dictionary(uniqueKeysWithValues: sorted(candidates).enumerated().map { ($1.id, $0) })
+        var merged = Result()
+        for result in results {
+            merged.groups += result.groups
+            merged.nearMisses += result.nearMisses
+        }
+        merged.groups.sort { position[$0.ids[0], default: 0] < position[$1.ids[0], default: 0] }
+        return merged
+    }
+
     // MARK: Internals
 
     /// Oldest first; ties by id so the result doesn't depend on input order.

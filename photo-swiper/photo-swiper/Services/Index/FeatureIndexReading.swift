@@ -2,6 +2,10 @@ import Foundation
 
 /// Read access to cached features. `FeatureIndex` is the real one; tests use a fake.
 protocol FeatureIndexReading: Sendable {
+    /// Changes whenever a record is written or removed, so a reader can tell its copies are still
+    /// current. Read it before reading records: a newer read under an older generation only means
+    /// one extra refresh, never a stale cache.
+    var generation: Int { get async }
     /// Every cached record, without feature prints. Callers decide which are still fresh with `IndexFreshness`.
     func indexed() async -> [LibraryItem.ID: IndexedFeatures]
     /// Stored feature prints for `ids`. Items without one are left out.
