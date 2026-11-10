@@ -35,6 +35,12 @@ protocol ProgressStoring: AnyObject {
     func loadSession() -> SavedSession?
     /// Nil clears the saved deck.
     func saveSession(_ saved: SavedSession?)
+    /// Writes decisions (as `save` does) and the deck together, in one save where the store can.
+    /// Durable when it returns, like every other write. A `.position` write needs this deck already
+    /// saved whole under its number; without one nothing is written and it returns false, so the
+    /// caller writes `.full` instead.
+    @discardableResult
+    func commit(_ changes: [LibraryItem.ID: StoredDecision?], deck: DeckWrite) -> Bool
 
     var skipFavorites: Bool { get set }
 
@@ -74,6 +80,15 @@ struct StoredDecision: Equatable, Sendable {
     var isPending: Bool { decision == .delete && settlement == nil }
     /// Not deleted by this app or gone some other way. Undeletable items are still there.
     var isInLibrary: Bool { settlement != .deleted && settlement != .gone }
+}
+
+/// How much of the deck `ProgressStoring.commit` writes.
+enum DeckWrite: Equatable, Sendable {
+    /// Everything, cards included.
+    case full(SavedSession)
+    /// Only where the user is in a deck whose cards are already saved: a swipe, a mark, or a draft
+    /// leaves the cards as they were, so they aren't encoded again.
+    case position(number: Int, index: Int, marks: [SimilarGroup.ID: Set<LibraryItem.ID>], drafts: [FeedCard.ID: [LibraryItem.ID: Decision]])
 }
 
 /// The deck, exactly as the user left it.
