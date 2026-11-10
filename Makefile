@@ -36,6 +36,8 @@ BUILD_FILTER := warning:|error:|\*\* .*(SUCCEEDED|FAILED)
 else
 BUILD_FILTER := error:|\*\* .*(SUCCEEDED|FAILED)
 endif
+# XCTest prints a running total per suite; keep only the last, the overall one.
+LAST_TOTAL  := awk '/Executed [0-9]+ tests?, with/ { total = $$0; next } { print } END { if (total) print total }'
 TEST_FILTER := ✘|error:|Test Case .* failed|Executed [0-9]+ tests?, with|Test run with|\*\* TEST .*(SUCCEEDED|FAILED)
 
 # Changed Swift files against BASE: committed, uncommitted and untracked.
@@ -57,19 +59,19 @@ build: check-dest ## Incremental build of the app and test targets; prints error
 
 test-unit: build ## Unit tests exactly as CI runs them (skips the three Mac-only tests)
 	@$(PIPEFAIL) $(XCB) test-without-building -only-testing:photo-swiperTests $(SKIP_CI) 2>&1 \
-		| tee $(LOGS)/test-unit.log | { grep -E "$(TEST_FILTER)" || true; } | uniq
+		| tee $(LOGS)/test-unit.log | { grep -E "$(TEST_FILTER)" || true; } | $(LAST_TOTAL)
 
 test-all-unit: build ## Every unit test, no skips (real Mac only; StoreKit tests can flake)
 	@$(PIPEFAIL) $(XCB) test-without-building -only-testing:photo-swiperTests 2>&1 \
-		| tee $(LOGS)/test-all-unit.log | { grep -E "$(TEST_FILTER)" || true; } | uniq
+		| tee $(LOGS)/test-all-unit.log | { grep -E "$(TEST_FILTER)" || true; } | $(LAST_TOTAL)
 
 test-ui: build ## UI tests, serially (slow, ~15 min; run with nothing else building)
 	@$(PIPEFAIL) $(XCB) test-without-building -parallel-testing-enabled NO -only-testing:photo-swiperUITests 2>&1 \
-		| tee $(LOGS)/test-ui.log | { grep -E "$(TEST_FILTER)" || true; } | uniq
+		| tee $(LOGS)/test-ui.log | { grep -E "$(TEST_FILTER)" || true; } | $(LAST_TOTAL)
 
 test-scaling: build ## Only ScalingTests (50k synthetic items; timings in build/logs/test-scaling.log)
 	@$(PIPEFAIL) $(XCB) test-without-building -only-testing:photo-swiperTests/ScalingTests 2>&1 \
-		| tee $(LOGS)/test-scaling.log | { grep -E "$(TEST_FILTER)" || true; } | uniq
+		| tee $(LOGS)/test-scaling.log | { grep -E "$(TEST_FILTER)" || true; } | $(LAST_TOTAL)
 
 lint: ## SwiftFormat (lint mode) and SwiftLint on Swift files changed against BASE
 	@command -v swiftformat >/dev/null && command -v swiftlint >/dev/null \
