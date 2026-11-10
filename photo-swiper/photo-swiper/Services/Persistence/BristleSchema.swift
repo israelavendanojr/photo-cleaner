@@ -22,7 +22,7 @@ import SwiftData
 ///    or `.custom(…)` for data that has to be rewritten.
 /// 4. Add a test that opens a V1 store with the new container (see `SchemaVersioningTests`).
 enum BristleSchemaV1: VersionedSchema {
-    static let versionIdentifier = Schema.Version(1, 0, 0)
+    static var versionIdentifier: Schema.Version { Schema.Version(1, 0, 0) }
 
     static var models: [any PersistentModel.Type] {
         [ItemProgress.self, SessionProgress.self, AssetFeatureRecord.self]

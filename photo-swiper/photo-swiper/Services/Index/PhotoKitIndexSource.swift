@@ -1,6 +1,7 @@
 import Foundation
 import ImageIO
 import Photos
+import Synchronization
 import UIKit
 
 /// The library as the indexer sees it, through PhotoKit.
@@ -8,17 +9,19 @@ import UIKit
 /// Uses its own `PHImageManager`, separate from `ThumbnailPipeline`: high-quality delivery only (no
 /// degraded frames), about 512 px, and network access off, so iCloud-only originals are skipped
 /// rather than downloaded. `PHImageManager` is thread-safe, so this needs no isolation.
+// Unchecked: its only state is an immutable `PHImageManager`, which Apple documents as thread-safe.
 final class PhotoKitIndexSource: IndexAssetSource, @unchecked Sendable {
     private static let targetSize = CGSize(width: 512, height: 512)
 
-    private static let options: PHImageRequestOptions = {
+    /// A fresh one per request: the options object is mutable, so it isn't shared across threads.
+    private static var options: PHImageRequestOptions {
         let options = PHImageRequestOptions()
         options.deliveryMode = .highQualityFormat
         options.resizeMode = .fast
         options.isNetworkAccessAllowed = false
         options.isSynchronous = false
         return options
-    }()
+    }
 
     private let manager = PHImageManager()
 
@@ -62,12 +65,11 @@ final class PhotoKitIndexSource: IndexAssetSource, @unchecked Sendable {
 }
 
 /// True the first time only.
-private final class Once: @unchecked Sendable {
-    private let lock = NSLock()
-    private var claimed = false
+private final class Once: Sendable {
+    private let claimed = Mutex(false)
 
     func claim() -> Bool {
-        lock.withLock {
+        claimed.withLock { claimed in
             defer { claimed = true }
             return !claimed
         }

@@ -4,21 +4,23 @@ import SwiftData
 
 /// The cached feature records, on a background context of the app's shared container.
 ///
-/// A plain actor that owns its `ModelContext`, never the main context, so reads and writes stay off
-/// the main thread. Every write saves before returning.
+/// A model actor: its `ModelContext` belongs to the actor's own serial executor, never the main
+/// context, so reads and writes stay off the main thread and on the context's queue. Every write
+/// saves before returning.
+@ModelActor
 actor FeatureIndex: FeatureIndexReading {
     private static let log = Logger.app(category: "index")
     /// Keeps `IN (...)` predicates well under SQLite's variable limit.
     private static let chunk = 500
 
-    private let context: ModelContext
     /// See `FeatureIndexReading.generation`. Starts over each launch, like the readers' caches.
     private(set) var generation = 0
 
     init(container: ModelContainer) {
-        context = ModelContext(container)
-        context.autosaveEnabled = false
+        self.init(modelContainer: container)
     }
+
+    private var context: ModelContext { modelContext }
 
     func indexed() -> [LibraryItem.ID: IndexedFeatures] {
         var descriptor = FetchDescriptor<AssetFeatureRecord>()

@@ -1,5 +1,6 @@
 import AVFoundation
 import Photos
+import Synchronization
 
 /// Turns a video item into something playable. The single place an `ImageReference` becomes
 /// a stream, so the preview doesn't care whether it came from PhotoKit or the mock bundle.
@@ -48,19 +49,22 @@ enum VideoSource {
     }
 
     /// Shared by the request, its result handler, and the cancellation handler, which can run on
-    /// different threads in any order. Guarded by `lock`; the continuation is resumed only once.
-    private final class RequestBox<T>: @unchecked Sendable {
-        private let lock = NSLock()
-        private var continuation: CheckedContinuation<T?, Never>?
-        private var id: PHImageRequestID?
-        private var isCancelled = false
+    /// different threads in any order. All state is behind one `Mutex`; the continuation is resumed only once.
+    private final class RequestBox<T>: Sendable {
+        private struct State {
+            var continuation: CheckedContinuation<T?, Never>?
+            var id: PHImageRequestID?
+            var isCancelled = false
+        }
+
+        private let state = Mutex(State())
 
         /// Holds the continuation, or resumes it with nil if the task was already cancelled.
         /// False when there's nothing to start.
         func begin(_ continuation: CheckedContinuation<T?, Never>) -> Bool {
-            let cancelled = lock.withLock {
-                if !isCancelled { self.continuation = continuation }
-                return isCancelled
+            let cancelled = state.withLock { state in
+                if !state.isCancelled { state.continuation = continuation }
+                return state.isCancelled
             }
             if cancelled { continuation.resume(returning: nil) }
             return !cancelled
@@ -68,9 +72,9 @@ enum VideoSource {
 
         /// Records the request. True if a cancel came in meanwhile, so the caller cancels it now.
         func started(_ id: PHImageRequestID) -> Bool {
-            lock.withLock {
-                self.id = id
-                return isCancelled
+            state.withLock { state in
+                state.id = id
+                return state.isCancelled
             }
         }
 
@@ -80,19 +84,19 @@ enum VideoSource {
 
         /// Ends the wait with nil. Returns the request to cancel, if it has started.
         func cancel() -> PHImageRequestID? {
-            let (id, continuation) = lock.withLock { () -> (PHImageRequestID?, CheckedContinuation<T?, Never>?) in
-                isCancelled = true
-                defer { self.continuation = nil }
-                return (self.id, self.continuation)
+            let (id, continuation) = state.withLock { state in
+                state.isCancelled = true
+                defer { state.continuation = nil }
+                return (state.id, state.continuation)
             }
             continuation?.resume(returning: nil)
             return id
         }
 
         private func take() -> CheckedContinuation<T?, Never>? {
-            lock.withLock {
-                defer { continuation = nil }
-                return continuation
+            state.withLock { state in
+                defer { state.continuation = nil }
+                return state.continuation
             }
         }
     }

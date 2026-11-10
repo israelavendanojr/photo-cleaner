@@ -6,7 +6,8 @@ final class PreviewZoomUITests: XCTestCase {
 
     override func setUpWithError() throws {
         continueAfterFailure = false
-        XCUIDevice.shared.orientation = .portrait
+        // XCTest runs setUp on the main thread.
+        MainActor.assumeIsolated { XCUIDevice.shared.orientation = .portrait }
     }
 
     @MainActor
@@ -88,6 +89,7 @@ final class PreviewZoomUITests: XCTestCase {
 
     // MARK: Helpers
 
+    @MainActor
     private func launch(_ arguments: String...) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = ["-mockLibrary", "YES", "-hasSeenSwipeHint", "YES", "-resetTunables", "YES"] + arguments
@@ -95,10 +97,12 @@ final class PreviewZoomUITests: XCTestCase {
         return app
     }
 
+    @MainActor
     private func cardMarker(_ app: XCUIApplication) -> XCUIElement {
         app.descendants(matching: .any)["feed.currentCard"]
     }
 
+    @MainActor
     private func topCard(_ app: XCUIApplication) -> String {
         let marker = cardMarker(app)
         XCTAssertTrue(marker.waitForExistence(timeout: 5), "The feed shows")
@@ -107,40 +111,48 @@ final class PreviewZoomUITests: XCTestCase {
         return marker.label
     }
 
+    @MainActor
     private func waitForTopCard(_ app: XCUIApplication, is id: String, timeout: TimeInterval = 3) -> Bool {
         let expectation = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", id), object: cardMarker(app))
         return XCTWaiter().wait(for: [expectation], timeout: timeout) == .completed
     }
 
     /// The cover leaves the feed's buttons in the tree underneath; prefer the one on top.
+    @MainActor
     private func onScreen(_ app: XCUIApplication, _ label: String) -> XCUIElement {
         let matches = app.buttons.matching(NSPredicate(format: "label == %@", label)).allElementsBoundByIndex
         return matches.last { $0.isEnabled && $0.isHittable } ?? matches.last { $0.isEnabled } ?? matches.last ?? app.buttons[label]
     }
 
+    @MainActor
     private func element(_ app: XCUIApplication, containing text: String) -> XCUIElement {
         app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", text)).firstMatch
     }
 
+    @MainActor
     private func emptyPile(_ app: XCUIApplication) -> XCUIElement {
         app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", "0 MB ")).firstMatch
     }
 
+    @MainActor
     private func drag(_ app: XCUIApplication, to target: CGVector) {
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
             .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: target))
     }
 
     /// Through the upper part of the screen, clear of the video timeline.
+    @MainActor
     private func swipeDown(_ app: XCUIApplication) {
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3))
             .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7)))
     }
 
+    @MainActor
     private func tapCenter(_ element: XCUIElement) {
         element.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
     }
 
+    @MainActor
     private func attachScreenshot(_ app: XCUIApplication, _ name: String) {
         let attachment = XCTAttachment(screenshot: app.screenshot())
         attachment.name = name

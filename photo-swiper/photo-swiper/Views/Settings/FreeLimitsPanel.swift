@@ -57,7 +57,7 @@ private struct TunableRow: View {
     let tunable: FreeTierTunable
     let value: Int
     let defaultValue: Int
-    let onChange: (Int) -> Void
+    let onChange: @MainActor @Sendable (Int) -> Void
 
     @State private var text = ""
     @FocusState private var isEditing: Bool

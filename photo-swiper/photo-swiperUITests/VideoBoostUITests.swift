@@ -6,7 +6,8 @@ final class VideoBoostUITests: XCTestCase {
 
     override func setUpWithError() throws {
         continueAfterFailure = false
-        XCUIDevice.shared.orientation = .portrait
+        // XCTest runs setUp on the main thread.
+        MainActor.assumeIsolated { XCUIDevice.shared.orientation = .portrait }
     }
 
     @MainActor
@@ -61,6 +62,7 @@ final class VideoBoostUITests: XCTestCase {
 
     // MARK: Helpers
 
+    @MainActor
     private func launch() -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = ["-mockLibrary", "YES", "-hasSeenSwipeHint", "YES", "-startAt", "video", "-resetTunables", "YES"]
@@ -69,6 +71,7 @@ final class VideoBoostUITests: XCTestCase {
     }
 
     /// Opens the video card full screen and waits for playback. Returns the timeline.
+    @MainActor
     private func openVideo(_ app: XCUIApplication) -> XCUIElement {
         let card = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "Video, ")).firstMatch
         XCTAssertTrue(card.waitForExistence(timeout: 5))
@@ -85,34 +88,41 @@ final class VideoBoostUITests: XCTestCase {
     }
 
     /// The mock clip is short: back to the start so there's room to play.
+    @MainActor
     private func rewind(_ scrubber: XCUIElement) {
         scrubber.coordinate(withNormalizedOffset: CGVector(dx: 0.1, dy: 0.5))
             .press(forDuration: 0.05, thenDragTo: scrubber.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0.5)))
     }
 
     /// Above the middle, clear of the timeline and buttons.
+    @MainActor
     private func hold(_ app: XCUIApplication, for seconds: TimeInterval) {
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.4)).press(forDuration: seconds)
     }
 
+    @MainActor
     private func speedPill(_ app: XCUIApplication) -> XCUIElement {
         app.descendants(matching: .any)["video.speedPill"]
     }
 
     /// The cover leaves the feed's buttons in the tree underneath; prefer the one on top.
+    @MainActor
     private func onScreen(_ app: XCUIApplication, _ label: String) -> XCUIElement {
         let matches = app.buttons.matching(NSPredicate(format: "label == %@", label)).allElementsBoundByIndex
         return matches.last { $0.isEnabled && $0.isHittable } ?? matches.last { $0.isEnabled } ?? matches.last ?? app.buttons[label]
     }
 
+    @MainActor
     private func emptyPile(_ app: XCUIApplication) -> XCUIElement {
         app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", "0 MB ")).firstMatch
     }
 
+    @MainActor
     private func tapCenter(_ element: XCUIElement) {
         element.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
     }
 
+    @MainActor
     private func attachScreenshot(_ app: XCUIApplication, _ name: String) {
         let attachment = XCTAttachment(screenshot: app.screenshot())
         attachment.name = name

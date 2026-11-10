@@ -1,6 +1,7 @@
 import Foundation
 import OSLog
 import Photos
+import Synchronization
 
 /// How many bytes deleting an asset frees.
 ///
@@ -28,11 +29,10 @@ enum FileSizeReader {
     #if DEBUG
     /// Notes the first time `fileSize` doesn't resolve, so an iOS change that drops it is noticed.
     private enum MissingKeyLog {
-        private static let lock = NSLock()
-        nonisolated(unsafe) private static var logged = false
+        private static let logged = Mutex(false)
 
         static func once() {
-            let first = lock.withLock {
+            let first = logged.withLock { logged in
                 defer { logged = true }
                 return !logged
             }

@@ -2,6 +2,7 @@ import CoreGraphics
 import Foundation
 import ImageIO
 import OSLog
+import Synchronization
 import Vision
 
 /// Sharpness, exposure, and the duplicate hash from one grayscale bitmap, plus Vision's aesthetics score, utility flag, and feature print.
@@ -44,31 +45,34 @@ struct VisionImageAnalyzer: ImageAnalyzing {
 
 /// Running averages of analysis time and stored print size, logged every `logEvery` photos, so the
 /// feature print's cost on a large library can be read from the log.
-private final class AnalysisCost: @unchecked Sendable {
+private final class AnalysisCost: Sendable {
     private static let logEvery = 100
     private static let log = Logger.app(category: "index")
 
-    private let lock = NSLock()
-    private var count = 0
-    private var prints = 0
-    private var totalSeconds = 0.0
-    private var printSeconds = 0.0
-    private var printBytes = 0
+    private struct Totals {
+        var count = 0
+        var prints = 0
+        var totalSeconds = 0.0
+        var printSeconds = 0.0
+        var printBytes = 0
+    }
+
+    private let totals = Mutex(Totals())
 
     func record(total: Duration, print: Duration, printBytes bytes: Int?) {
-        let line: String? = lock.withLock {
-            count += 1
-            totalSeconds += Self.seconds(total)
-            printSeconds += Self.seconds(print)
+        let line: String? = totals.withLock { t in
+            t.count += 1
+            t.totalSeconds += Self.seconds(total)
+            t.printSeconds += Self.seconds(print)
             if let bytes {
-                prints += 1
-                printBytes += bytes
+                t.prints += 1
+                t.printBytes += bytes
             }
-            guard count.isMultiple(of: Self.logEvery) else { return nil }
-            let n = Double(count)
+            guard t.count.isMultiple(of: Self.logEvery) else { return nil }
+            let n = Double(t.count)
             return String(
                 format: "Analysis cost over %d photos: %.1f ms each, %.1f ms of it the feature print; %d prints stored, %d B each",
-                count, totalSeconds / n * 1000, printSeconds / n * 1000, prints, prints == 0 ? 0 : printBytes / prints
+                t.count, t.totalSeconds / n * 1000, t.printSeconds / n * 1000, t.prints, t.prints == 0 ? 0 : t.printBytes / t.prints
             )
         }
         if let line { Self.log.info("\(line, privacy: .public)") }
