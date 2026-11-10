@@ -18,7 +18,7 @@ enum StoreProducts {
 @Observable
 @MainActor
 final class StoreKitEntitlementStore: EntitlementStore {
-    private static let log = Logger(subsystem: "com.israelavendanojr.photo-swiper", category: "entitlement")
+    private static let log = Logger.app(category: "entitlement")
     /// Shown until the product loads.
     static let fallbackPrice = "$9.99"
 

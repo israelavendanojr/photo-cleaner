@@ -95,7 +95,8 @@ struct DuplicateGrouper: Sendable {
         var members: [Int: [Int]] = [:]
         for i in eligible.indices { members[root(i), default: []].append(i) }
         let groups = members.filter { $0.value.count > 1 }.sorted { $0.key < $1.key }.flatMap { root, indices in
-            balancedChunks(indices).map { chunk in
+            // A group over the size limit is cut into runs of near-equal length.
+            GroupingUtil.balancedChunks(indices, max: tunables.maxSize).map { chunk in
                 Group(ids: chunk.map { eligible[$0].id }, maxDistance: widest[root] ?? 0)
             }
         }
@@ -139,24 +140,7 @@ struct DuplicateGrouper: Sendable {
         abs(a - b) / max(a, b) <= tolerance
     }
 
-    /// Oldest first; ties by id so the result doesn't depend on input order.
     private func sorted(_ candidates: [RankCandidate]) -> [RankCandidate] {
-        candidates.sorted { a, b in
-            a.features.createdAt != b.features.createdAt ? a.features.createdAt < b.features.createdAt : a.id < b.id
-        }
-    }
-
-    /// A group over the size limit, cut into consecutive runs of near-equal length.
-    private func balancedChunks(_ indices: [Int]) -> [[Int]] {
-        let max = tunables.maxSize
-        let count = (indices.count + max - 1) / max
-        var chunks: [[Int]] = []
-        var start = 0
-        for k in 0..<count {
-            let size = indices.count / count + (k < indices.count % count ? 1 : 0)
-            chunks.append(Array(indices[start..<start + size]))
-            start += size
-        }
-        return chunks
+        candidates.sorted(by: RankCandidate.oldestFirst)
     }
 }

@@ -79,7 +79,8 @@ struct SimilarGrouper: Sendable {
         // Frames of one burst belong together whatever they look like.
         let bursts = Dictionary(grouping: eligible.filter { $0.features.burstID != nil }, by: { $0.features.burstID })
         for frames in bursts.values where frames.count >= tunables.sizes.lowerBound {
-            for chunk in balancedChunks(sorted(frames)) {
+            // A burst over the size limit is cut into runs of near-equal length.
+            for chunk in GroupingUtil.balancedChunks(sorted(frames), max: tunables.sizes.upperBound) {
                 result.groups.append(makeGroup(chunk, prints: prints, isBurst: true))
                 grouped.formUnion(chunk.map(\.id))
             }
@@ -173,25 +174,8 @@ struct SimilarGrouper: Sendable {
 
     // MARK: Internals
 
-    /// Oldest first; ties by id so the result doesn't depend on input order.
     private func sorted(_ candidates: [RankCandidate]) -> [RankCandidate] {
-        candidates.sorted { a, b in
-            a.features.createdAt != b.features.createdAt ? a.features.createdAt < b.features.createdAt : a.id < b.id
-        }
-    }
-
-    /// A burst over the size limit, cut into consecutive runs of near-equal length.
-    private func balancedChunks(_ frames: [RankCandidate]) -> [[RankCandidate]] {
-        let max = tunables.sizes.upperBound
-        let count = (frames.count + max - 1) / max
-        var chunks: [[RankCandidate]] = []
-        var start = 0
-        for k in 0..<count {
-            let size = frames.count / count + (k < frames.count % count ? 1 : 0)
-            chunks.append(Array(frames[start..<start + size]))
-            start += size
-        }
-        return chunks
+        candidates.sorted(by: RankCandidate.oldestFirst)
     }
 
     private func makeGroup(_ members: [RankCandidate], prints: [LibraryItem.ID: FeaturePrint], isBurst: Bool) -> Group {

@@ -296,10 +296,10 @@ struct DuplicateExclusivityTests {
     }
 
     @Test func duplicateCardIDsDependOnlyOnTheMembers() {
-        let id = PhotoKitFeedBuilder.duplicateID(["B/L0/001", "A/L0/001"])
-        #expect(id == PhotoKitFeedBuilder.duplicateID(["A/L0/001", "B/L0/001"]))
+        let id = DuplicateGroup.stableID(for: ["B/L0/001", "A/L0/001"])
+        #expect(id == DuplicateGroup.stableID(for: ["A/L0/001", "B/L0/001"]))
         #expect(id.hasPrefix("dup-") && id.count == "dup-".count + 16)
-        #expect(id != PhotoKitFeedBuilder.similarID(["A/L0/001", "B/L0/001"]))
+        #expect(id != SimilarGroup.stableID(for: ["A/L0/001", "B/L0/001"]))
     }
 }
 

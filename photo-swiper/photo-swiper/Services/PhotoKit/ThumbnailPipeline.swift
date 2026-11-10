@@ -74,11 +74,14 @@ final class ThumbnailPipeline {
     func preheat(_ wanted: [String: CGSize]) {
         let stale = preheated.filter { wanted[$0.key] != $0.value }
         let fresh = wanted.filter { preheated[$0.key] != $0.value }
+        // Every asset not looked up yet, in one fetch rather than one per card.
+        let unknown = Set(stale.keys).union(fresh.keys).filter { assets[$0] == nil }
+        if !unknown.isEmpty { assets.merge(PHAsset.byID(Array(unknown))) { known, _ in known } }
         for (size, ids) in Self.group(stale) {
-            manager.stopCachingImages(for: ids.compactMap(asset(for:)), targetSize: size.cgSize, contentMode: .aspectFill, options: Self.options)
+            manager.stopCachingImages(for: ids.compactMap { assets[$0] }, targetSize: size.cgSize, contentMode: .aspectFill, options: Self.options)
         }
         for (size, ids) in Self.group(fresh) {
-            manager.startCachingImages(for: ids.compactMap(asset(for:)), targetSize: size.cgSize, contentMode: .aspectFill, options: Self.options)
+            manager.startCachingImages(for: ids.compactMap { assets[$0] }, targetSize: size.cgSize, contentMode: .aspectFill, options: Self.options)
         }
         preheated = wanted
         // Keep the asset lookup cache to what's in use.
@@ -87,7 +90,7 @@ final class ThumbnailPipeline {
 
     private func asset(for id: String) -> PHAsset? {
         if let asset = assets[id] { return asset }
-        let asset = PHAsset.fetchAssets(withLocalIdentifiers: [id], options: nil).firstObject
+        let asset = PHAsset.byID([id])[id]
         assets[id] = asset
         return asset
     }

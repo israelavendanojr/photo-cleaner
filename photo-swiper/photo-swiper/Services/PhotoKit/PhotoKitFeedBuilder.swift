@@ -1,5 +1,4 @@
 import CoreLocation
-import CryptoKit
 import Foundation
 import OSLog
 
@@ -26,7 +25,7 @@ actor PhotoKitFeedBuilder: FeedBuilding {
     /// Fewer screenshots than this in a week show up as ordinary photo cards.
     static let minBatch = 3
     static let maxBatch = 40
-    private static let log = Logger(subsystem: "com.israelavendanojr.photo-swiper", category: "feed")
+    private static let log = Logger.app(category: "feed")
     /// Intervals for each stage of a page build, for Instruments' os_signpost track.
     private static let signposter = OSSignposter(logger: log)
 
@@ -100,14 +99,14 @@ actor PhotoKitFeedBuilder: FeedBuilding {
                 let shots = ids.compactMap(item)
                 guard shots.count > 1, shots.contains(where: { $0.id == bestID }) else { return nil }
                 return FeedCard.similar(SimilarGroup(
-                    id: Self.similarID(shots.map(\.id)), items: shots, bestID: bestID, reason: reason,
-                    maxDistance: groups.maxDistance[Self.similarID(ids)]
+                    id: SimilarGroup.stableID(for: shots.map(\.id)), items: shots, bestID: bestID, reason: reason,
+                    maxDistance: groups.maxDistance[SimilarGroup.stableID(for: ids)]
                 ))
             case .duplicates(let ids, let keepID, let reason):
                 let copies = ids.compactMap(item)
                 guard copies.count > 1, copies.contains(where: { $0.id == keepID }) else { return nil }
                 return FeedCard.duplicates(DuplicateGroup(
-                    id: Self.duplicateID(copies.map(\.id)), items: copies, keepID: keepID, reason: reason
+                    id: DuplicateGroup.stableID(for: copies.map(\.id)), items: copies, keepID: keepID, reason: reason
                 ))
             case .screenshots(let week, let ids):
                 let shots = ids.compactMap(item)
@@ -190,7 +189,7 @@ actor PhotoKitFeedBuilder: FeedBuilding {
     }
 
     #if DEBUG
-    private static let similarityLog = Logger(subsystem: "com.israelavendanojr.photo-swiper", category: "similar")
+    private static let similarityLog = Logger.app(category: "similar")
 
     /// `-logSimilarity YES`: every group found and the near misses just past the threshold, for
     /// tuning `SimilarGrouper.Tunables` on a real library.
@@ -198,10 +197,10 @@ actor PhotoKitFeedBuilder: FeedBuilding {
         let log = Self.similarityLog
         let t = grouper.tunables
         let groups = page.similarResult.groups
-        let picks = Dictionary(page.similar.map { (Self.similarID($0.ids), $0) }, uniquingKeysWith: { first, _ in first })
+        let picks = Dictionary(page.similar.map { (SimilarGroup.stableID(for: $0.ids), $0) }, uniquingKeysWith: { first, _ in first })
         log.info("Session \(session): threshold \(t.maxDistance, format: .fixed(precision: 2)), gap \(Int(t.maxGap))s, span \(Int(t.maxSpan))s; \(page.similarPrintCount) prints, \(groups.count) groups (\(groups.filter(\.isBurst).count) burst), \(groups.count - page.similar.count) dropped for 2+ favorites")
         for (n, group) in groups.enumerated() {
-            let pick = picks[Self.similarID(group.ids)]
+            let pick = picks[SimilarGroup.stableID(for: group.ids)]
             log.info("  group \(n + 1): \(group.ids.count) shots, \(group.isBurst ? "burst" : "time", privacy: .public), span \(group.span, format: .fixed(precision: 1))s, max d \(group.maxDistance, format: .fixed(precision: 3)), best \(pick?.bestID ?? "none (favorites)", privacy: .public) (\(pick?.reason ?? "-", privacy: .public)) of \(group.ids.joined(separator: ", "), privacy: .public)")
         }
         let misses = page.similarResult.nearMisses.sorted { $0.distance < $1.distance }
@@ -211,18 +210,6 @@ actor PhotoKitFeedBuilder: FeedBuilding {
         }
     }
     #endif
-
-    /// The same members always get the same id, whatever the session, so saved marks keep matching.
-    static func similarID(_ ids: [LibraryItem.ID]) -> SimilarGroup.ID {
-        let digest = SHA256.hash(data: Data(ids.sorted().joined(separator: "\n").utf8))
-        return "similar-" + digest.prefix(8).map { String(format: "%02x", $0) }.joined()
-    }
-
-    /// Like `similarID`, for a duplicate set.
-    static func duplicateID(_ ids: [LibraryItem.ID]) -> DuplicateGroup.ID {
-        let digest = SHA256.hash(data: Data(ids.sorted().joined(separator: "\n").utf8))
-        return "dup-" + digest.prefix(8).map { String(format: "%02x", $0) }.joined()
-    }
 
     /// "this week", "last week", or "the week of Sep 22".
     private static func phrase(forWeek week: Date) -> String {

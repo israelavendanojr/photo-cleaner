@@ -26,7 +26,7 @@ struct IndexProgress: Hashable, Sendable {
 /// adding the hash didn't need a version bump that would redo the whole library.
 actor LibraryIndexer {
     static let batchSize = 50
-    private static let log = Logger(subsystem: "com.israelavendanojr.photo-swiper", category: "index")
+    private static let log = Logger.app(category: "index")
 
     private let source: any IndexAssetSource
     private let analyzer: any ImageAnalyzing

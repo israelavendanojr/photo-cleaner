@@ -124,9 +124,9 @@ struct FeedBuilderTests {
         for card in groups {
             switch card {
             case .similar(let group):
-                #expect(group.id == PhotoKitFeedBuilder.similarID(group.items.map(\.id)))
+                #expect(group.id == SimilarGroup.stableID(for: group.items.map(\.id)))
             case .duplicates(let group):
-                #expect(group.id == PhotoKitFeedBuilder.duplicateID(group.items.map(\.id)))
+                #expect(group.id == DuplicateGroup.stableID(for: group.items.map(\.id)))
             default:
                 break
             }

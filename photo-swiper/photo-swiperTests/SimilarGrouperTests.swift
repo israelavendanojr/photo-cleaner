@@ -119,9 +119,9 @@ struct SimilarGrouperTests {
 
     /// Saved marks are keyed by group id, so the same members must always get the same id.
     @Test func similarCardIDsDependOnlyOnTheMembers() {
-        let id = PhotoKitFeedBuilder.similarID(["B/L0/001", "A/L0/001", "C/L0/001"])
-        #expect(id == PhotoKitFeedBuilder.similarID(["A/L0/001", "B/L0/001", "C/L0/001"]))
-        #expect(id != PhotoKitFeedBuilder.similarID(["A/L0/001", "B/L0/001"]))
+        let id = SimilarGroup.stableID(for: ["B/L0/001", "A/L0/001", "C/L0/001"])
+        #expect(id == SimilarGroup.stableID(for: ["A/L0/001", "B/L0/001", "C/L0/001"]))
+        #expect(id != SimilarGroup.stableID(for: ["A/L0/001", "B/L0/001"]))
         #expect(id.hasPrefix("similar-") && id.count == "similar-".count + 16)
     }
 }

@@ -9,7 +9,7 @@ import Vision
 /// Everything runs on device with built-in models. If Vision fails (it can on the simulator), the
 /// Vision fields stay nil and the pixel signals are still kept. Each Vision request fails on its own.
 struct VisionImageAnalyzer: ImageAnalyzing {
-    private static let log = Logger(subsystem: "com.israelavendanojr.photo-swiper", category: "index")
+    private static let log = Logger.app(category: "index")
     private static let cost = AnalysisCost()
 
     func analyze(_ image: CGImage, orientation: CGImagePropertyOrientation) async -> ImageSignals {
@@ -46,7 +46,7 @@ struct VisionImageAnalyzer: ImageAnalyzing {
 /// feature print's cost on a large library can be read from the log.
 private final class AnalysisCost: @unchecked Sendable {
     private static let logEvery = 100
-    private static let log = Logger(subsystem: "com.israelavendanojr.photo-swiper", category: "index")
+    private static let log = Logger.app(category: "index")
 
     private let lock = NSLock()
     private var count = 0

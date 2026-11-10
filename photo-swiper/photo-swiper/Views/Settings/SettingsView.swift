@@ -43,9 +43,7 @@ struct SettingsView: View {
                         if vm.canRemind {
                             reminders
                             if vm.areRemindersDenied {
-                                Button {
-                                    if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
-                                } label: {
+                                OpenSettingsButton {
                                     SettingsLabel(icon: "gear", title: "Open Settings", showsChevron: true)
                                         .settingsRowPadding()
                                 }

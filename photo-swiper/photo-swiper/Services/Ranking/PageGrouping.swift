@@ -86,7 +86,7 @@ extension PageGroups {
             let members = group.ids.compactMap { id in features[id].map { RankCandidate(id: id, features: $0) } }
             guard let choice = BestPick.choose(members) else { continue }
             similar.append(PlannedGroup(ids: group.ids, bestID: choice.bestID, reason: choice.reason.rawValue))
-            maxDistance[PhotoKitFeedBuilder.similarID(group.ids)] = Double(group.maxDistance)
+            maxDistance[SimilarGroup.stableID(for: group.ids)] = Double(group.maxDistance)
         }
     }
 }

@@ -13,7 +13,7 @@ import SwiftData
 @MainActor
 final class SwiftDataProgressStore: ProgressStoring {
     private static let skipFavoritesKey = "skipFavorites"
-    private static let log = Logger(subsystem: "com.israelavendanojr.photo-swiper", category: "progress")
+    private static let log = Logger.app(category: "progress")
 
     private let container: ModelContainer
     private var context: ModelContext { container.mainContext }

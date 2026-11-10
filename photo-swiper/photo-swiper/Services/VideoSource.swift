@@ -12,7 +12,7 @@ enum VideoSource {
             // Mock videos are stills in the asset catalog; they all play the same sample clip.
             return Bundle.main.url(forResource: "mock-video", withExtension: "mp4").map(AVPlayerItem.init(url:))
         case .photoKit(let id):
-            guard let asset = PHAsset.fetchAssets(withLocalIdentifiers: [id], options: nil).firstObject else { return nil }
+            guard let asset = PHAsset.byID([id])[id] else { return nil }
             return await photoKitItem(for: asset)
         }
     }

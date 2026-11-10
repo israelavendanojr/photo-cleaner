@@ -77,11 +77,7 @@ final class PhotoKitLibrary: NSObject, PhotoLibraryProviding, @unchecked Sendabl
 
     func missing(from ids: Set<LibraryItem.ID>) async -> Set<LibraryItem.ID> {
         guard !ids.isEmpty else { return [] }
-        var found = Set<LibraryItem.ID>()
-        PHAsset.fetchAssets(withLocalIdentifiers: Array(ids), options: nil).enumerateObjects { asset, _, _ in
-            found.insert(asset.localIdentifier)
-        }
-        return ids.subtracting(found)
+        return ids.subtracting(PHAsset.byID(Array(ids)).keys)
     }
 
     @MainActor
