@@ -1,3 +1,9 @@
+---
+paths:
+  - "photo-swiper/photo-swiper/Services/Persistence/**"
+  - "photo-swiper/photo-swiper/Services/Index/AssetFeatureRecord.swift"
+---
+
 # Persistence — local rules
 
 Saved progress lives here. A mistake loses the user's decisions or stops the app from launching. Changes need human review.

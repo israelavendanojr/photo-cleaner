@@ -1,3 +1,8 @@
+---
+paths:
+  - "photo-swiper/photo-swiper/Services/PhotoKit/**"
+---
+
 # PhotoKit — local rules
 
 This is the only code that touches the user's real library, and the only place that deletes. **Every change here needs human review**; say so in the PR.

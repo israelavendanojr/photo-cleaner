@@ -1,3 +1,8 @@
+---
+paths:
+  - "photo-swiper/photo-swiperTests/**"
+---
+
 # Unit tests — local rules
 
 - **Swift Testing** (`import Testing`, `@Test`, `#expect`, `#require`), never XCTest here. `@MainActor struct` suites; parameterize with `@Test(arguments:)`, e.g. `ProgressStoreTests.Kind.allCases` to run against both stores.

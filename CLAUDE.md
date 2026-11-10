@@ -1,6 +1,6 @@
 # CLAUDE.md — Bristle (photo-cleaner)
 
-Bristle is a private, on-device SwiftUI photo-cleaner for iOS 18+ (SwiftData, PhotoKit, no third-party dependencies). You swipe to keep or pile photos, and only the pile screen deletes. **Read `ARCHITECTURE.md` before structural work.** This file holds rules and commands only.
+Bristle is a private, on-device SwiftUI photo-cleaner for iOS 18+ (SwiftData, PhotoKit, no third-party dependencies). You swipe to keep or pile photos, and only the pile screen deletes. **Read `ARCHITECTURE.md` before structural work.** This file holds rules and commands only; `.claude/rules/` adds rules for persistence, PhotoKit and the unit tests, loaded when you touch those files.
 
 ## Commands
 
@@ -37,7 +37,7 @@ Code:
 - **Logging:** `Logger.app(category:)`. Never log identifiers, place names or file names as `.public` outside `#if DEBUG`. No `print`.
 - **Layering:** views → `FeedViewModel` intents → services through protocols. Views don't touch PhotoKit or SwiftData. Collaborators (`SwipeGate`, `OnboardingFlow`, `ReminderController`, `FollowUpCoordinator`, `AdminController`) don't call each other. Don't widen view-model state to settable; add a narrow intent.
 - **Ranking and grouping stay pure** (`Services/Ranking`, `Services/Analysis`): no PhotoKit, ties broken by ID, tested with made-up features.
-- **Tests:** Swift Testing (`@Test`, `#expect`) for unit tests, against mocks and fakes; XCTest only for UI tests. See `photo-swiper/photo-swiperTests/CLAUDE.md`.
+- **Tests:** Swift Testing (`@Test`, `#expect`) for unit tests, against mocks and fakes; XCTest only for UI tests. See `.claude/rules/unit-tests.md`.
 - **Lint and format only the files you touch** (`make lint`, `make format`). Don't reformat files you aren't otherwise changing.
 - Doc comments explain *why*, in plain sentences. Update them when behavior changes.
 
@@ -67,3 +67,4 @@ Say "Needs human review" in the PR, with one sentence of risk, when a change tou
 - Don't change Linear issue statuses, assignees or labels, or create issues, without asking.
 - Don't change `parallelizable = "NO"` on the UI test target in the shared scheme. UI tests must run serially.
 - Don't treat `docs/audit/` as current. It's a dated snapshot.
+- Don't put docs or other non-code files in `photo-swiper/photo-swiper*/`. They're Xcode synchronized folders, so every file there ships in the app or test bundle (two `CLAUDE.md` files there even break the build). Agent rules go in `.claude/rules/`.
