@@ -7,6 +7,8 @@ import UIKit
 ///
 /// Thread-safe: PhotoKit calls the change observer on a background queue, so the mutable
 /// state below is guarded by `lock`.
+///
+/// Unchecked: `lock` guards `allAssets` and `listeners`, the only mutable state.
 final class PhotoKitLibrary: NSObject, PhotoLibraryProviding, @unchecked Sendable {
     private let lock = NSLock()
     /// Every photo and video, kept current so change details can report removals.

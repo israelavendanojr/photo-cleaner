@@ -28,6 +28,8 @@ struct IndexableAsset: Hashable, Sendable {
 }
 
 /// A decoded image plus how to display it upright.
+///
+/// Unchecked: `CGImage` is immutable once made, but isn't annotated Sendable.
 struct AnalysisImage: @unchecked Sendable {
     let cgImage: CGImage
     let orientation: CGImagePropertyOrientation

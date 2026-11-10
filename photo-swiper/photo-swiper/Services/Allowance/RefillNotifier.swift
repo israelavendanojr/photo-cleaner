@@ -172,21 +172,22 @@ final class RefillNotifier {
 /// The real notification center.
 @MainActor
 final class SystemNotificationCenter: NotificationScheduling {
-    private var center: UNUserNotificationCenter { .current() }
+    // The async calls run off the main actor, where the center and its settings stay.
+    private nonisolated var center: UNUserNotificationCenter { .current() }
 
-    func requestAuthorization() async -> Bool {
+    nonisolated func requestAuthorization() async -> Bool {
         (try? await center.requestAuthorization(options: [.alert, .sound])) ?? false
     }
 
-    func isDenied() async -> Bool {
+    nonisolated func isDenied() async -> Bool {
         await center.notificationSettings().authorizationStatus == .denied
     }
 
-    func needsPermissionPrompt() async -> Bool {
+    nonisolated func needsPermissionPrompt() async -> Bool {
         await center.notificationSettings().authorizationStatus == .notDetermined
     }
 
-    func add(_ reminder: RefillReminder) async {
+    nonisolated func add(_ reminder: RefillReminder) async {
         let content = UNMutableNotificationContent()
         content.body = reminder.body
         content.sound = .default

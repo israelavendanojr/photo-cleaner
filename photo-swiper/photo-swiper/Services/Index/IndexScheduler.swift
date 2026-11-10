@@ -71,7 +71,7 @@ final class IndexScheduler {
 
     private func observe() {
         let center = NotificationCenter.default
-        let on = { [weak self] (name: Notification.Name, change: @escaping @MainActor (IndexScheduler) -> Void) in
+        let on = { [weak self] (name: Notification.Name, change: @escaping @Sendable @MainActor (IndexScheduler) -> Void) in
             center.addObserver(forName: name, object: nil, queue: .main) { _ in
                 MainActor.assumeIsolated {
                     guard let self else { return }

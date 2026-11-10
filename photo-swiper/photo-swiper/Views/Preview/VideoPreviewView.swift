@@ -290,6 +290,14 @@ final class VideoPlayback {
     @ObservationIgnored private var isSeeking = false
     @ObservationIgnored private var pendingSeek: TimeInterval?
 
+    /// The video track's size as shown, after rotation. Read off the main actor, where the tracks stay.
+    private nonisolated static func uprightSize(of asset: AVAsset) async -> CGSize? {
+        guard let track = try? await asset.loadTracks(withMediaType: .video).first,
+              let geometry = try? await track.load(.naturalSize, .preferredTransform) else { return nil }
+        let rotated = geometry.0.applying(geometry.1)
+        return CGSize(width: abs(rotated.width), height: abs(rotated.height))
+    }
+
     func load(_ item: LibraryItem) async {
         duration = item.duration ?? 0
         guard let playerItem = await VideoSource.playerItem(for: item), !Task.isCancelled else { return }
@@ -298,10 +306,8 @@ final class VideoPlayback {
         if let loaded = try? await playerItem.asset.load(.duration), loaded.isNumeric, loaded.seconds > 0 {
             duration = loaded.seconds
         }
-        if let track = try? await playerItem.asset.loadTracks(withMediaType: .video).first,
-           let geometry = try? await track.load(.naturalSize, .preferredTransform) {
-            let rotated = geometry.0.applying(geometry.1)
-            videoSize = CGSize(width: abs(rotated.width), height: abs(rotated.height))
+        if let size = await Self.uprightSize(of: playerItem.asset) {
+            videoSize = size
         }
         observe(playerItem)
         isReady = true

@@ -6,7 +6,8 @@ final class SwipeRewindUITests: XCTestCase {
 
     override func setUpWithError() throws {
         continueAfterFailure = false
-        XCUIDevice.shared.orientation = .portrait
+        // XCTest runs setUp on the main thread.
+        MainActor.assumeIsolated { XCUIDevice.shared.orientation = .portrait }
     }
 
     @MainActor
@@ -99,11 +100,13 @@ final class SwipeRewindUITests: XCTestCase {
 
     // MARK: Helpers
 
+    @MainActor
     private func cardMarker(_ app: XCUIApplication) -> XCUIElement {
         app.descendants(matching: .any)["feed.currentCard"]
     }
 
     /// Waits for the feed, then names its top card.
+    @MainActor
     private func topCard(_ app: XCUIApplication) -> String {
         let marker = cardMarker(app)
         XCTAssertTrue(marker.waitForExistence(timeout: 10), "The feed shows")
@@ -113,6 +116,7 @@ final class SwipeRewindUITests: XCTestCase {
         return marker.label
     }
 
+    @MainActor
     private func waitForTopCard(_ app: XCUIApplication, not id: String, timeout: TimeInterval = 3) -> Bool {
         let predicate = NSPredicate(format: "exists == true AND label != %@", id)
         let expectation = XCTNSPredicateExpectation(predicate: predicate, object: cardMarker(app))
@@ -121,6 +125,7 @@ final class SwipeRewindUITests: XCTestCase {
 
     /// The top card's frame, through its "View full screen" button: only the top card's is
     /// hittable. Waits a little, since a busy simulator can be slow to settle.
+    @MainActor
     private func cardFrame(_ app: XCUIApplication, timeout: TimeInterval = 5) -> CGRect {
         let buttons = app.buttons.matching(NSPredicate(format: "label == %@", "View full screen"))
         let deadline = Date.now.addingTimeInterval(timeout)
@@ -133,6 +138,7 @@ final class SwipeRewindUITests: XCTestCase {
     }
 
     /// Waits for the top card to sit where it was at rest, within a couple of points.
+    @MainActor
     private func waitForRest(_ app: XCUIApplication, _ rest: CGRect, timeout: TimeInterval = 5) -> Bool {
         let deadline = Date.now.addingTimeInterval(timeout)
         repeat {
@@ -144,20 +150,24 @@ final class SwipeRewindUITests: XCTestCase {
     }
 
     /// A full-screen cover leaves the feed's buttons in the tree underneath; prefer a hittable one.
+    @MainActor
     private func onScreen(_ app: XCUIApplication, _ label: String) -> XCUIElement {
         let matches = app.buttons.matching(NSPredicate(format: "label == %@", label)).allElementsBoundByIndex
         return matches.last { $0.isEnabled && $0.isHittable } ?? matches.last { $0.isEnabled } ?? matches.last ?? app.buttons[label]
     }
 
+    @MainActor
     private func tapCenter(_ element: XCUIElement) {
         element.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
     }
 
     /// The "to clear" counter at zero. A plain substring match would also hit "7.0 MB to clear".
+    @MainActor
     private func emptyPile(_ app: XCUIApplication) -> XCUIElement {
         app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", "0 MB ")).firstMatch
     }
 
+    @MainActor
     private func drag(
         _ app: XCUIApplication,
         from origin: CGVector = CGVector(dx: 0.5, dy: 0.5),
@@ -168,6 +178,7 @@ final class SwipeRewindUITests: XCTestCase {
         start.press(forDuration: hold, thenDragTo: app.coordinate(withNormalizedOffset: target))
     }
 
+    @MainActor
     private func launch(_ arguments: String...) -> XCUIApplication {
         let app = XCUIApplication()
         // The mock library, and the swipe demo counted as seen so it can't move the card.

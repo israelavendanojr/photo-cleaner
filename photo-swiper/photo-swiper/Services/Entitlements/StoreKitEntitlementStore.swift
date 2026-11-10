@@ -28,6 +28,7 @@ final class StoreKitEntitlementStore: EntitlementStore {
 
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private let sync: () async throws -> Void
+    // Unsafe: written once in init and read only in deinit, which can't be isolated before Swift 6.2.
     @ObservationIgnored nonisolated(unsafe) private var updates: Task<Void, Never>?
     @ObservationIgnored private var launch: Task<Void, Never>?
 

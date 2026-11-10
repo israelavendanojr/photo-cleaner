@@ -26,7 +26,7 @@ struct KeeperGroupTests {
 
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
-        #expect(String(decoding: try encoder.encode(session), as: UTF8.self) == Self.savedDeck)
+        #expect(String(bytes: try encoder.encode(session), encoding: .utf8) == Self.savedDeck)
     }
 
     @Test func bothGroupKindsReadTheSameWay() throws {

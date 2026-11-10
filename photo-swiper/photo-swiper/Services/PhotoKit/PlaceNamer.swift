@@ -57,6 +57,8 @@ actor PlaceNamer {
 
 /// Apple's reverse geocoder, which needs the network. One `CLGeocoder`, used one lookup at a time
 /// by `PlaceNamer`.
+///
+/// Unchecked: `CLGeocoder` isn't Sendable, but `PlaceNamer` (an actor) runs one lookup at a time.
 final class CLGeocoding: Geocoding, @unchecked Sendable {
     private let geocoder = CLGeocoder()
 

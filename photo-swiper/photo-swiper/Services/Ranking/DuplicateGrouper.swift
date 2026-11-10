@@ -36,7 +36,7 @@ struct DuplicateGrouper: Sendable {
     }
 
     var tunables = Tunables()
-    var distance: @Sendable (FeaturePrint, FeaturePrint) -> Float = FeaturePrint.euclidean
+    var distance: @Sendable (FeaturePrint, FeaturePrint) -> Float = { FeaturePrint.euclidean($0, $1) }
 
     /// Like similar shots, plus a hash and a pixel size to compare.
     static func isEligible(_ features: AssetFeatures) -> Bool {

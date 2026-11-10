@@ -46,6 +46,7 @@ final class DuplicatesUITests: XCTestCase {
 
     // MARK: Helpers
 
+    @MainActor
     private func launch(_ arguments: String...) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = ["-mockLibrary", "YES", "-hasSeenSwipeHint", "YES", "-resetTunables", "YES"] + arguments
@@ -53,28 +54,33 @@ final class DuplicatesUITests: XCTestCase {
         return app
     }
 
+    @MainActor
     private func element(_ app: XCUIApplication, containing text: String) -> XCUIElement {
         app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", text)).firstMatch
     }
 
     /// The "to clear" counter at zero.
+    @MainActor
     private func emptyPile(_ app: XCUIApplication) -> XCUIElement {
         app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", "0 MB ")).firstMatch
     }
 
     /// The debug marker naming the top card by id.
+    @MainActor
     private func topCard(_ app: XCUIApplication) -> String {
         let marker = app.descendants(matching: .any)["feed.currentCard"]
         XCTAssertTrue(marker.waitForExistence(timeout: 5), "The feed shows")
         return marker.label
     }
 
+    @MainActor
     private func waitForTopCard(_ app: XCUIApplication, not id: String, timeout: TimeInterval = 3) -> Bool {
         let marker = app.descendants(matching: .any)["feed.currentCard"]
         let predicate = NSPredicate(format: "exists == true AND label != %@", id)
         return XCTWaiter().wait(for: [XCTNSPredicateExpectation(predicate: predicate, object: marker)], timeout: timeout) == .completed
     }
 
+    @MainActor
     private func attachScreenshot(_ app: XCUIApplication, _ name: String) {
         let attachment = XCTAttachment(screenshot: app.screenshot())
         attachment.name = name

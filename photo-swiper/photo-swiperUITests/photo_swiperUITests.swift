@@ -14,7 +14,8 @@ final class photo_swiperUITests: XCTestCase {
     override func setUpWithError() throws {
         continueAfterFailure = false
         // Drags and taps use portrait coordinates; a simulator left rotated breaks them.
-        XCUIDevice.shared.orientation = .portrait
+        // XCTest runs setUp on the main thread.
+        MainActor.assumeIsolated { XCUIDevice.shared.orientation = .portrait }
     }
 
     @MainActor
@@ -119,6 +120,7 @@ final class photo_swiperUITests: XCTestCase {
     }
 
     /// A sideways swipe across the middle of the screen: forward is right to left.
+    @MainActor
     private func swipe(_ app: XCUIApplication, forward: Bool) {
         let from = app.coordinate(withNormalizedOffset: CGVector(dx: forward ? 0.8 : 0.2, dy: 0.45))
         let to = app.coordinate(withNormalizedOffset: CGVector(dx: forward ? 0.2 : 0.8, dy: 0.45))
@@ -905,6 +907,7 @@ final class photo_swiperUITests: XCTestCase {
     // MARK: Helpers
 
     /// Library tab, then the gear.
+    @MainActor
     private func openSettings(_ app: XCUIApplication) {
         let library = app.buttons["Library"]
         if library.waitForExistence(timeout: 5), library.isHittable { library.tap() }
@@ -915,10 +918,12 @@ final class photo_swiperUITests: XCTestCase {
     }
 
     /// Taps a SwiftUI switch on its knob; a tap on the label doesn't always flip it.
+    @MainActor
     private func flip(_ toggle: XCUIElement) {
         toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.93, dy: 0.5)).tap()
     }
 
+    @MainActor
     private func waitForValue(_ element: XCUIElement, _ value: String, timeout: TimeInterval = 3) -> Bool {
         let predicate = NSPredicate(format: "value == %@", value)
         return XCTWaiter().wait(for: [XCTNSPredicateExpectation(predicate: predicate, object: element)], timeout: timeout) == .completed
@@ -926,6 +931,7 @@ final class photo_swiperUITests: XCTestCase {
 
     /// Polls every 0.1s; `XCTNSPredicateExpectation` checks about once a second, which can miss
     /// a short-lived label like "Restoring…".
+    @MainActor
     private func waitForLabel(_ element: XCUIElement, containing text: String, timeout: TimeInterval) -> Bool {
         let deadline = Date.now.addingTimeInterval(timeout)
         repeat {
@@ -935,6 +941,7 @@ final class photo_swiperUITests: XCTestCase {
         return false
     }
 
+    @MainActor
     private func scrollTo(_ element: XCUIElement, in app: XCUIApplication) {
         for _ in 0..<6 where !(element.exists && element.isHittable) {
             app.swipeUp()
@@ -944,21 +951,25 @@ final class photo_swiperUITests: XCTestCase {
 
     /// The debug marker naming the top card by id, "none" while the deck waits on more.
     /// The debug marker saying whether the one-by-one review is on the best pick.
+    @MainActor
     private func bestPickMarker(_ app: XCUIApplication) -> XCUIElement {
         let marker = app.descendants(matching: .any)["review.bestPick"]
         XCTAssertTrue(marker.waitForExistence(timeout: 3), "The review shows")
         return marker
     }
 
+    @MainActor
     private func similarHero(_ app: XCUIApplication) -> XCUIElement {
         app.descendants(matching: .any)["similar.hero"]
     }
 
+    @MainActor
     private func cardMarker(_ app: XCUIApplication) -> XCUIElement {
         app.descendants(matching: .any)["feed.currentCard"]
     }
 
     /// Waits for the feed, then names its top card.
+    @MainActor
     private func topCard(_ app: XCUIApplication) -> String {
         let marker = cardMarker(app)
         XCTAssertTrue(marker.waitForExistence(timeout: 5), "The feed shows")
@@ -966,18 +977,22 @@ final class photo_swiperUITests: XCTestCase {
         return marker.label
     }
 
+    @MainActor
     private func waitForTopCard(_ app: XCUIApplication, is id: String, timeout: TimeInterval = 3) -> Bool {
         waitForMarker(app, NSPredicate(format: "label == %@", id), timeout: timeout)
     }
 
+    @MainActor
     private func waitForTopCard(_ app: XCUIApplication, not id: String, timeout: TimeInterval = 3) -> Bool {
         waitForMarker(app, NSPredicate(format: "exists == true AND label != %@", id), timeout: timeout)
     }
 
+    @MainActor
     private func waitForTopCard(_ app: XCUIApplication, containing text: String, timeout: TimeInterval = 5) -> Bool {
         waitForMarker(app, NSPredicate(format: "label CONTAINS %@", text), timeout: timeout)
     }
 
+    @MainActor
     private func waitForMarker(_ app: XCUIApplication, _ predicate: NSPredicate, timeout: TimeInterval) -> Bool {
         let expectation = XCTNSPredicateExpectation(predicate: predicate, object: cardMarker(app))
         return XCTWaiter().wait(for: [expectation], timeout: timeout) == .completed
@@ -987,6 +1002,7 @@ final class photo_swiperUITests: XCTestCase {
     /// Prefer an enabled match (the feed's Undo is disabled behind the review); tapping its
     /// center skips the scroll-to-visible step that fails on covered elements.
     /// Deletes everything in the open pile and waits for it to close.
+    @MainActor
     private func deleteAllInPile(_ app: XCUIApplication) {
         let bin = app.buttons["binButton"]
         XCTAssertTrue(bin.waitForExistence(timeout: 5))
@@ -999,12 +1015,14 @@ final class photo_swiperUITests: XCTestCase {
         XCTAssertTrue(bin.waitForNonExistence(timeout: 4))
     }
 
+    @MainActor
     private func onScreen(_ app: XCUIApplication, _ label: String) -> XCUIElement {
         let matches = app.buttons.matching(NSPredicate(format: "label == %@", label)).allElementsBoundByIndex
         // A full-screen cover leaves the feed's buttons in the tree underneath, in no fixed order.
         return matches.last { $0.isEnabled && $0.isHittable } ?? matches.last { $0.isEnabled } ?? matches.last ?? app.buttons[label]
     }
 
+    @MainActor
     private func tapAndWait(_ button: XCUIElement) {
         tapCenter(button)
         // Let the fly-out finish before the next card accepts input.
@@ -1012,15 +1030,18 @@ final class photo_swiperUITests: XCTestCase {
     }
 
     /// Through the upper part of the screen, clear of the video timeline.
+    @MainActor
     private func swipeDown(_ app: XCUIApplication) {
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3))
             .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7)))
     }
 
+    @MainActor
     private func tapCenter(_ element: XCUIElement) {
         element.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
     }
 
+    @MainActor
     private func attachScreenshot(_ app: XCUIApplication, _ name: String) {
         let attachment = XCTAttachment(screenshot: app.screenshot())
         attachment.name = name
@@ -1028,6 +1049,7 @@ final class photo_swiperUITests: XCTestCase {
         add(attachment)
     }
 
+    @MainActor
     private func launch(_ arguments: String...) -> XCUIApplication {
         let app = XCUIApplication()
         // Always the mock library, so tests never hit the photo permission prompt. The swipe
@@ -1038,21 +1060,25 @@ final class photo_swiperUITests: XCTestCase {
         return app
     }
 
+    @MainActor
     private func element(_ app: XCUIApplication, containing text: String) -> XCUIElement {
         app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", text)).firstMatch
     }
 
     /// The "to clear" counter at zero. A plain substring match would also hit "7.0 MB to clear".
+    @MainActor
     private func emptyPile(_ app: XCUIApplication) -> XCUIElement {
         app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", "0 MB ")).firstMatch
     }
 
+    @MainActor
     private func drag(_ app: XCUIApplication, to target: CGVector, hold: TimeInterval = 0.05) {
         let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
         start.press(forDuration: hold, thenDragTo: app.coordinate(withNormalizedOffset: target))
     }
 
     /// Moves slowly and holds at the end before lifting, so every step of the drag registers.
+    @MainActor
     private func slowDrag(_ app: XCUIApplication, to target: CGVector) {
         let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
         start.press(forDuration: 0.1, thenDragTo: app.coordinate(withNormalizedOffset: target), withVelocity: .slow, thenHoldForDuration: 1)

@@ -59,7 +59,7 @@ private struct FeatureRow: View {
     let feature: TierFeature
     let availability: FeatureAvailability
     let defaultAvailability: FeatureAvailability
-    let onChange: (FeatureAvailability) -> Void
+    let onChange: @MainActor @Sendable (FeatureAvailability) -> Void
 
     var body: some View {
         HStack(spacing: DS.Spacing.m) {

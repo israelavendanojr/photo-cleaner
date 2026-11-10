@@ -11,9 +11,9 @@ final class ThumbnailPipeline {
     static let shared = ThumbnailPipeline()
 
     /// Caps decoded card images (~6 MB each) without visible softness on a phone-sized card.
-    private static let maxLongEdge: CGFloat = 1600
+    private nonisolated static let maxLongEdge: CGFloat = 1600
     /// Request sizes are rounded up to this so preheat and display requests hit the same cache entry.
-    private static let bucket: CGFloat = 128
+    private nonisolated static let bucket: CGFloat = 128
 
     private static let options: PHImageRequestOptions = {
         let options = PHImageRequestOptions()
@@ -31,8 +31,9 @@ final class ThumbnailPipeline {
     private init() {
         NotificationCenter.default.addObserver(
             forName: UIApplication.didReceiveMemoryWarningNotification, object: nil, queue: .main
-        ) { [manager] _ in
-            manager.stopCachingImagesForAllAssets()
+        ) { [weak self] _ in
+            // Delivered on the main queue, as registered.
+            MainActor.assumeIsolated { self?.manager.stopCachingImagesForAllAssets() }
         }
     }
 

@@ -47,7 +47,7 @@ struct SimilarGrouper: Sendable {
     }
 
     var tunables = Tunables()
-    var distance: @Sendable (FeaturePrint, FeaturePrint) -> Float = FeaturePrint.euclidean
+    var distance: @Sendable (FeaturePrint, FeaturePrint) -> Float = { FeaturePrint.euclidean($0, $1) }
 
     /// Photos only: no videos, screenshots, or utility shots. Unknown utility (Vision failed) is allowed.
     static func isEligible(_ features: AssetFeatures) -> Bool {
