@@ -50,7 +50,25 @@ struct DuplicateGrouper: Sendable {
     }
 
     func group(_ candidates: [RankCandidate], prints: [LibraryItem.ID: FeaturePrint]) -> [Group] {
-        let eligible = sorted(candidates.filter { Self.isEligible($0.features) && prints[$0.id] != nil })
+        group(candidates, hasPrint: { prints[$0] != nil }) { a, b in
+            guard let pa = prints[a], let pb = prints[b] else { return nil }
+            return distance(pa, pb)
+        }
+    }
+
+    /// The pairs `group` compares, older first in each: eligible candidates with a print whose hashes
+    /// and shapes match. Which pairs those are depends on every candidate passed, since crowded hash
+    /// bands are skipped.
+    func pairIDs(_ candidates: [RankCandidate], hasPrint: (LibraryItem.ID) -> Bool) -> [(LibraryItem.ID, LibraryItem.ID)] {
+        let eligible = sorted(candidates.filter { Self.isEligible($0.features) && hasPrint($0.id) })
+        return pairs(eligible).map { (eligible[$0.0].id, eligible[$0.1].id) }
+    }
+
+    /// `group(_:prints:)` with print distances from elsewhere, e.g. remembered from an earlier page.
+    /// `pairDistance` is asked only for pairs `pairIDs` returns; nil skips the pair.
+    func group(_ candidates: [RankCandidate], hasPrint: (LibraryItem.ID) -> Bool,
+               pairDistance: (LibraryItem.ID, LibraryItem.ID) -> Float?) -> [Group] {
+        let eligible = sorted(candidates.filter { Self.isEligible($0.features) && hasPrint($0.id) })
         var parent = Array(eligible.indices)
         func root(_ i: Int) -> Int {
             var i = i
@@ -63,9 +81,7 @@ struct DuplicateGrouper: Sendable {
         var widest: [Int: Float] = [:]
         var confirmed: [(Int, Int, Float)] = []
         for (a, b) in pairs(eligible) {
-            guard let pa = prints[eligible[a].id], let pb = prints[eligible[b].id] else { continue }
-            let d = distance(pa, pb)
-            guard d <= tunables.maxDistance else { continue }
+            guard let d = pairDistance(eligible[a].id, eligible[b].id), d <= tunables.maxDistance else { continue }
             confirmed.append((a, b, d))
             let ra = root(a), rb = root(b)
             if ra != rb { parent[max(ra, rb)] = min(ra, rb) }
