@@ -110,7 +110,8 @@ private extension FeedViewModel {
         if UserDefaults.standard.bool(forKey: "resetProgress") { store.reset() }
         #endif
         let index = FeatureIndex(container: container)
-        let indexer = LibraryIndexer(source: PhotoKitIndexSource(), analyzer: VisionImageAnalyzer(), index: index)
+        let indexer = LibraryIndexer(source: PhotoKitIndexSource(), analyzer: VisionImageAnalyzer(), index: index,
+                                     canPrune: { library.currentAccess() == .full })
         return FeedViewModel(
             library: library,
             builder: PhotoKitFeedBuilder(index: index),

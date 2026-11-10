@@ -17,7 +17,9 @@ struct IndexProgress: Hashable, Sendable {
 /// record, an outdated `featureVersion`, or a changed modification date, newest first. Rebuilding
 /// the queue from that diff is what makes runs resumable: cancel at any point and the next run picks
 /// up where this one stopped, with no cursor to keep. Records for items that left the library are
-/// removed. Work is saved in batches; photos get image analysis, screenshots and videos metadata only.
+/// removed, but only when `canPrune` says the app sees the whole library: under limited access,
+/// everything outside the selection looks gone. Work is saved in batches; photos get image analysis,
+/// screenshots and videos metadata only.
 ///
 /// After that, photos whose record has never been hashed for exact duplicates (indexed before
 /// `DHash` existed) get a hash-only pass: a small local image and its pixel size, no Vision, so
@@ -32,6 +34,7 @@ actor LibraryIndexer {
     private let version: Int
     private let hashVersion: Int
     private let batchSize: Int
+    private let canPrune: @Sendable () -> Bool
     private let now: @Sendable () -> Date
 
     private(set) var progress = IndexProgress(indexed: 0, total: 0)
@@ -44,6 +47,7 @@ actor LibraryIndexer {
         version: Int = IndexFreshness.currentVersion,
         hashVersion: Int = DHash.version,
         batchSize: Int = LibraryIndexer.batchSize,
+        canPrune: @escaping @Sendable () -> Bool = { true },
         now: @escaping @Sendable () -> Date = { Date() }
     ) {
         self.source = source
@@ -52,6 +56,7 @@ actor LibraryIndexer {
         self.version = version
         self.hashVersion = hashVersion
         self.batchSize = batchSize
+        self.canPrune = canPrune
         self.now = now
     }
 
@@ -65,7 +70,7 @@ actor LibraryIndexer {
             a.createdAt != b.createdAt ? a.createdAt > b.createdAt : a.id < b.id
         }
         let stamps = await index.stamps()
-        let gone = Set(stamps.keys).subtracting(assets.map(\.id))
+        let gone = canPrune() ? Set(stamps.keys).subtracting(assets.map(\.id)) : []
         await index.remove(gone)
 
         var edited = 0, outdated = 0

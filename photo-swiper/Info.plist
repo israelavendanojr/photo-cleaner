@@ -5,6 +5,9 @@
 	<!-- No encryption beyond what iOS provides (HTTPS), so no export compliance questions per build. -->
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
+	<!-- Limited access: the app offers "Add more photos" itself, so iOS doesn't re-ask at each launch. -->
+	<key>PHPhotoLibraryPreventAutomaticLimitedAccessAlert</key>
+	<true/>
 	<!-- Merged with the generated Info.plist. Build settings can't express this nested key. -->
 	<key>UILaunchScreen</key>
 	<dict>

@@ -16,9 +16,15 @@ struct MockPhotoLibrary: PhotoLibraryProviding {
         needsPrompt
     }
 
+    func currentAccess() -> LibraryAccess {
+        grantedAccess
+    }
+
     func requestAccess() async -> LibraryAccess {
         grantedAccess
     }
+
+    func presentLimitedPicker() async {}
 
     func stats() async -> LibraryStats {
         LibraryStats(totalItems: totalItems, reviewedItems: reviewedItems, freedBytes: 0)

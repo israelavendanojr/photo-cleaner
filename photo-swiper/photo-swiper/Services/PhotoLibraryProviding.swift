@@ -5,6 +5,10 @@ protocol PhotoLibraryProviding: Sendable {
     /// True until the user has answered the system access prompt. Never prompts.
     func needsAccessPrompt() -> Bool
 
+    /// What the user has granted right now. Never prompts. Only `.full` lets "not found" mean "gone":
+    /// under `.limited`, anything outside the selection is invisible but may still be in the library.
+    func currentAccess() -> LibraryAccess
+
     /// Asks for read/write access if needed and reports what was granted.
     func requestAccess() async -> LibraryAccess
 
@@ -18,8 +22,12 @@ protocol PhotoLibraryProviding: Sendable {
     /// IDs of items removed from the library outside the app, as they happen.
     func vanishedItems() -> AsyncStream<Set<LibraryItem.ID>>
 
-    /// Which of `ids` are no longer in the library. Catches deletes made while the app was closed.
+    /// Which of `ids` the app can't find. Catches deletes made while the app was closed, but under
+    /// limited access it also reports everything outside the selection; see `currentAccess()`.
     func missing(from ids: Set<LibraryItem.ID>) async -> Set<LibraryItem.ID>
+
+    /// Under limited access, lets the user add photos to what the app can see.
+    @MainActor func presentLimitedPicker() async
 }
 
 enum LibraryAccess: Sendable {

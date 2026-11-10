@@ -24,6 +24,14 @@ final class InMemoryProgressStore: ProgressStoring {
         }
     }
 
+    func goneIDs() -> Set<LibraryItem.ID> {
+        Set(records.filter { $0.value.settlement == .gone }.keys)
+    }
+
+    func reopen(_ ids: Set<LibraryItem.ID>) {
+        for id in ids { records[id]?.settlement = nil }
+    }
+
     func pile() -> [LibraryItem] {
         records.values.filter(\.isPending).sorted { $0.decidedAt < $1.decidedAt }.map(\.item)
     }
