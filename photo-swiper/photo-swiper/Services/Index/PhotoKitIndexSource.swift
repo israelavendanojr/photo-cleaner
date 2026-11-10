@@ -9,7 +9,8 @@ import UIKit
 /// Uses its own `PHImageManager`, separate from `ThumbnailPipeline`: high-quality delivery only (no
 /// degraded frames), about 512 px, and network access off, so iCloud-only originals are skipped
 /// rather than downloaded. `PHImageManager` is thread-safe, so this needs no isolation.
-// Unchecked: its only state is an immutable `PHImageManager`, which Apple documents as thread-safe.
+///
+/// Unchecked: its only state is an immutable `PHImageManager`, which Apple documents as thread-safe.
 final class PhotoKitIndexSource: IndexAssetSource, @unchecked Sendable {
     private static let targetSize = CGSize(width: 512, height: 512)
 
