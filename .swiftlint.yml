@@ -1,0 +1,40 @@
+# SwiftLint config: a minimal rule set. Lint only, no autocorrect. CI runs it on changed
+# files and only warns. See docs/ci.md.
+
+included:
+  - photo-swiper/photo-swiper
+  - photo-swiper/photo-swiperTests
+  - photo-swiper/photo-swiperUITests
+excluded:
+  - photo-swiper-context
+  - photo-swiper/Tools
+
+# Noisy on this codebase: long descriptive lines and types, short loop and geometry names.
+disabled_rules:
+  - line_length
+  - type_body_length
+  - file_length
+  - identifier_name
+  - function_body_length
+  - cyclomatic_complexity
+  - nesting
+  - large_tuple
+  - type_name
+  - function_parameter_count
+  - todo
+  - multiple_closures_with_trailing_closure
+  # `var x: T? = nil` is written on purpose where it documents a memberwise default.
+  - implicit_optional_initialization
+  # Fires on `override class var layerClass`, which must stay `class`.
+  - static_over_final_class
+
+# Kept on purpose (they're defaults, listed so they're not disabled by accident):
+# force_try, force_cast. The one sanctioned force_cast, VideoPreviewView.layerClass, has an inline exception.
+
+# The code base writes trailing commas in multi-line literals.
+trailing_comma:
+  mandatory_comma: true
+
+# Needs a compile log: `swiftlint analyze --compiler-log-path <xcodebuild.log>`. See docs/ci.md.
+analyzer_rules:
+  - unused_import
