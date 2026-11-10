@@ -32,6 +32,15 @@ enum FeedCard: Identifiable, Hashable, Sendable, Codable {
         }
     }
 
+    /// The similar or duplicate group on this card, if it is one.
+    var keeperGroup: (any KeeperGroup)? {
+        switch self {
+        case .similar(let group): group
+        case .duplicates(let group): group
+        case .photo, .video, .batch: nil
+        }
+    }
+
     /// The tier feature this card needs. Nil for single cards, which everyone gets.
     var feature: TierFeature? {
         switch self {
@@ -52,6 +61,28 @@ enum FeedCard: Identifiable, Hashable, Sendable, Codable {
     }
 }
 
+/// Near-identical photos with one to keep: similar shots, or copies of one photo. The rest can go.
+protocol KeeperGroup: Identifiable, Hashable, Sendable where ID == String {
+    var items: [LibraryItem] { get }
+    /// The one to keep.
+    var keeperID: LibraryItem.ID { get }
+    /// Why that one, e.g. "Sharpest of the set".
+    var reason: String { get }
+    /// This group with only `items`, keeping its id, keeper, and reason.
+    func with(items: [LibraryItem]) -> Self
+}
+
+extension KeeperGroup {
+    var others: [LibraryItem] { items.filter { $0.id != keeperID } }
+
+    /// This group without `ids`, or nil once fewer than two are left or the keeper is gone.
+    func removing(_ ids: Set<LibraryItem.ID>) -> Self? {
+        let rest = items.filter { !ids.contains($0.id) }
+        guard rest.count > 1, !ids.contains(keeperID) else { return nil }
+        return with(items: rest)
+    }
+}
+
 /// A burst of near-identical shots with one suggested keeper.
 struct SimilarGroup: Identifiable, Hashable, Sendable, Codable {
     let id: String
@@ -63,7 +94,14 @@ struct SimilarGroup: Identifiable, Hashable, Sendable, Codable {
     var maxDistance: Double? = nil
 
     var best: LibraryItem { items.first { $0.id == bestID } ?? items[0] }
-    var others: [LibraryItem] { items.filter { $0.id != bestID } }
+}
+
+extension SimilarGroup: KeeperGroup {
+    var keeperID: LibraryItem.ID { bestID }
+
+    func with(items: [LibraryItem]) -> SimilarGroup {
+        SimilarGroup(id: id, items: items, bestID: bestID, reason: reason, maxDistance: maxDistance)
+    }
 }
 
 /// The same photo saved more than once, with the copy to keep.
@@ -76,7 +114,14 @@ struct DuplicateGroup: Identifiable, Hashable, Sendable, Codable {
     let reason: String
 
     var keep: LibraryItem { items.first { $0.id == keepID } ?? items[0] }
-    var others: [LibraryItem] { items.filter { $0.id != keepID } }
+}
+
+extension DuplicateGroup: KeeperGroup {
+    var keeperID: LibraryItem.ID { keepID }
+
+    func with(items: [LibraryItem]) -> DuplicateGroup {
+        DuplicateGroup(id: id, items: items, keepID: keepID, reason: reason)
+    }
 }
 
 /// A group of low-value items cleared or kept together.

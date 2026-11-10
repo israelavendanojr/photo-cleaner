@@ -304,20 +304,11 @@ final class FeedViewModel {
 
     // MARK: Card helpers
 
-    /// Items in a similar group that a left swipe would clear.
-    /// A partial one-by-one review overrides the marks of the shots it reached.
-    func markedForClearing(in group: SimilarGroup) -> Set<LibraryItem.ID> {
-        var marked = marks[group.id] ?? Set(group.others.map(\.id))
-        for (id, decision) in drafts[group.id] ?? [:] {
-            if decision == .delete { marked.insert(id) } else { marked.remove(id) }
-        }
-        return marked
-    }
-
-    /// Copies in a duplicate set that a left swipe would clear: every one but the keeper, unless a
-    /// partial one-by-one review decided otherwise.
-    func markedForClearing(in group: DuplicateGroup) -> Set<LibraryItem.ID> {
-        var marked = Set(group.others.map(\.id))
+    /// Items in a similar or duplicate group that a left swipe would clear: every one but the keeper,
+    /// or a similar group's marks. A partial one-by-one review overrides the shots it reached.
+    func markedForClearing(in group: some KeeperGroup) -> Set<LibraryItem.ID> {
+        // Only similar groups take marks (`toggleMark`); a duplicate set always clears all but the keeper.
+        var marked = (group is SimilarGroup ? marks[group.id] : nil) ?? Set(group.others.map(\.id))
         for (id, decision) in drafts[group.id] ?? [:] {
             if decision == .delete { marked.insert(id) } else { marked.remove(id) }
         }
@@ -942,11 +933,7 @@ final class FeedViewModel {
     /// Items from a partial one-by-one review keep their decision; the rest follow the swipe.
     private func itemDecisions(for card: FeedCard, direction: SwipeDirection) -> [LibraryItem.ID: Decision] {
         let draft = drafts[card.id] ?? [:]
-        let marked: Set<LibraryItem.ID>? = switch card {
-        case .similar(let group): markedForClearing(in: group)
-        case .duplicates(let group): markedForClearing(in: group)
-        case .photo, .video, .batch: nil
-        }
+        let marked = card.keeperGroup.map { markedForClearing(in: $0) }
         return Dictionary(uniqueKeysWithValues: card.items.map { item in
             if let drafted = draft[item.id] { return (item.id, drafted) }
             let decision: Decision = switch direction {
@@ -962,16 +949,12 @@ final class FeedViewModel {
     /// a batch, and follow their marks in a similar set. Nil for single photos and videos.
     private func completed(_ outcome: [LibraryItem.ID: Decision], for card: FeedCard) -> [LibraryItem.ID: Decision]? {
         let rest: (LibraryItem.ID) -> Decision
-        switch card {
-        case .batch:
+        if case .batch = card {
             rest = { _ in .later }
-        case .similar(let group):
+        } else if let group = card.keeperGroup {
             let marked = markedForClearing(in: group)
             rest = { marked.contains($0) ? .delete : .keep }
-        case .duplicates(let group):
-            let marked = markedForClearing(in: group)
-            rest = { marked.contains($0) ? .delete : .keep }
-        case .photo, .video:
+        } else {
             return nil
         }
         return Dictionary(uniqueKeysWithValues: card.items.map { ($0.id, outcome[$0.id] ?? rest($0.id)) })
@@ -1233,13 +1216,9 @@ private extension FeedCard {
         case .photo(let item), .video(let item):
             return ids.contains(item.id) ? nil : self
         case .similar(let group):
-            let rest = group.items.filter { !ids.contains($0.id) }
-            guard rest.count > 1, !ids.contains(group.bestID) else { return nil }
-            return .similar(SimilarGroup(id: group.id, items: rest, bestID: group.bestID, reason: group.reason, maxDistance: group.maxDistance))
+            return group.removing(ids).map(FeedCard.similar)
         case .duplicates(let group):
-            let rest = group.items.filter { !ids.contains($0.id) }
-            guard rest.count > 1, !ids.contains(group.keepID) else { return nil }
-            return .duplicates(DuplicateGroup(id: group.id, items: rest, keepID: group.keepID, reason: group.reason))
+            return group.removing(ids).map(FeedCard.duplicates)
         case .batch(let batch):
             let rest = batch.items.filter { !ids.contains($0.id) }
             guard !rest.isEmpty else { return nil }
