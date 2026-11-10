@@ -41,16 +41,11 @@ final class PhotoKitIndexSource: IndexAssetSource, @unchecked Sendable {
     }
 
     func metadata(for ids: [LibraryItem.ID]) async -> [LibraryItem.ID: AssetFeatures] {
-        guard !ids.isEmpty else { return [:] }
-        var features: [LibraryItem.ID: AssetFeatures] = [:]
-        PHAsset.fetchAssets(withLocalIdentifiers: ids, options: nil).enumerateObjects { asset, _, _ in
-            features[asset.localIdentifier] = AssetMapper.features(for: asset)
-        }
-        return features
+        PHAsset.byID(ids).mapValues(AssetMapper.features(for:))
     }
 
     func image(for id: LibraryItem.ID) async -> AnalysisImage? {
-        guard let asset = PHAsset.fetchAssets(withLocalIdentifiers: [id], options: nil).firstObject else { return nil }
+        guard let asset = PHAsset.byID([id])[id] else { return nil }
         let once = Once()
         return await withCheckedContinuation { continuation in
             manager.requestImage(for: asset, targetSize: Self.targetSize, contentMode: .aspectFit, options: Self.options) { image, _ in
