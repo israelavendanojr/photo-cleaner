@@ -11,8 +11,6 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  PROJECT: photo-swiper/photo-swiper.xcodeproj
-  SCHEME: photo-swiper
   DERIVED_DATA: ${{ github.workspace }}/DerivedData
 
 jobs:
@@ -29,12 +27,11 @@ jobs:
 
       - name: Pick a simulator
         # The first available iPhone, so a runner image update doesn't break a hard-coded name.
+        # The make targets read DEST from the environment.
         run: |
-          UDID=$(xcrun simctl list -j devices available \
-            | jq -r '[.devices | to_entries[] | select(.key | contains("iOS")) | .value[] | select(.name | startswith("iPhone"))][0].udid')
-          test -n "$UDID" && test "$UDID" != "null"
-          echo "DESTINATION=platform=iOS Simulator,id=$UDID" >> "$GITHUB_ENV"
-          xcrun simctl list devices available | grep "$UDID"
+          DEST=$(scripts/sim-destination.sh)
+          echo "DEST=$DEST" >> "$GITHUB_ENV"
+          echo "$DEST"
 
       - name: Cache DerivedData
         uses: actions/cache@v4
@@ -46,25 +43,12 @@ jobs:
             deriveddata-${{ runner.os }}-xcode16.4-
 
       - name: Build for testing
-        run: |
-          set -o pipefail
-          xcodebuild -project "$PROJECT" -scheme "$SCHEME" -destination "$DESTINATION" \
-            -derivedDataPath "$DERIVED_DATA" build-for-testing | tee build.log | grep -E "warning:|error:|BUILD" || true
-          grep -q "TEST BUILD SUCCEEDED\|BUILD SUCCEEDED" build.log
+        run: make build WARNINGS=1
 
       - name: Unit tests
-        # Skipped here, run locally (docs/ci.md):
-        # - ScalingTests: benchmarks over 50k synthetic items.
-        # - StoreKitEntitlementStoreTests: StoreKitTest sessions hang on hosted runners (every test hits its time limit).
-        # - FeaturePrintTests/distanceMatchesVision: compares with live Vision, whose prints differ on virtualized runners.
-        run: |
-          set -o pipefail
-          xcodebuild -project "$PROJECT" -scheme "$SCHEME" -destination "$DESTINATION" \
-            -derivedDataPath "$DERIVED_DATA" test-without-building \
-            -only-testing:photo-swiperTests -skip-testing:photo-swiperTests/ScalingTests \
-            -skip-testing:photo-swiperTests/StoreKitEntitlementStoreTests \
-            '-skip-testing:photo-swiperTests/FeaturePrintTests/distanceMatchesVision()' \
-            | grep -E "Test (Suite|case).*(passed|failed)|✔|✘|error:|TEST (SUCCEEDED|FAILED)|\*\* TEST"
+        # Skips ScalingTests, StoreKitEntitlementStoreTests and FeaturePrintTests/distanceMatchesVision():
+        # they only work on a real Mac. The list is SKIP_CI in the Makefile; docs/ci.md says why.
+        run: make test-unit
 
   lint:
     # Warnings only for this first pass: the job never fails the PR.
@@ -78,18 +62,7 @@ jobs:
       - name: Install SwiftLint and SwiftFormat
         run: brew install swiftlint swiftformat
 
-      - name: Changed Swift files
+      - name: SwiftFormat and SwiftLint on changed files
         run: |
-          git diff --name-only --diff-filter=ACMR "origin/${{ github.base_ref }}...HEAD" -- '*.swift' \
-            | grep -v '^photo-swiper-context/' > changed.txt || true
-          echo "Changed Swift files:"; cat changed.txt
-
-      - name: SwiftFormat (lint)
-        run: |
-          [ -s changed.txt ] || exit 0
-          xargs swiftformat --lint --reporter github-actions-log < changed.txt || true
-
-      - name: SwiftLint
-        run: |
-          [ -s changed.txt ] || exit 0
-          xargs swiftlint lint --quiet --reporter github-actions-logging < changed.txt || true
+          make lint BASE="origin/${{ github.base_ref }}" \
+            LINT_ARGS_FORMAT="--reporter github-actions-log" LINT_ARGS_LINT="--reporter github-actions-logging"

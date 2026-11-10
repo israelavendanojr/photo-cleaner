@@ -17,50 +17,45 @@ UI tests (`photo-swiperUITests`) don't run in CI. Run them locally before mergin
 
 ## Running the same checks locally
 
-Pick a simulator with `xcrun simctl list devices available`, then:
+CI calls the root `Makefile`, so these are the same checks. Run `make` alone to list the targets.
 
 ```sh
-# Unit tests, as CI runs them
-xcodebuild -project photo-swiper/photo-swiper.xcodeproj -scheme photo-swiper \
-  -destination 'platform=iOS Simulator,name=iPhone 16' \
-  test -only-testing:photo-swiperTests -skip-testing:photo-swiperTests/ScalingTests \
-  -skip-testing:photo-swiperTests/StoreKitEntitlementStoreTests \
-  '-skip-testing:photo-swiperTests/FeaturePrintTests/distanceMatchesVision()'
-
-# Everything, the way to run it on your Mac before merging
-xcodebuild -project photo-swiper/photo-swiper.xcodeproj -scheme photo-swiper \
-  -destination 'platform=iOS Simulator,name=iPhone 16' test -only-testing:photo-swiperTests
-
-# UI tests (slow; run alone, with nothing else building, and with -parallel-testing-enabled NO)
-xcodebuild -project photo-swiper/photo-swiper.xcodeproj -scheme photo-swiper \
-  -destination 'platform=iOS Simulator,name=iPhone 16' -parallel-testing-enabled NO \
-  test -only-testing:photo-swiperUITests
-
-# Scaling benchmarks (50k synthetic items; prints timings to the test log)
-xcodebuild -project photo-swiper/photo-swiper.xcodeproj -scheme photo-swiper \
-  -destination 'platform=iOS Simulator,name=iPhone 16' \
-  test -only-testing:photo-swiperTests/ScalingTests
+make verify         # lint + build + unit tests as CI runs them. Run it before saying a change is done.
+make build          # incremental build of the app and test targets; errors only (full log: build/logs/build.log)
+make test-unit      # unit tests with CI's three skips
+make test-all-unit  # every unit test, nothing skipped (do this on your Mac before merging)
+make test-ui        # UI tests, serially; slow, so run them alone with nothing else building
+make test-scaling   # the 50k-item benchmarks; timings land in build/logs/test-scaling.log
 ```
+
+- The simulator is the first available iPhone (`scripts/sim-destination.sh`, the same pick as CI). Set `DEST='platform=iOS Simulator,name=iPhone 16'` to choose one.
+- Builds go to `build/DerivedData` in the repo, not Xcode's shared folder, so each worktree builds on its own. `make clean` removes it.
+- The skip list lives once, in `SKIP_CI` in the `Makefile`.
 
 ## Lint and format
 
 Both are dev tools only, never linked into the app: `brew install swiftlint swiftformat`.
 
 ```sh
-swiftformat --lint .          # what would change; config in .swiftformat
-swiftlint lint                # config in .swiftlint.yml
-
-# Only the files your branch changed, as CI does
-git diff --name-only --diff-filter=ACMR origin/main...HEAD -- '*.swift' | xargs swiftformat --lint
-git diff --name-only --diff-filter=ACMR origin/main...HEAD -- '*.swift' | xargs swiftlint lint
+make lint       # both linters on the Swift files changed against origin/main (BASE=…); warnings only
+make lint LINT_STRICT=1   # the same, but fail on findings
+make format     # SwiftFormat on the changed files only
+make lint-all   # the whole tree; informational
+make analyze    # swiftlint analyze (unused_import), from a fresh build log
 ```
 
-Nothing is auto-corrected. To format a file you're already changing, run `swiftformat <file>`. Don't reformat files you aren't otherwise touching.
+Configs: `.swiftformat` and `.swiftlint.yml`. `make format` only touches files your branch changed. Don't reformat files you aren't otherwise touching.
 
-`unused_import` is an analyzer rule, so it needs a compile log:
+## The raw commands
+
+What the targets run, for when you need a flag they don't expose:
 
 ```sh
 xcodebuild -project photo-swiper/photo-swiper.xcodeproj -scheme photo-swiper \
-  -destination 'platform=iOS Simulator,name=iPhone 16' clean build > build.log
-swiftlint analyze --compiler-log-path build.log
+  -destination 'platform=iOS Simulator,name=iPhone 16' \
+  test -only-testing:photo-swiperTests -skip-testing:photo-swiperTests/ScalingTests \
+  -skip-testing:photo-swiperTests/StoreKitEntitlementStoreTests \
+  '-skip-testing:photo-swiperTests/FeaturePrintTests/distanceMatchesVision()'
 ```
+
+UI tests need `-parallel-testing-enabled NO`: parallel runs use cloned simulators where the test runner fails to launch.
