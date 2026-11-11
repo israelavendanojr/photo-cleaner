@@ -1,66 +1,50 @@
 import SwiftUI
 
-/// Out of free swipes. A sheet over the deck, opened by a refused swipe: when the next refill
-/// lands, what's left in the user's own numbers, the unlock, and a reminder. Deleting lives in the pile.
+/// Out of free swipes. A sheet over the deck, opened by a refused swipe, in the same layout as the
+/// other unlock screens: when the next refill lands, the pace, a card of what's left in the user's own
+/// numbers with the reminder, then the unlock. Deleting lives in the pile.
 struct SwipeWallView: View {
     @Environment(FeedViewModel.self) private var vm
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-                header
-                if let estimate = vm.clutterEstimate {
-                    whatsLeft(estimate)
-                        .padding(.top, DS.Spacing.l)
-                }
-                if vm.freedBytes > 0 {
-                    Text("Freed so far: \(Format.size(vm.freedBytes))")
-                        .font(.callout)
-                        .foregroundStyle(DS.Palette.secondary)
-                        .padding(.top, DS.Spacing.m)
-                }
-                UnlockOffer { vm.dismissWall() }
-                    .padding(.top, DS.Spacing.l)
-                if vm.canRemind {
-                    reminder
-                        .padding(.top, DS.Spacing.m)
-                }
-            }
-            .padding(.horizontal, DS.Spacing.l)
-            .padding(.top, DS.Spacing.xl)
-            .padding(.bottom, DS.Spacing.l)
-        }
-        .scrollBounceBehavior(.basedOnSize)
-        .background(DS.Palette.paper)
-        .interactiveDismissDisabled(vm.isPurchaseBusy)
-    }
-
-    // MARK: Sections
-
-    private var header: some View {
-        VStack(alignment: .leading, spacing: DS.Spacing.xs) {
-            Text(vm.canSwipe ? "Ready to swipe" : "Out of swipes")
-                .font(.subheadline)
-                .foregroundStyle(DS.Palette.secondary)
-                .accessibilityAddTraits(.isHeader)
+        UpsellLayout(
+            eyebrow: vm.canSwipe ? "Ready to swipe" : "Out of swipes",
+            supporting: UnlockCopy.wallSupporting(daysToFinish: vm.daysToFinish)
+        ) {
             // Always says when swipes come back; the top bar no longer does.
             TimelineView(.periodic(from: .now, by: 1)) { context in
-                Text(refillLine(at: context.date))
-                    .dsSerif(34, relativeTo: .largeTitle, weight: .medium)
-                    .foregroundStyle(DS.Palette.ink)
+                Text(UnlockCopy.refillLine(canSwipe: vm.canSwipe, nextRefillAt: vm.nextRefillAt,
+                                           refillAmount: vm.allowanceTunables.refillAmount, now: context.date))
                     .monospacedDigit()
             }
             .accessibilityIdentifier("wall.countdown")
+        } context: {
+            if hasContext {
+                UpsellCard {
+                    if let estimate = vm.clutterEstimate { whatsLeft(estimate) }
+                    if vm.freedBytes > 0 {
+                        Text("Freed so far: \(Format.size(vm.freedBytes))")
+                            .font(.callout)
+                            .foregroundStyle(DS.Palette.secondary)
+                            .padding(.top, vm.clutterEstimate == nil ? 0 : DS.Spacing.xs)
+                    }
+                    if vm.canRemind {
+                        reminder
+                            .padding(.top, DS.Spacing.xs)
+                    }
+                }
+            }
+        } offer: {
+            UnlockOffer { vm.dismissWall() }
         }
+        .interactiveDismissDisabled(vm.isPurchaseBusy)
     }
 
-    /// "+10 in 2h 14m". Once the refill is due, or has landed while the wall is up, says so plainly.
-    private func refillLine(at date: Date) -> String {
-        let amount = vm.allowanceTunables.refillAmount
-        if vm.canSwipe { return "Swipes are back" }
-        guard let next = vm.nextRefillAt, next.timeIntervalSince(date) > 0 else { return "+\(amount) any moment now" }
-        return "+\(amount) in \(Format.countdown(next.timeIntervalSince(date)))"
+    private var hasContext: Bool {
+        vm.clutterEstimate != nil || vm.freedBytes > 0 || vm.canRemind
     }
+
+    // MARK: Sections
 
     private func whatsLeft(_ estimate: ClutterEstimate) -> some View {
         VStack(alignment: .leading, spacing: DS.Spacing.xs) {
@@ -75,13 +59,6 @@ struct SwipeWallView: View {
             }
             if estimate.screenshotCount > 0 {
                 line("\(Format.count(estimate.screenshotCount)) \(estimate.screenshotCount == 1 ? "screenshot" : "screenshots")")
-            }
-            if let days = vm.daysToFinish, days >= 2 {
-                Text("At this pace, \(Format.roughDays(days)). Unlock to finish today.")
-                    .font(.callout.weight(.medium))
-                    .foregroundStyle(DS.Palette.ink)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.top, DS.Spacing.xs)
             }
         }
         .accessibilityElement(children: .combine)
@@ -99,20 +76,21 @@ struct SwipeWallView: View {
             Label("We'll let you know when swipes are back", systemImage: "bell")
                 .font(.footnote)
                 .foregroundStyle(DS.Palette.secondary)
-                .frame(maxWidth: .infinity, minHeight: 44)
+                .frame(minHeight: 44)
         } else if vm.areRemindersDenied {
             Text("Notifications are off for \(AppInfo.name). You can turn them on in Settings.")
                 .font(.footnote)
                 .foregroundStyle(DS.Palette.secondary)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: .infinity)
+                .fixedSize(horizontal: false, vertical: true)
         } else {
             Button {
                 Task { await vm.remindWhenSwipesAreBack() }
             } label: {
                 Label("Remind me when swipes are back", systemImage: "bell")
+                    .font(.callout.weight(.medium))
+                    .frame(minHeight: 44)
             }
-            .buttonStyle(.pill(.ghost))
+            .foregroundStyle(DS.Palette.ink)
             .accessibilityIdentifier("wall.remind")
         }
     }
