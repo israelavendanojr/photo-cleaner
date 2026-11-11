@@ -1,6 +1,6 @@
 # CLAUDE.md — Bristle (photo-cleaner)
 
-Bristle is a private, on-device SwiftUI photo-cleaner for iOS 18+ (SwiftData, PhotoKit, no third-party dependencies). You swipe to keep or pile photos, and only the pile screen deletes. **Read `ARCHITECTURE.md` before structural work.** This file holds rules and commands only; `.claude/rules/` adds rules for persistence, PhotoKit and the unit tests, loaded when you touch those files.
+Bristle is a private, on-device SwiftUI photo-cleaner for iOS 18+ (SwiftData, PhotoKit, no third-party dependencies). You swipe to keep or pile photos, and only the pile screen deletes. **Read `ARCHITECTURE.md` before structural work, and `DESIGN.md` (the design system) before UI work.** This file holds rules and commands only; `.claude/rules/` adds rules for persistence, PhotoKit and the unit tests, loaded when you touch those files.
 
 ## Commands
 
@@ -36,6 +36,7 @@ Code:
 - **Mocks and debug-only code stay inside `#if DEBUG`.** Release must never read launch arguments or unlock for free.
 - **Logging:** `Logger.app(category:)`. Never log identifiers, place names or file names as `.public` outside `#if DEBUG`. No `print`.
 - **Layering:** views → `FeedViewModel` intents → services through protocols. Views don't touch PhotoKit or SwiftData. Collaborators (`SwipeGate`, `OnboardingFlow`, `ReminderController`, `FollowUpCoordinator`, `AdminController`) don't call each other. Don't widen view-model state to settable; add a narrow intent.
+- **UI:** load the `ios-ui` skill for any view work. Use the `DS` tokens and components in `DESIGN.md`, never literal colors, sizes or animations. The `ui-review` skill checks a diff against it. Update `DESIGN.md` when a token or component changes.
 - **Ranking and grouping stay pure** (`Services/Ranking`, `Services/Analysis`): no PhotoKit, ties broken by ID, tested with made-up features.
 - **Tests:** Swift Testing (`@Test`, `#expect`) for unit tests, against mocks and fakes; XCTest only for UI tests. See `.claude/rules/unit-tests.md`.
 - **Lint and format only the files you touch** (`make lint`, `make format`). Don't reformat files you aren't otherwise changing.

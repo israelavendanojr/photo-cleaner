@@ -11,7 +11,7 @@ How to give an agent (Claude Code, or anything that reads `CLAUDE.md`) work here
 - changes `FeedViewModel`;
 - spans more than about 3 files.
 
-**Direct edits** are fine for copy, styling, the DesignSystem, a single pure function with its tests, and docs.
+**Direct edits** are fine for copy, styling, the DesignSystem (load `ios-ui`, and follow `DESIGN.md`), a single pure function with its tests, and docs.
 
 ## Scoping a task
 
@@ -37,6 +37,8 @@ The list is in `CLAUDE.md` → Needs human review. The PR template has the check
 | `make verify` | Before saying any task is done. CI runs the same targets |
 | `make test-ui` | When views or `FeedViewModel` changed. Run it alone |
 | Skill `new-feature` | Start of a feature or fix |
+| Skill `ios-ui` | Before any SwiftUI view work. Reads `DESIGN.md`, uses its tokens, checks accessibility and device sizes |
+| Skill `ui-review` | Read-only check of a UI diff or screen against `DESIGN.md` and the HIG. `pre-pr` runs it when views change |
 | Skill `pre-pr` | Before opening a PR |
 | Skill `privacy-destructive-guard` | When the guard hook says so, or the change touches a safety property |
 | `/linear-to-pr JUN-NN` | "Take JUN-NN" end to end. Only you can start it; the model won't on its own |
