@@ -270,8 +270,9 @@ final class FeedViewModel {
         return (carriedPending + current).filter { !settledIDs.contains($0.id) && !outOfReachIDs.contains($0.id) }
     }
     var pendingBytes: Int64 { pendingItems.reduce(0) { $0 + $1.bytes } }
-    var keptCount: Int { decisions.values.filter { $0 == .keep }.count }
-    var laterCount: Int { decisions.values.filter { $0 == .later }.count }
+    /// Admin Tools' mock items are left out: they aren't in the library.
+    var keptCount: Int { decisions.filter { $0.value == .keep && !LibraryItem.isAdminMock(id: $0.key) }.count }
+    var laterCount: Int { decisions.filter { $0.value == .later && !LibraryItem.isAdminMock(id: $0.key) }.count }
 
     /// Unique items decided keep or delete that are still in the library, never more than the total.
     /// "Later" doesn't count as reviewed.
@@ -464,31 +465,29 @@ final class FeedViewModel {
 
     /// Whether swiping card `cardID` this way would go through. The deck asks before letting a card fly.
     /// False out of swipes, for a free user when it would take the pile past its limit, or when
-    /// `cardID` is no longer the current card.
+    /// `cardID` is no longer the current card. Admin Tools' mock cards never need a swipe, but their
+    /// deletes count toward the free pile limit like any other.
     func canDecide(_ direction: SwipeDirection, cardID: FeedCard.ID) -> Bool {
         guard let card = currentCard else { return gate.admitsSwipe }
-        guard card.id == cardID else { return false }
-        if card.isAdminMock { return true }
-        guard gate.admitsSwipe else { return false }
+        guard card.id == cardID, card.isAdminMock || gate.admitsSwipe else { return false }
         return fitsInPile(itemDecisions(for: card, direction: direction), card: card)
     }
 
     /// Whether a finished one-by-one review of card `cardID` would go through, like `canDecide`.
     func canDecideIndividually(_ outcome: [LibraryItem.ID: Decision], cardID: FeedCard.ID) -> Bool {
         guard let card = currentCard else { return gate.admitsSwipe }
-        guard card.id == cardID else { return false }
-        if card.isAdminMock { return true }
-        guard gate.admitsSwipe else { return false }
+        guard card.id == cardID, card.isAdminMock || gate.admitsSwipe else { return false }
         guard let complete = completed(outcome, for: card) else { return true }
         return fitsInPile(complete, card: card)
     }
 
     /// The deck refused a swipe on `cardID`: opens the wall when out of swipes, or says the pile is full.
-    /// Nothing happens if that card is no longer the current one.
+    /// Nothing happens if that card is no longer the current one. A mock card never costs a swipe, so it
+    /// can only have been refused for the pile, and never opens the wall.
     func refuse(_ direction: SwipeDirection, cardID: FeedCard.ID) {
-        guard currentCard?.id == cardID else { return }
+        guard let card = currentCard, card.id == cardID else { return }
         refreshAllowance()
-        if !gate.admitsSwipe {
+        if !card.isAdminMock, !gate.admitsSwipe {
             presentWall()
         } else if !isUnlocked {
             isPileFullNoticePresented = true
@@ -569,6 +568,7 @@ final class FeedViewModel {
     }
 
     /// Takes items out of the pile by keeping them instead, here, in the store, and in undo history.
+    /// Admin Tools' mock items are kept here only; `saveProgress` never writes them.
     func keep(_ items: [LibraryItem]) {
         let pending = Set(pendingItems.map(\.id))
         let items = items.filter { pending.contains($0.id) }
@@ -603,18 +603,34 @@ final class FeedViewModel {
     /// Deletes some of the pile, from the pending screen. The deck carries on,
     /// and the rest stays pending. Returns the bytes freed, or nil if nothing was deleted,
     /// including when the user cancels the system prompt.
+    ///
+    /// Admin Tools' mock items never reach the library: they're only dropped from the pile, here and not
+    /// in the store, and their bytes count as freed so the post-delete flow runs. If real items were
+    /// chosen too and the library deletes none of them (cancelled, failed), the mocks stay as well.
     @discardableResult
     func deleteNow(_ items: [LibraryItem]) async -> Int64? {
         let pending = Set(pendingItems.map(\.id))
-        guard let deletedItems = await delete(items.filter { pending.contains($0.id) }) else { return nil }
+        let chosen = items.filter { pending.contains($0.id) }
+        let real = chosen.filter { !$0.isAdminMock }
+        var deletedItems: [LibraryItem] = []
+        if !real.isEmpty {
+            guard let deleted = await delete(real) else { return nil }
+            deletedItems = deleted
+        }
+        // Still pending after the system prompt's await.
+        let stillPending = Set(pendingItems.map(\.id))
+        let mocks = chosen.filter { $0.isAdminMock && stillPending.contains($0.id) }
+        guard !deletedItems.isEmpty || !mocks.isEmpty else { return nil }
         let ids = Set(deletedItems.map(\.id))
+        let mockIDs = Set(mocks.map(\.id))
         settle(ids, as: .deleted)
-        carriedPending.removeAll { ids.contains($0.id) }
+        settledIDs.formUnion(mockIDs)
+        carriedPending.removeAll { ids.contains($0.id) || mockIDs.contains($0.id) }
         // A deleted photo can't be swiped again.
         history.removeAll()
         saveProgress()
-        await refreshLibraryTotal()
-        let freed = deletedItems.reduce(0) { $0 + $1.bytes }
+        if !deletedItems.isEmpty { await refreshLibraryTotal() }
+        let freed = (deletedItems + mocks).reduce(0) { $0 + $1.bytes }
         followUps.queueFollowUp(freed: freed, isUnlocked: isUnlocked, isWallPresented: isWallPresented, purchasedThisLaunch: purchasedThisLaunch)
         return freed
     }
@@ -703,8 +719,16 @@ final class FeedViewModel {
         saveProgress()
     }
 
-    /// Takes the mock cards still ahead out of the deck. Swiped ones stay behind until trimmed.
+    /// Takes the mock cards still ahead out of the deck, and every mock item out of the pile (and out of
+    /// undo, so it can't come back). Swiped mock cards stay behind until trimmed.
     func adminRemoveMockCards() {
+        let isMock: (LibraryItem.ID) -> Bool = { LibraryItem.isAdminMock(id: $0) }
+        decisions = decisions.filter { !isMock($0.key) }
+        carriedPending.removeAll { $0.isAdminMock }
+        for i in history.indices {
+            history[i].decisions = history[i].decisions.filter { !isMock($0.key) }
+        }
+        refreshTotals(includingFreed: false)
         guard var current = session, current.cards[index...].contains(where: \.isAdminMock) else { return }
         current.cards = Array(current.cards[..<index]) + current.cards[index...].filter { !$0.isAdminMock }
         session = current
@@ -817,7 +841,8 @@ final class FeedViewModel {
 
     /// Records per-item decisions for the current card and moves on.
     /// `direction` is the side the card left from, so undo brings it back the same way.
-    /// An Admin Tools mock card only moves on: nothing is saved, charged or added to the pile.
+    /// An Admin Tools mock card is never saved or charged: its decisions live only in memory, where a
+    /// delete puts it in the pile like any other (see `deleteNow` for what deleting it does).
     private func commit(_ outcome: [LibraryItem.ID: Decision], card: FeedCard, direction: SwipeDirection) {
         let isMock = card.isAdminMock
         let ids = card.items.map(\.id)
@@ -825,7 +850,7 @@ final class FeedViewModel {
         let stored = isMock ? [:] : Dictionary(uniqueKeysWithValues: ids.map { ($0, before[$0]) })
         let charged = isMock ? false : spendSwipe()
         history.append(Snapshot(index: index, decisions: decisions, marks: marks, drafts: drafts, cardID: card.id, direction: direction, stored: stored, charged: charged))
-        if !isMock { decisions.merge(outcome) { _, new in new } }
+        decisions.merge(outcome) { _, new in new }
         drafts[card.id] = nil
         returningCard = nil
 
@@ -959,7 +984,7 @@ final class FeedViewModel {
     /// An empty pile takes anything, even one item (or group) bigger than the whole limit.
     /// Groups go in whole or not at all.
     private func fitsInPile(_ outcome: [LibraryItem.ID: Decision], card: FeedCard) -> Bool {
-        guard !card.isAdminMock, gate.isPileLimited else { return true }
+        guard gate.isPileLimited else { return true }
         let pending = pendingItems
         let pendingIDs = Set(pending.map(\.id))
         let added = card.items.filter { outcome[$0.id] == .delete && !pendingIDs.contains($0.id) }
@@ -968,7 +993,9 @@ final class FeedViewModel {
 
     /// Asks the library to delete these and settles the ones that can't be. Returns what was
     /// actually deleted, or nil if nothing was (cancelled, failed, or none deletable).
+    /// Admin Tools' mock items are never passed to the library, whatever the caller sends.
     private func delete(_ items: [LibraryItem]) async -> [LibraryItem]? {
+        let items = items.filter { !$0.isAdminMock }
         guard !items.isEmpty else { return nil }
         let outcome: DeletionOutcome
         do {
@@ -1002,11 +1029,12 @@ final class FeedViewModel {
         return deletedItems.isEmpty ? nil : deletedItems
     }
 
-    /// Takes items out of the pile for good, here and in the store.
+    /// Takes items out of the pile for good, here and in the store. Admin Tools' mock items only here.
     private func settle(_ ids: Set<LibraryItem.ID>, as settlement: Settlement) {
         guard !ids.isEmpty else { return }
         settledIDs.formUnion(ids)
-        store.settle(ids, as: settlement)
+        let real = ids.filter { !LibraryItem.isAdminMock(id: $0) }
+        if !real.isEmpty { store.settle(real, as: settlement) }
     }
 
     private func observeLibraryChanges() {
@@ -1146,7 +1174,9 @@ final class FeedViewModel {
 
     /// Writes `changes` and the deck, durably. The cards are encoded again only when they changed
     /// since they were last written whole; otherwise just the position, marks, and drafts are.
+    /// Decisions about Admin Tools' mock items are dropped here, so none ever reaches the store.
     private func saveProgress(with changes: [LibraryItem.ID: StoredDecision?] = [:]) {
+        let changes = changes.filter { !LibraryItem.isAdminMock(id: $0.key) }
         guard let session else {
             if !changes.isEmpty { store.save(changes) }
             return

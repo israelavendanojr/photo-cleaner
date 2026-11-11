@@ -5,6 +5,8 @@ import SwiftUI
 /// After a delete it says how much was freed, then closes.
 ///
 /// Opens as a sheet from the feed's "to clear" counter, or pushed from the overview's Pending row.
+/// Admin Tools' mock items can be in the pile too; deleting them only drops them, and never reaches the
+/// library (see `FeedViewModel.deleteNow`).
 struct PendingPileView: View {
     @Environment(FeedViewModel.self) private var vm
     @Environment(\.dismiss) private var dismiss
@@ -249,7 +251,6 @@ private struct PileLimit: View {
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(Format.size(bytes)) of \(Format.limit(limit)) in the free pile\(isFull ? ". Full." : "")")
-
         .accessibilityIdentifier("pile.limit")
     }
 }

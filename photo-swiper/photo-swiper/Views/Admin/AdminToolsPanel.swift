@@ -107,7 +107,7 @@ struct AdminMockCardsPanel: View {
                 .accessibilityIdentifier("settings.admin.mock.queued")
             row("Open feed", icon: "square.stack", id: "settings.admin.mock.openFeed", action: onOpenFeed)
             row("Remove mock cards", icon: "xmark.bin", id: "settings.admin.mock.remove",
-                detail: "Mock cards never save a decision, fill the pile or cost a swipe.") {
+                detail: "Also clears them from the pile. Mock cards never save a decision or cost a swipe; deleting them from the pile only drops them.") {
                     vm.admin.adminRemoveMockCards()
                 }
         }
