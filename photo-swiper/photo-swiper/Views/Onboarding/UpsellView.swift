@@ -22,7 +22,7 @@ struct UpsellView: View {
                 freeTier
                     .padding(.top, DS.Spacing.l)
                     .onboardingEntrance(order: 1)
-                UnlockOffer(dismissTitle: Copy.continueFree, onDismiss: continueFree)
+                UnlockOffer(style: .onboarding, dismissTitle: Copy.continueFree, onDismiss: continueFree)
                     .padding(.top, DS.Spacing.xl)
                     .onboardingEntrance(order: 2)
             }
