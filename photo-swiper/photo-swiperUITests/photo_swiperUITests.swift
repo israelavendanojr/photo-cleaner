@@ -830,19 +830,24 @@ final class photo_swiperUITests: XCTestCase {
         scrollTo(devMode, in: app)
         XCTAssertEqual(devMode.value as? String, "1", "Debug builds start in Developer mode")
         XCTAssertFalse(app.buttons["settings.debug.resetSwipes"].exists, "Settings keeps only the switch")
-        let adminTab = app.buttons["Admin"]
-        XCTAssertTrue(adminTab.exists, "The Admin tab shows in Developer mode")
 
         flip(devMode)
-        XCTAssertTrue(waitForValue(devMode, "0"))
-        XCTAssertTrue(adminTab.waitForNonExistence(timeout: 3), "Off hides the Admin tab")
+        XCTAssertTrue(devMode.waitForNonExistence(timeout: 3), "Off leaves only the version taps to turn it back on")
+        // The Settings sheet covers the tab bar, so the tab is checked once it's closed.
+        closeSettings(app)
+        let adminTab = app.buttons["Admin"]
+        XCTAssertTrue(app.buttons["Library"].waitForExistence(timeout: 3))
+        XCTAssertFalse(adminTab.exists, "Off hides the Admin tab")
 
+        openSettings(app)
         let version = app.descendants(matching: .any)["settings.version"]
-        for _ in 0..<6 where !(version.exists && version.isHittable) { app.swipeDown() }
+        for _ in 0..<6 where !(version.exists && version.isHittable) { app.swipeUp() }
         XCTAssertTrue(version.isHittable)
         for _ in 0..<7 { version.tap() }
         XCTAssertTrue(app.descendants(matching: .any)["settings.devModeToast"].waitForExistence(timeout: 2))
-        XCTAssertTrue(waitForValue(devMode, "1"), "Seven taps turn it back on")
+        XCTAssertTrue(devMode.waitForExistence(timeout: 3), "Seven taps turn it back on")
+        XCTAssertEqual(devMode.value as? String, "1")
+        closeSettings(app)
         XCTAssertTrue(adminTab.waitForExistence(timeout: 3), "And the Admin tab is back")
     }
 
@@ -888,7 +893,9 @@ final class photo_swiperUITests: XCTestCase {
         let title = app.descendants(matching: .any)["unlock.title"]
         XCTAssertTrue(title.waitForExistence(timeout: 3), "The offer comes up over the Admin tab")
         XCTAssertTrue(title.label.hasPrefix("Freed "), "Read \(title.label)")
-        title.swipeDown(velocity: .fast)
+        // The offer's own dismiss button; a drag on the sheet can scroll its content instead.
+        let notNow = app.buttons["paywall.notNow"]
+        if notNow.exists { notNow.tap() } else { app.swipeDown(velocity: .fast) }
         XCTAssertTrue(title.waitForNonExistence(timeout: 3))
         XCTAssertTrue(raise.isHittable, "Dismissed, it's back on the Admin tab")
     }
@@ -933,6 +940,14 @@ final class photo_swiperUITests: XCTestCase {
         XCTAssertTrue(gear.waitForExistence(timeout: 5))
         gear.tap()
         XCTAssertTrue(app.descendants(matching: .any)["settings.title"].waitForExistence(timeout: 3), "Settings opens")
+    }
+
+    @MainActor
+    private func closeSettings(_ app: XCUIApplication) {
+        let done = app.buttons["settings.done"]
+        XCTAssertTrue(done.waitForExistence(timeout: 3))
+        done.tap()
+        XCTAssertTrue(done.waitForNonExistence(timeout: 3), "Settings closes")
     }
 
     /// The Admin tab, shown in Developer mode (on by default in debug builds).
@@ -1081,8 +1096,13 @@ final class photo_swiperUITests: XCTestCase {
         let app = XCUIApplication()
         // Always the mock library, so tests never hit the photo permission prompt. The swipe
         // hint's nudge would move the card under a drag, so it counts as already seen. The unlock
-        // offer after a delete shows once a day, so each launch starts with it due.
-        app.launchArguments = ["-mockLibrary", "YES", "-hasSeenSwipeHint", "YES", "-resetUpsell", "YES", "-resetTunables", "YES"] + arguments
+        // offer after a delete shows once a day, so each launch starts with it due. Developer mode is
+        // saved, so it's turned back on in case an earlier test left it off.
+        let defaults = [
+            "-mockLibrary", "YES", "-hasSeenSwipeHint", "YES", "-resetUpsell", "YES", "-resetTunables", "YES",
+            "-resetDevMode", "YES",
+        ]
+        app.launchArguments = defaults + arguments
         app.launch()
         return app
     }
