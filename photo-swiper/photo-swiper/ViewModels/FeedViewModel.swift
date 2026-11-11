@@ -51,8 +51,6 @@ final class FeedViewModel {
     /// Access was just granted from onboarding and the first session is being built.
     /// Onboarding stays up meanwhile instead of a loading screen.
     private(set) var isPreparingFirstSession = false
-    /// Admin Tools asked for an upsell screen. RootView shows it and clears this.
-    private(set) var adminUpsellRequest: AdminUpsell?
     /// Bumped when Admin Tools puts a mock card on the deck, so RootView switches to the feed.
     private(set) var adminShowFeedRequest = 0
     /// A free user's swipe was refused because the pile is full. FeedView shows it.
@@ -689,15 +687,6 @@ final class FeedViewModel {
 
     // Intents `AdminController` changes the deck through, so it never needs settable state.
 
-    /// RootView showed the requested upsell.
-    func finishAdminUpsell() {
-        adminUpsellRequest = nil
-    }
-
-    func adminRequestUpsell(_ screen: AdminUpsell) {
-        adminUpsellRequest = screen
-    }
-
     /// Puts an Admin Tools mock card on top of the deck, even from caught up.
     func adminInsertMockCard(_ card: FeedCard) {
         guard var current = session else { return }
@@ -965,8 +954,7 @@ final class FeedViewModel {
     /// An empty pile takes anything, even one item (or group) bigger than the whole limit.
     /// Groups go in whole or not at all.
     private func fitsInPile(_ outcome: [LibraryItem.ID: Decision], card: FeedCard) -> Bool {
-        guard !card.isAdminMock else { return true }
-        guard gate.isPileLimited else { return true }
+        guard !card.isAdminMock, gate.isPileLimited else { return true }
         let pending = pendingItems
         let pendingIDs = Set(pending.map(\.id))
         let added = card.items.filter { outcome[$0.id] == .delete && !pendingIDs.contains($0.id) }

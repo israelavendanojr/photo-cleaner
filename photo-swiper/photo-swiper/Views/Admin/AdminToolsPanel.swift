@@ -17,13 +17,15 @@ enum AdminUpsell: String, CaseIterable, Identifiable {
 }
 
 /// Admin Tools' upsell controls: let the post-delete offer show again, and show any upsell screen now.
-/// `onClose` closes Settings so the screen can come up over the app.
+/// Each screen comes up over the Admin tab and closes back to it. The sheets and the onboarding pitch
+/// are presented here; the wall is the real one, which RootView presents over any tab.
 struct AdminUpsellPanel: View {
     @Environment(FeedViewModel.self) private var vm
-    let onClose: () -> Void
 
     @AppStorage("admin.upsellScreen") private var screen = AdminUpsell.postDelete
     @State private var didReset = false
+    /// The raised screen this panel presents itself. Never `.wall`.
+    @State private var raised: AdminUpsell?
 
     var body: some View {
         SettingsSection("Upsell") {
@@ -46,16 +48,38 @@ struct AdminUpsellPanel: View {
             .tint(DS.Palette.secondary)
             .settingsRowPadding()
             .accessibilityIdentifier("settings.admin.upsellScreen")
-            Button {
-                vm.admin.adminRaiseUpsell(screen)
-                onClose()
-            } label: {
+            Button(action: raise) {
                 SettingsLabel(icon: "sparkles.rectangle.stack", title: "Raise upsell", detail: screen.title)
                     .settingsRowPadding()
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("settings.admin.raiseUpsell")
         }
+        .sheet(isPresented: isRaised(.postDelete)) {
+            UnlockSheet(title: "Freed \(Format.size(vm.upsellFreedBytes))", subtitle: RootView.deleteUpsellSubtitle)
+                .presentationDragIndicator(.visible)
+                .presentationBackground(DS.Palette.paper)
+                .presentationCornerRadius(DS.Radius.card)
+        }
+        .sheet(isPresented: isRaised(.unlockSheet)) {
+            UnlockSheet()
+                .presentationDragIndicator(.visible)
+                .presentationBackground(DS.Palette.paper)
+                .presentationCornerRadius(DS.Radius.card)
+        }
+        .fullScreenCover(isPresented: isRaised(.onboarding)) {
+            UpsellView { raised = nil }
+                .background(DS.Palette.paper)
+        }
+    }
+
+    private func raise() {
+        vm.admin.adminRaiseUpsell(screen)
+        if screen != .wall { raised = screen }
+    }
+
+    private func isRaised(_ screen: AdminUpsell) -> Binding<Bool> {
+        Binding(get: { raised == screen }, set: { if !$0, raised == screen { raised = nil } })
     }
 }
 
@@ -102,7 +126,7 @@ struct AdminMockCardsPanel: View {
 #Preview {
     ScrollView {
         VStack(spacing: DS.Spacing.l) {
-            AdminUpsellPanel(onClose: {})
+            AdminUpsellPanel()
             AdminMockCardsPanel(onClose: {})
         }
         .padding()

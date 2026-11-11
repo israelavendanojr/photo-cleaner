@@ -80,12 +80,15 @@ final class AdminController {
         vm.followUps.adminResetDeleteUpsell()
     }
 
-    /// Asks RootView to show an upsell screen now, once Settings has closed.
+    /// Readies an upsell screen the Admin tab is about to show over itself: a plausible headline for the
+    /// post-delete offer, or the real wall (RootView presents it over any tab). The sheets and the
+    /// onboarding pitch are presented by the Admin tab, so closing them lands back there.
     func adminRaiseUpsell(_ screen: AdminUpsell) {
-        if screen == .postDelete {
-            vm.followUps.adminPickFreedBytes()
+        switch screen {
+        case .postDelete: vm.followUps.adminPickFreedBytes()
+        case .wall: vm.presentWall()
+        case .onboarding, .unlockSheet: break
         }
-        vm.adminRequestUpsell(screen)
     }
 
     // MARK: Mock cards

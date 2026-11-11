@@ -25,7 +25,7 @@ struct AdminToolsView: View {
                     .accessibilityIdentifier("admin.title")
                     .padding(.top, DS.Spacing.l)
                 debugSection
-                AdminUpsellPanel {}
+                AdminUpsellPanel()
                 #if DEBUG
                 AdminMockCardsPanel(onClose: onOpenFeed)
                 #endif
