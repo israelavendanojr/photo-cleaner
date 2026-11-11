@@ -93,7 +93,7 @@ final class AdminController {
 
     // MARK: Mock cards
 
-    /// Puts an Admin Tools mock card on top of the deck, even from caught up.
+    /// Queues an Admin Tools mock card at the top of the deck, after any already queued. Stays on the Admin tab.
     func adminInsertMockCard(_ card: FeedCard) {
         vm.adminInsertMockCard(card)
     }

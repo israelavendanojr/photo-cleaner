@@ -31,14 +31,50 @@ struct AdminMockFeedTests {
         let vm = await launch()
         vm.decideCurrent(.right)
         let next = try #require(vm.currentCard)
-        let requests = vm.adminShowFeedRequest
 
         let card = mock(.similar)
         vm.admin.adminInsertMockCard(card)
 
         #expect(vm.currentCard == card)
         #expect(vm.nextCard == next, "The card that was on top comes right after")
-        #expect(vm.adminShowFeedRequest == requests + 1, "Asks for the feed tab")
+        #expect(vm.adminQueuedMockCount == 1)
+    }
+
+    @Test func cardsQueueInTheOrderAdded() async throws {
+        let vm = await launch()
+        let real = try #require(vm.currentCard)
+        let added = [mock(.similar), mock(.photo), mock(.screenshots)]
+
+        for card in added { vm.admin.adminInsertMockCard(card) }
+
+        #expect(Array(vm.cards[vm.index..<vm.index + 3]) == added, "First added, first up")
+        #expect(vm.cards[vm.index + 3] == real, "The real card waits behind them")
+        #expect(vm.adminQueuedMockCount == 3)
+    }
+
+    @Test func aMockCardOnTopStaysOnTopWhenAnotherIsQueued() async throws {
+        let vm = await launch()
+        let first = mock(.duplicates)
+        vm.admin.adminInsertMockCard(first)
+        let shown = try #require(vm.currentCard)
+
+        vm.admin.adminInsertMockCard(mock(.video))
+
+        #expect(vm.currentCard == shown, "The card being looked at doesn't change")
+        #expect(shown == first)
+    }
+
+    @Test func theQueuedCountFollowsSwipesAndRemoval() async throws {
+        let vm = await launch()
+        vm.admin.adminInsertMockCard(mock(.photo))
+        vm.admin.adminInsertMockCard(mock(.photo))
+        #expect(vm.adminQueuedMockCount == 2)
+
+        vm.decideCurrent(.right)
+        #expect(vm.adminQueuedMockCount == 1, "A swiped one is no longer queued")
+
+        vm.admin.adminRemoveMockCards()
+        #expect(vm.adminQueuedMockCount == 0)
     }
 
     @Test(arguments: AdminMockKind.allCases)

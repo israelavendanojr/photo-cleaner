@@ -53,10 +53,6 @@ struct RootView: View {
             // A refill reminder was tapped.
             tab = .feed
         }
-        .onChange(of: vm.adminShowFeedRequest) {
-            // Admin Tools put a mock card on the deck.
-            tab = .feed
-        }
         .alert("Couldn't load your saved progress", isPresented: progressLoadNotice) {
             Button("OK", role: .cancel) {}
         } message: {

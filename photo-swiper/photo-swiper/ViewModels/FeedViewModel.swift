@@ -51,8 +51,6 @@ final class FeedViewModel {
     /// Access was just granted from onboarding and the first session is being built.
     /// Onboarding stays up meanwhile instead of a loading screen.
     private(set) var isPreparingFirstSession = false
-    /// Bumped when Admin Tools puts a mock card on the deck, so RootView switches to the feed.
-    private(set) var adminShowFeedRequest = 0
     /// A free user's swipe was refused because the pile is full. FeedView shows it.
     private(set) var isPileFullNoticePresented = false
     /// Something about the last delete the user should know, e.g. items the system refused.
@@ -687,15 +685,22 @@ final class FeedViewModel {
 
     // Intents `AdminController` changes the deck through, so it never needs settable state.
 
-    /// Puts an Admin Tools mock card on top of the deck, even from caught up.
+    /// Mock cards queued from the current card on, in the order Admin Tools added them.
+    var adminQueuedMockCount: Int {
+        cards.dropFirst(index).filter(\.isAdminMock).count
+    }
+
+    /// Queues an Admin Tools mock card at the top of the deck, behind any mock cards already queued
+    /// there, so they come up in the order added and a mock card on top stays on top. Works from caught up.
     func adminInsertMockCard(_ card: FeedCard) {
         guard var current = session else { return }
-        current.cards.insert(card, at: min(index, current.cards.count))
+        let start = min(index, current.cards.count)
+        let queued = current.cards[start...].prefix(while: \.isAdminMock).count
+        current.cards.insert(card, at: start + queued)
         session = current
         returningCard = nil
         if deckPhase == .caughtUp { enterDeckPhase(.feed) }
         saveProgress()
-        adminShowFeedRequest += 1
     }
 
     /// Takes the mock cards still ahead out of the deck. Swiped ones stay behind until trimmed.

@@ -27,7 +27,7 @@ struct AdminToolsView: View {
                 debugSection
                 AdminUpsellPanel()
                 #if DEBUG
-                AdminMockCardsPanel(onClose: onOpenFeed)
+                AdminMockCardsPanel(onOpenFeed: onOpenFeed)
                 #endif
                 FreeLimitsPanel()
                 FeatureAvailabilityPanel()

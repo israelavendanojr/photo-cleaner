@@ -84,11 +84,13 @@ struct AdminUpsellPanel: View {
 }
 
 #if DEBUG
-/// Admin Tools' mock cards: one freshly randomized card of a kind on top of the deck, then the feed.
+/// Admin Tools' mock cards: freshly randomized cards queued at the top of the deck in the order added,
+/// without leaving the Admin tab. "Open feed" goes to them.
 /// Debug builds only, since release builds leave out the mock images.
 struct AdminMockCardsPanel: View {
     @Environment(FeedViewModel.self) private var vm
-    let onClose: () -> Void
+    /// Switches to the Feed tab.
+    var onOpenFeed: () -> Void = {}
 
     var body: some View {
         SettingsSection("Mock cards") {
@@ -100,6 +102,10 @@ struct AdminMockCardsPanel: View {
             row("Add a random kind", icon: "dice", id: "settings.admin.mock.random") {
                 add(AdminMockKind.allCases.randomElement()!)
             }
+            SettingsLabel(icon: "tray.full", title: "Queued", value: "\(vm.adminQueuedMockCount)")
+                .settingsRowPadding()
+                .accessibilityIdentifier("settings.admin.mock.queued")
+            row("Open feed", icon: "square.stack", id: "settings.admin.mock.openFeed", action: onOpenFeed)
             row("Remove mock cards", icon: "xmark.bin", id: "settings.admin.mock.remove",
                 detail: "Mock cards never save a decision, fill the pile or cost a swipe.") {
                     vm.admin.adminRemoveMockCards()
@@ -110,7 +116,6 @@ struct AdminMockCardsPanel: View {
     private func add(_ kind: AdminMockKind) {
         var rng = SystemRandomNumberGenerator()
         vm.admin.adminInsertMockCard(AdminMockCards.card(kind, using: &rng))
-        onClose()
     }
 
     private func row(_ title: String, icon: String, id: String, detail: String? = nil, action: @escaping () -> Void) -> some View {
@@ -127,7 +132,7 @@ struct AdminMockCardsPanel: View {
     ScrollView {
         VStack(spacing: DS.Spacing.l) {
             AdminUpsellPanel()
-            AdminMockCardsPanel(onClose: {})
+            AdminMockCardsPanel()
         }
         .padding()
     }
