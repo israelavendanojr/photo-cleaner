@@ -118,7 +118,7 @@ struct RootView: View {
             LibraryView(isActive: tab == .library)
                 .tabVisibility(tab == .library)
             if devMode.isEnabled {
-                AdminToolsView(onOpenFeed: { tab = .feed }, onOpenLibrary: { tab = .library })
+                AdminToolsView(isActive: tab == .admin, onOpenFeed: { tab = .feed }, onOpenLibrary: { tab = .library })
                     .tabVisibility(tab == .admin)
             }
         }

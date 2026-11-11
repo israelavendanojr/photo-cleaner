@@ -15,7 +15,7 @@ import OSLog
 /// - `ReminderController`: refill reminders and the clutter estimate they quote.
 /// - `FollowUpCoordinator`: the review prompt or unlock offer a delete earns.
 /// Collaborators never reach each other; effects that span them (a refill front-loading the deck,
-/// an unlock cancelling reminders) are sequenced here. Settings' Admin Tools live in
+/// an unlock cancelling reminders) are sequenced here. The Admin tab's tools live in
 /// `AdminController` (`vm.admin`), which changes the deck only through this class's admin intents;
 /// previews and mocks are in `FeedViewModel+Mock.swift`. No state here is settable from outside.
 @Observable
@@ -111,6 +111,8 @@ final class FeedViewModel {
     /// Shortest time onboarding shows its "preparing" state, so the step change can be read.
     private let firstSessionMinimum: Duration
     private let now: () -> Date
+    /// Schedules refill reminders. Kept for Admin Tools' test notifications; nil in tests and previews.
+    private let notifier: RefillNotifier?
     /// Where the free tier's limits come from: the swipe allowance and the pile limit.
     let freeTier: FreeTierTunables
     /// Which bundle cards free and unlocked users get.
@@ -123,8 +125,8 @@ final class FeedViewModel {
     let reminders: ReminderController
     /// First-launch onboarding, which can hold the screen while the first deck is dealt.
     let onboarding: OnboardingFlow
-    /// Settings' Admin Tools.
-    @ObservationIgnored private(set) lazy var admin = AdminController(vm: self, entitlements: entitlements, defaults: defaults)
+    /// The Admin tab's tools (Developer mode).
+    @ObservationIgnored private(set) lazy var admin = AdminController(vm: self, entitlements: entitlements, defaults: defaults, notifier: notifier, now: now)
 
     /// - Parameters:
     ///   - allowanceStore: Where the free swipes are saved. Nil keeps them in memory, starting full.
@@ -156,6 +158,7 @@ final class FeedViewModel {
         self.defaults = defaults
         self.firstSessionMinimum = firstSessionMinimum
         self.now = now
+        self.notifier = notifier
         let freeTier = freeTier ?? .fixed(FreeTierLimits(allowance: allowanceTunables))
         self.freeTier = freeTier
         self.features = features ?? .fixed()
@@ -735,6 +738,11 @@ final class FeedViewModel {
         returningCard = nil
         saveProgress()
         fillIfNeeded()
+    }
+
+    /// Works out the clutter estimate again, for the body of a test notification.
+    func adminRefreshClutterEstimate() async {
+        await reminders.refreshEstimate(similarAhead: { similarAhead })
     }
 
     /// Forgets every saved decision, the pile, and preferences, then deals a fresh first deck.

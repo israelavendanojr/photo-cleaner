@@ -7,6 +7,8 @@ import SwiftUI
 /// up over it and closes back to it. Settings keeps only the Developer mode switch and the version-row taps.
 struct AdminToolsView: View {
     @Environment(FeedViewModel.self) private var vm
+    /// The tab is on screen. It stays mounted behind the others.
+    var isActive = true
     /// Switches to the Feed tab.
     var onOpenFeed: () -> Void = {}
     /// Switches to the Library tab, where the 100% confetti plays.
@@ -26,6 +28,7 @@ struct AdminToolsView: View {
                     .padding(.top, DS.Spacing.l)
                 debugSection
                 AdminUpsellPanel()
+                AdminNotificationsPanel(isActive: isActive)
                 #if DEBUG
                 AdminMockCardsPanel(onOpenFeed: onOpenFeed)
                 #endif
