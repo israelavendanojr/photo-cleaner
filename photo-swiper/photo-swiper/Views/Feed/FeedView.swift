@@ -10,19 +10,12 @@ struct FeedView: View {
             FeedTopBar(onUndo: {
                 withAnimation(DS.Motion.calm) { vm.undo() }
             }, onOpenPile: onOpenPile)
-            .padding(.horizontal, DS.Spacing.l)
-            .padding(.top, DS.Spacing.s)
-            .padding(.bottom, DS.Spacing.m)
+                .padding(.horizontal, DS.Spacing.l)
+                .padding(.top, DS.Spacing.s)
+                .padding(.bottom, DS.Spacing.m)
             CardStackView()
         }
         .background(DS.Palette.paper)
-        .sheet(isPresented: Bindable(vm).isWallPresented) {
-            SwipeWallView()
-                .presentationDetents([.large])
-                .presentationDragIndicator(.visible)
-                .presentationBackground(DS.Palette.paper)
-                .presentationCornerRadius(DS.Radius.card)
-        }
         // Free users clear the pile to go on; the unlock is offered after the delete instead.
         .alert("Your pile is full", isPresented: Binding(get: { vm.isPileFullNoticePresented }, set: { if !$0 { vm.dismissPileFullNotice() } })) {
             Button("Review pile", action: onOpenPile)

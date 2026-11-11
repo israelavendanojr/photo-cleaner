@@ -19,6 +19,19 @@ struct RefillReminder: Equatable, Sendable {
     static let nextID = "refill.next"
     static let fullID = "refill.full"
     static let allIDs = [nextID, fullID]
+    /// Admin Tools' test copies of the reminders carry this before the real id. They show a banner even
+    /// in the foreground (see `AppDelegate`) and are never cancelled or logged with the real ones.
+    static let testIDPrefix = "admin.test."
+
+    /// A test reminder raised from Admin Tools.
+    static func isTest(_ id: String) -> Bool {
+        id.hasPrefix(testIDPrefix)
+    }
+
+    /// A tap on this one opens the feed: a real reminder, or a test copy of one.
+    static func routesToFeed(_ id: String) -> Bool {
+        allIDs.contains(id) || isTest(id)
+    }
 
     let id: String
     let fireAt: Date
@@ -52,6 +65,11 @@ enum RefillReminderPlanner {
         return lead
     }
 
+    /// "Your 20 swipes are ready", for the balance back at the cap.
+    static func fullBody(cap: Int) -> String {
+        "Your \(cap) swipes are ready"
+    }
+
     /// The reminders to schedule on hitting zero: the next refill, and the balance back at the cap
     /// in case the user hasn't returned by then. Each moves out of quiet hours. When both would land at
     /// the same time, only the full one is kept, and no day gets more than `maxPerDay` counting `log`,
@@ -73,7 +91,7 @@ enum RefillReminderPlanner {
             let full = RefillReminder(
                 id: RefillReminder.fullID,
                 fireAt: outsideQuietHours(fullAt, calendar: calendar),
-                body: "Your \(tunables.cap) swipes are ready"
+                body: fullBody(cap: tunables.cap)
             )
             if full.fireAt == candidates[0].fireAt { candidates = [] }
             candidates.append(full)
@@ -150,6 +168,21 @@ final class RefillNotifier {
         // Logged before the awaits, so a second call right after counts these.
         setLog(log(now: now) + reminders.map(\.fireAt))
         for reminder in reminders { await center.add(reminder) }
+    }
+
+    // MARK: Admin Tools
+
+    /// Schedules an Admin Tools test reminder as is. Only test ids (`RefillReminder.isTest`): the opt-in,
+    /// the log that caps reminders per day, quiet hours and the real reminders are all left alone.
+    func raiseTest(_ reminder: RefillReminder) async {
+        guard RefillReminder.isTest(reminder.id) else { return }
+        await center.add(reminder)
+    }
+
+    /// Asks for notification permission without opting in to reminders, for Admin Tools.
+    @discardableResult
+    func requestPermissionOnly() async -> Bool {
+        await center.requestAuthorization()
     }
 
     /// The user came back and swiped, or unlocked. Anything not yet fired no longer counts toward the cap.

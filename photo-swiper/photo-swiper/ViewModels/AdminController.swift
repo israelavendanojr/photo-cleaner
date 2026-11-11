@@ -1,6 +1,34 @@
 import Foundation
 
-/// Settings' Admin Tools section, shown in Developer mode (see `DevMode`). Views reach it as `vm.admin`.
+/// A refill reminder Admin Tools can raise as a test notification.
+enum AdminNotification: String, CaseIterable, Identifiable {
+    /// The next refill after hitting zero.
+    case refill
+    /// The balance back at the cap.
+    case full
+
+    var id: Self { self }
+
+    var title: String {
+        switch self {
+        case .refill: "Swipes are back"
+        case .full: "Swipes are full"
+        }
+    }
+
+    /// The real reminder's id with the test prefix, so it shows in the foreground and is never
+    /// cancelled or counted with the real ones.
+    var testID: String {
+        RefillReminder.testIDPrefix + (self == .refill ? RefillReminder.nextID : RefillReminder.fullID)
+    }
+}
+
+/// Whether test notifications can show.
+enum AdminNotificationPermission: Equatable {
+    case granted, denied, notAsked
+}
+
+/// The Admin tab's tools, shown in Developer mode (see `DevMode`). Views reach it as `vm.admin`.
 ///
 /// It changes the deck only through `FeedViewModel`'s own intents, so nothing outside the view model
 /// can set its state; it reaches the collaborators and the entitlement store directly, as the view
@@ -10,11 +38,17 @@ final class AdminController {
     private unowned let vm: FeedViewModel
     private let entitlements: any EntitlementStore
     private let defaults: UserDefaults
+    /// Nil where notifications can't be raised (tests and previews without one).
+    private let notifier: RefillNotifier?
+    private let now: () -> Date
 
-    init(vm: FeedViewModel, entitlements: any EntitlementStore, defaults: UserDefaults) {
+    init(vm: FeedViewModel, entitlements: any EntitlementStore, defaults: UserDefaults,
+         notifier: RefillNotifier? = nil, now: @escaping () -> Date = Date.init) {
         self.vm = vm
         self.entitlements = entitlements
         self.defaults = defaults
+        self.notifier = notifier
+        self.now = now
     }
 
     /// Replaces the free swipes left. Nil fills them to the cap.
@@ -80,17 +114,64 @@ final class AdminController {
         vm.followUps.adminResetDeleteUpsell()
     }
 
-    /// Asks RootView to show an upsell screen now, once Settings has closed.
+    /// Readies an upsell screen the Admin tab is about to show over itself: a plausible headline for the
+    /// post-delete offer, or the real wall (RootView presents it over any tab). The sheets and the
+    /// onboarding pitch are presented by the Admin tab, so closing them lands back there.
     func adminRaiseUpsell(_ screen: AdminUpsell) {
-        if screen == .postDelete {
-            vm.followUps.adminPickFreedBytes()
+        switch screen {
+        case .postDelete: vm.followUps.adminPickFreedBytes()
+        case .wall: vm.presentWall()
+        case .onboarding, .unlockSheet: break
         }
-        vm.adminRequestUpsell(screen)
+    }
+
+    // MARK: Notifications
+
+    /// How long after "Raise" a test notification fires: long enough to lock the phone or leave the app.
+    static let notificationDelay: TimeInterval = 5
+
+    var canRaiseNotifications: Bool { notifier != nil }
+
+    func notificationPermission() async -> AdminNotificationPermission {
+        guard let notifier else { return .denied }
+        if await notifier.isDenied() { return .denied }
+        return await notifier.canAsk() ? .notAsked : .granted
+    }
+
+    /// Shows the system prompt if it hasn't been answered. Doesn't opt in to refill reminders.
+    func requestNotificationPermission() async -> AdminNotificationPermission {
+        await notifier?.requestPermissionOnly()
+        return await notificationPermission()
+    }
+
+    /// What the real reminder would say now, with the current clutter estimate and free-tier limits.
+    func notificationBody(_ kind: AdminNotification) -> String {
+        let tunables = vm.allowanceTunables
+        return switch kind {
+        case .refill: RefillReminderPlanner.refillBody(amount: tunables.refillAmount, estimate: vm.clutterEstimate)
+        case .full: RefillReminderPlanner.fullBody(cap: tunables.cap)
+        }
+    }
+
+    /// Works out the clutter estimate again, so the refill body quotes the library as it is now.
+    func refreshNotificationBody() async {
+        await vm.adminRefreshClutterEstimate()
+    }
+
+    /// Schedules a test copy of the reminder `notificationDelay` from now, with its real body. The real
+    /// reminders' schedule, opt-in, daily cap and quiet hours are untouched. Returns what was scheduled.
+    @discardableResult
+    func raiseNotification(_ kind: AdminNotification) async -> RefillReminder? {
+        guard let notifier else { return nil }
+        await refreshNotificationBody()
+        let reminder = RefillReminder(id: kind.testID, fireAt: now().addingTimeInterval(Self.notificationDelay), body: notificationBody(kind))
+        await notifier.raiseTest(reminder)
+        return reminder
     }
 
     // MARK: Mock cards
 
-    /// Puts an Admin Tools mock card on top of the deck, even from caught up.
+    /// Queues an Admin Tools mock card at the top of the deck, after any already queued. Stays on the Admin tab.
     func adminInsertMockCard(_ card: FeedCard) {
         vm.adminInsertMockCard(card)
     }

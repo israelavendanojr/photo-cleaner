@@ -1,16 +1,13 @@
 import StoreKit
 import SwiftUI
 
-/// Switches between onboarding, the tabs (feed and library), and the access states.
+/// Switches between onboarding, the tabs (feed, library, and Admin in Developer mode), and the access states.
 struct RootView: View {
     @Environment(FeedViewModel.self) private var vm
     @State private var tab: AppTab = .feed
     @State private var isPilePresented = false
     /// The unlock offered after a free user's delete.
     @State private var isUpsellPresented = false
-    /// Admin Tools' "Raise upsell": the onboarding pitch on its own, or the plain unlock sheet.
-    @State private var isAdminPitchPresented = false
-    @State private var isAdminUnlockPresented = false
     /// The tabs' bottom safe area, tab bar included.
     @State private var tabBarInset: CGFloat = 0
     /// The feed is about to replace onboarding, so its first deck deals in.
@@ -18,6 +15,7 @@ struct RootView: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.requestReview) private var requestReview
     private let router = NotificationRouter.shared
+    private let devMode = DevMode.shared
 
     var body: some View {
         ZStack {
@@ -47,12 +45,12 @@ struct RootView: View {
             // Refills earned while away land on return.
             if phase == .active { vm.refreshAllowance() }
         }
+        .onChange(of: devMode.isEnabled) { _, enabled in
+            // Developer mode went off with the Admin tab up: it's gone, so back to the feed.
+            tab = AppTab.fallback(tab, devModeEnabled: enabled)
+        }
         .onChange(of: router.feedRequests) {
             // A refill reminder was tapped.
-            tab = .feed
-        }
-        .onChange(of: vm.adminShowFeedRequest) {
-            // Admin Tools put a mock card on the deck.
             tab = .feed
         }
         .alert("Couldn't load your saved progress", isPresented: progressLoadNotice) {
@@ -68,7 +66,7 @@ struct RootView: View {
                 .presentationCornerRadius(DS.Radius.card)
         }
         .sheet(isPresented: $isUpsellPresented) {
-            UnlockSheet(title: "Freed \(Format.size(vm.upsellFreedBytes))", subtitle: "Unlock to keep going without limits.")
+            UnlockSheet(title: "Freed \(Format.size(vm.upsellFreedBytes))", subtitle: Self.deleteUpsellSubtitle)
                 .presentationDragIndicator(.visible)
                 .presentationBackground(DS.Palette.paper)
                 .presentationCornerRadius(DS.Radius.card)
@@ -82,31 +80,6 @@ struct RootView: View {
             let shows = !vm.isWallPresented && !vm.isUnlocked
             if shows { isUpsellPresented = true }
             vm.finishDeleteUpsell(shown: shows)
-        }
-        .sheet(isPresented: $isAdminUnlockPresented) {
-            UnlockSheet()
-                .presentationDragIndicator(.visible)
-                .presentationBackground(DS.Palette.paper)
-                .presentationCornerRadius(DS.Radius.card)
-        }
-        .fullScreenCover(isPresented: $isAdminPitchPresented) {
-            UpsellView { isAdminPitchPresented = false }
-                .background(DS.Palette.paper)
-        }
-        .task(id: vm.adminUpsellRequest) {
-            guard let screen = vm.adminUpsellRequest else { return }
-            // Let Settings finish closing first.
-            try? await Task.sleep(for: .seconds(0.6))
-            guard !Task.isCancelled else { return }
-            switch screen {
-            case .postDelete: isUpsellPresented = true
-            case .wall:
-                tab = .feed
-                vm.presentWall()
-            case .onboarding: isAdminPitchPresented = true
-            case .unlockSheet: isAdminUnlockPresented = true
-            }
-            vm.finishAdminUpsell()
         }
         .onChange(of: vm.isUnlocked) {
             vm.entitlementChanged()
@@ -132,23 +105,35 @@ struct RootView: View {
         }
     }
 
-    /// Both tabs stay mounted so the deck keeps its place while the library is up.
     /// Shown once when saved progress couldn't be opened at launch.
     private var progressLoadNotice: Binding<Bool> {
         Binding(get: { vm.isProgressLoadNoticePresented }, set: { if !$0 { vm.dismissProgressLoadNotice() } })
     }
 
+    /// Every tab stays mounted so the deck keeps its place while another is up.
     private var tabs: some View {
         ZStack {
             feedTab
                 .tabVisibility(tab == .feed)
             LibraryView(isActive: tab == .library)
                 .tabVisibility(tab == .library)
+            if devMode.isEnabled {
+                AdminToolsView(isActive: tab == .admin, onOpenFeed: { tab = .feed }, onOpenLibrary: { tab = .library })
+                    .tabVisibility(tab == .admin)
+            }
         }
         .onGeometryChange(for: CGFloat.self) { $0.safeAreaInsets.bottom } action: { tabBarInset = $0 }
         .environment(\.tabBarInset, tabBarInset)
+        // Over whichever tab is up, and over caught up too, so Admin Tools can raise it from their tab.
+        .sheet(isPresented: Bindable(vm).isWallPresented) {
+            SwipeWallView()
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+                .presentationBackground(DS.Palette.paper)
+                .presentationCornerRadius(DS.Radius.card)
+        }
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            PillTabBar(items: AppTab.allCases.map(\.tabItem), selection: $tab)
+            PillTabBar(items: AppTab.visible(devModeEnabled: devMode.isEnabled).map(\.tabItem), selection: $tab)
                 .padding(.top, DS.Spacing.xs)
                 .padding(.bottom, DS.Spacing.xxs)
         }
@@ -181,6 +166,11 @@ private struct DelayedProgressView: View {
                 withAnimation(.easeIn(duration: 0.2)) { isShown = true }
             }
     }
+}
+
+extension RootView {
+    /// The line under "Freed …" on the unlock offered after a free user's delete. Admin Tools raise it too.
+    static let deleteUpsellSubtitle = "Unlock to keep going without limits."
 }
 
 extension EnvironmentValues {

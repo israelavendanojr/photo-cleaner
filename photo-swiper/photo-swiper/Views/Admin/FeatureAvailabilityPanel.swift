@@ -7,7 +7,7 @@ struct FeatureAvailabilityPanel: View {
     @State private var isRebuilding = false
 
     var body: some View {
-        SettingsSection("Admin Tools · Feature availability") {
+        SettingsSection("Feature availability") {
             ForEach(TierFeature.allCases) { feature in
                 FeatureRow(
                     feature: feature,

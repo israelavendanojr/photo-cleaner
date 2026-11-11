@@ -30,7 +30,7 @@ enum AdminMockKind: String, CaseIterable, Identifiable {
 
 /// Randomized cards from the bundled mock images, for checking how each card kind looks with
 /// different sizes, counts, dates and reasons. Every item id starts with `idPrefix`, so the feed can
-/// tell them apart and never save or delete them (see `FeedCard.isAdminMock`).
+/// tell them apart: they're never saved and never reach the library (see `LibraryItem.isAdminMock`).
 enum AdminMockCards {
     static let idPrefix = "admin-"
 
@@ -154,10 +154,23 @@ private struct Maker {
 }
 #endif
 
+extension LibraryItem {
+    /// An item on an Admin Tools mock card. Its decisions live only in memory: it never costs a swipe,
+    /// is never written to the store, and never reaches `library.delete`. A delete puts it in the pile,
+    /// where it counts toward the free limit, and deleting it from there just drops it.
+    /// Outside `#if DEBUG` because the feed's guards run in every build; only debug builds can make one.
+    var isAdminMock: Bool { Self.isAdminMock(id: id) }
+
+    /// Real ids are PhotoKit local identifiers, which never start this way.
+    static func isAdminMock(id: ID) -> Bool {
+        id.hasPrefix("admin-")
+    }
+}
+
 extension FeedCard {
-    /// An Admin Tools mock card. Swiping one never saves a decision, fills the pile or costs a swipe.
+    /// An Admin Tools mock card (see `LibraryItem.isAdminMock`).
     /// Photo and video card ids carry the item's id after "item-", so this goes by the items.
     var isAdminMock: Bool {
-        items.first?.id.hasPrefix("admin-") == true
+        items.first?.isAdminMock == true
     }
 }

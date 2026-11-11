@@ -17,16 +17,18 @@ enum AdminUpsell: String, CaseIterable, Identifiable {
 }
 
 /// Admin Tools' upsell controls: let the post-delete offer show again, and show any upsell screen now.
-/// `onClose` closes Settings so the screen can come up over the app.
+/// Each screen comes up over the Admin tab and closes back to it. The sheets and the onboarding pitch
+/// are presented here; the wall is the real one, which RootView presents over any tab.
 struct AdminUpsellPanel: View {
     @Environment(FeedViewModel.self) private var vm
-    let onClose: () -> Void
 
     @AppStorage("admin.upsellScreen") private var screen = AdminUpsell.postDelete
     @State private var didReset = false
+    /// The raised screen this panel presents itself. Never `.wall`.
+    @State private var raised: AdminUpsell?
 
     var body: some View {
-        SettingsSection("Admin Tools · Upsell") {
+        SettingsSection("Upsell") {
             Button {
                 vm.admin.adminResetDeleteUpsell()
                 didReset = true
@@ -46,28 +48,52 @@ struct AdminUpsellPanel: View {
             .tint(DS.Palette.secondary)
             .settingsRowPadding()
             .accessibilityIdentifier("settings.admin.upsellScreen")
-            Button {
-                vm.admin.adminRaiseUpsell(screen)
-                onClose()
-            } label: {
+            Button(action: raise) {
                 SettingsLabel(icon: "sparkles.rectangle.stack", title: "Raise upsell", detail: screen.title)
                     .settingsRowPadding()
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("settings.admin.raiseUpsell")
         }
+        .sheet(isPresented: isRaised(.postDelete)) {
+            UnlockSheet(title: "Freed \(Format.size(vm.upsellFreedBytes))", subtitle: RootView.deleteUpsellSubtitle)
+                .presentationDragIndicator(.visible)
+                .presentationBackground(DS.Palette.paper)
+                .presentationCornerRadius(DS.Radius.card)
+        }
+        .sheet(isPresented: isRaised(.unlockSheet)) {
+            UnlockSheet()
+                .presentationDragIndicator(.visible)
+                .presentationBackground(DS.Palette.paper)
+                .presentationCornerRadius(DS.Radius.card)
+        }
+        .fullScreenCover(isPresented: isRaised(.onboarding)) {
+            UpsellView { raised = nil }
+                .background(DS.Palette.paper)
+        }
+    }
+
+    private func raise() {
+        vm.admin.adminRaiseUpsell(screen)
+        if screen != .wall { raised = screen }
+    }
+
+    private func isRaised(_ screen: AdminUpsell) -> Binding<Bool> {
+        Binding(get: { raised == screen }, set: { if !$0, raised == screen { raised = nil } })
     }
 }
 
 #if DEBUG
-/// Admin Tools' mock cards: one freshly randomized card of a kind on top of the deck, then the feed.
+/// Admin Tools' mock cards: freshly randomized cards queued at the top of the deck in the order added,
+/// without leaving the Admin tab. "Open feed" goes to them.
 /// Debug builds only, since release builds leave out the mock images.
 struct AdminMockCardsPanel: View {
     @Environment(FeedViewModel.self) private var vm
-    let onClose: () -> Void
+    /// Switches to the Feed tab.
+    var onOpenFeed: () -> Void = {}
 
     var body: some View {
-        SettingsSection("Admin Tools · Mock cards") {
+        SettingsSection("Mock cards") {
             ForEach(AdminMockKind.allCases) { kind in
                 row("Add \(kind.title.lowercased())", icon: kind.icon, id: "settings.admin.mock.\(kind.rawValue)") {
                     add(kind)
@@ -76,17 +102,20 @@ struct AdminMockCardsPanel: View {
             row("Add a random kind", icon: "dice", id: "settings.admin.mock.random") {
                 add(AdminMockKind.allCases.randomElement()!)
             }
+            SettingsLabel(icon: "tray.full", title: "Queued", value: "\(vm.adminQueuedMockCount)")
+                .settingsRowPadding()
+                .accessibilityIdentifier("settings.admin.mock.queued")
+            row("Open feed", icon: "square.stack", id: "settings.admin.mock.openFeed", action: onOpenFeed)
             row("Remove mock cards", icon: "xmark.bin", id: "settings.admin.mock.remove",
-                detail: "Mock cards never save a decision, fill the pile or cost a swipe.") {
-                vm.admin.adminRemoveMockCards()
-            }
+                detail: "Also clears them from the pile. Mock cards never save a decision or cost a swipe; deleting them from the pile only drops them.") {
+                    vm.admin.adminRemoveMockCards()
+                }
         }
     }
 
     private func add(_ kind: AdminMockKind) {
         var rng = SystemRandomNumberGenerator()
         vm.admin.adminInsertMockCard(AdminMockCards.card(kind, using: &rng))
-        onClose()
     }
 
     private func row(_ title: String, icon: String, id: String, detail: String? = nil, action: @escaping () -> Void) -> some View {
@@ -102,8 +131,8 @@ struct AdminMockCardsPanel: View {
 #Preview {
     ScrollView {
         VStack(spacing: DS.Spacing.l) {
-            AdminUpsellPanel(onClose: {})
-            AdminMockCardsPanel(onClose: {})
+            AdminUpsellPanel()
+            AdminMockCardsPanel()
         }
         .padding()
     }

@@ -28,7 +28,7 @@ Views (SwiftUI)  ──reads/intents──▶  FeedViewModel (@MainActor, @Obser
                                        ├─ OnboardingFlow      first-launch steps
                                        ├─ ReminderController  refill reminders, clutter estimate
                                        ├─ FollowUpCoordinator review prompt / post-delete upsell
-                                       └─ AdminController     Settings' Admin Tools (Developer mode), as `vm.admin`
+                                       └─ AdminController     the Admin tab's tools (Developer mode), as `vm.admin`
                                      FeedTypes.swift: the view model's small value types (FeedPhase, PaywallStatus, …)
 FeedViewModel ──protocols──▶ Services
    PhotoLibraryProviding  → PhotoKitLibrary        access, delete, change observer
@@ -50,6 +50,7 @@ Shared helpers: ThumbnailPipeline.shared (PHCachingImageManager), DevMode.shared
 
 - Views never touch PhotoKit or SwiftData. Pixels go through `ItemImage` / `ThumbnailPipeline`, and video through `VideoSource`.
 - Collaborators never call each other. Effects that span them are sequenced in `FeedViewModel`. `AdminController` changes the deck only through the view model's own intents.
+- Admin Tools are a tab (`AppTab.admin`, `AdminToolsView`) shown only while Developer mode is on; turning it off on that tab goes back to Feed. Settings keeps only the Developer mode switch and the version-row taps. Anything Admin Tools raise (upsell screens, the swipe wall, a test notification) comes up over the Admin tab and closes back to it; RootView presents the swipe wall over any tab.
 - Anything that touches the system sits behind a protocol, with a mock in `Services/Mock/` (`#if DEBUG`) or a fake in the tests (`AssetCatalog`, `Geocoding`).
 - Ranking and grouping stay pure and deterministic (ties broken by ID), so they can be tested with made-up features and vectors.
 
@@ -65,6 +66,7 @@ Shared helpers: ThumbnailPipeline.shared (PHCachingImageManager), DevMode.shared
    - `PlaceNamer` adds captions from approximate locations (see Safety properties).
 5. **Decide.** A swipe calls `vm.decide(_:cardID:)`. It applies only if `cardID` is still the current card, so a page that lands mid-swipe can't redirect it. Per-item `Decision`s (keep / delete / later) are written through to `ItemProgress`, and the deck to `SessionProgress`, before `decide` returns. **Nothing touches the library.**
 6. **Delete.** Delete decisions form the **pile**. The only delete path is `PendingPileView`: its in-app alert, then `vm.deleteNow`, then `PhotoKitLibrary.delete` (`PHAssetChangeRequest.deleteAssets`), which shows iOS's own confirmation. `DeletionOutcome.make` sorts the request into missing, undeletable and deletable before the prompt. Afterwards items are settled as `deleted` or `undeletable`; missing ones are settled as `gone` **only under full access**.
+   Admin Tools' mock cards (debug builds, ids starting `admin-`, `LibraryItem.isAdminMock`) join the pile in memory only and count toward the free pile limit, but never cost a swipe. `saveProgress`, `settle` and `delete` each drop mock ids, so no mock decision reaches `ItemProgress` and no mock item reaches `library.delete`. Deleting them from the pile just drops them and counts their bytes as freed, so the post-delete offer can show; a mocks-only delete isn't counted toward the review prompt and keeps undo. "Remove mock cards" and the next launch clear them. Mock cards themselves still sit in the saved deck (`SessionProgress`) until the next launch strips them in `restore`, and a refill's `FrontLoad` can reorder queued mock cards behind the current one.
 7. **External changes and restore.** `vanishedItems()` reports removed IDs while the app runs, and on launch `missing(from:)` checks the saved deck and pile. Under full access those items are settled as `gone` and removed from the index. Under limited access they may just be outside the selection, so they're only hidden (`outOfReachIDs`) and stay pending in the store. Either way they leave upcoming cards.
 
 ## Persistence
@@ -91,7 +93,7 @@ Every change must keep these. Each names what guards it; run the guard after tou
 
 | Property | Guarded by |
 |---|---|
-| **Pile-only deletion.** A swipe only adds to the pile. `PHAssetChangeRequest.deleteAssets` is called only in `PhotoKitLibrary.delete`, reached only from `PendingPileView` after its in-app alert, then iOS's prompt | The single call site (`pre-pr` greps for a second one). No unit test yet asserts a swipe never calls `delete` (`FakeLibrary.onDelete` in the tests can record it) |
+| **Pile-only deletion.** A swipe only adds to the pile. `PHAssetChangeRequest.deleteAssets` is called only in `PhotoKitLibrary.delete`, reached only from `PendingPileView` after its in-app alert, then iOS's prompt. Admin Tools' mock items never reach it, nor `ItemProgress` | The single call site (`pre-pr` greps for a second one). `AdminMockFeedTests` records `FakeLibrary.onDelete` and every store write: mock items are never passed to `delete` or saved. No unit test yet asserts a real swipe never calls `delete` |
 | **Decisions bind to the card the user acted on** (`cardID` through `decide`, `decideIndividually`, `canDecide`, `refuse`) | `CardIdentityTests` |
 | **`FrontLoad` never moves the current card** | `FrontLoadTests` (`theCardOnTopNeverMoves`) |
 | **Limited access never settles items as `gone`** | `LimitedAccessTests` |

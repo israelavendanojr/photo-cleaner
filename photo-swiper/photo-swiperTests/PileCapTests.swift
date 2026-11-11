@@ -467,12 +467,27 @@ struct PileCapTests {
         let vm = FeedViewModel(library: FakeLibrary(), builder: MockFeedBuilder(), entitlements: TestEntitlements(isUnlocked: false), defaults: defaults)
 
         vm.admin.adminRaiseUpsell(.postDelete)
-        #expect(vm.adminUpsellRequest == .postDelete)
         #expect((20_000_000...3_000_000_000).contains(vm.upsellFreedBytes))
         #expect(defaults.object(forKey: DefaultsKey.deleteUpsellShownAt) == nil, "Raising it doesn't start the wait")
+        #expect(!vm.isWallPresented)
+    }
 
-        vm.finishAdminUpsell()
-        #expect(vm.adminUpsellRequest == nil)
+    /// The wall is raised in place: RootView presents it over whichever tab is up, Admin included.
+    @Test func raisingTheWallOpensItWithoutAnythingElse() {
+        let vm = FeedViewModel(library: FakeLibrary(), builder: MockFeedBuilder(), entitlements: TestEntitlements(isUnlocked: false), defaults: defaults)
+
+        vm.admin.adminRaiseUpsell(.wall)
+        #expect(vm.isWallPresented)
+        vm.dismissWall()
+        #expect(!vm.isWallPresented)
+    }
+
+    @Test(arguments: [AdminUpsell.onboarding, .unlockSheet])
+    func raisingASheetTheAdminTabPresentsLeavesTheWallShut(_ screen: AdminUpsell) {
+        let vm = FeedViewModel(library: FakeLibrary(), builder: MockFeedBuilder(), entitlements: TestEntitlements(isUnlocked: false), defaults: defaults)
+
+        vm.admin.adminRaiseUpsell(screen)
+        #expect(!vm.isWallPresented)
     }
 
     @Test func anOfferNotShownDoesNotStartTheWait() async throws {

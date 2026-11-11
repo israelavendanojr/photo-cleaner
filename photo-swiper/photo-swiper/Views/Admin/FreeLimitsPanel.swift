@@ -6,7 +6,7 @@ struct FreeLimitsPanel: View {
     @Environment(FeedViewModel.self) private var vm
 
     var body: some View {
-        SettingsSection("Admin Tools · Free limits") {
+        SettingsSection("Free limits") {
             ForEach(FreeTierTunable.allCases) { tunable in
                 TunableRow(
                     tunable: tunable,

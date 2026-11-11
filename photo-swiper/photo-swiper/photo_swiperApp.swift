@@ -36,6 +36,8 @@ private extension FeedViewModel {
     /// (category "similar"). `-swipesLeft N` sets the free swipes left, and `-refillSoon YES` refills
     /// every minute instead of every six hours. `-simulateComplete YES` shows the library as 100% reviewed
     /// (display only, nothing saved) and forgets that the confetti played, so it plays on the Library tab.
+    /// `-resetDevMode YES` turns Developer mode back on, its debug default, whatever an earlier run saved,
+    /// so UI tests always find the Admin tab.
     /// Release builds always run on the real library.
     static func launch() -> FeedViewModel {
         let vm = launchServices()
@@ -59,6 +61,11 @@ private extension FeedViewModel {
         // `-resetUpsell YES` forgets when the delete offer last showed, so it's due again.
         if UserDefaults.standard.bool(forKey: "resetUpsell") {
             UserDefaults.standard.removeObject(forKey: DefaultsKey.deleteUpsellShownAt)
+        }
+        // `-resetDevMode YES`: Developer mode is saved, so a test that turned it off would hide the Admin tab
+        // from every later run. Uses the normal switch, which debug builds always allow.
+        if UserDefaults.standard.bool(forKey: "resetDevMode") {
+            DevMode.shared.setEnabled(true)
         }
         // `-resetTunables YES` drops Developer mode's saved free-limit and feature overrides, so UI tests run on the defaults.
         if UserDefaults.standard.bool(forKey: "resetTunables") {
@@ -128,7 +135,6 @@ private extension FeedViewModel {
 
     /// The live free-tier tunables (`-refillSoon YES` is applied in `FreeTierLimits.launch`).
     static var allowanceTunables: SwipeAllowance.Tunables { FreeTierTunables.shared.limits.allowance }
-
 
     #if DEBUG
     /// `-mockProgress YES`: saved mock progress in its own file, apart from the real one. Otherwise in memory.
