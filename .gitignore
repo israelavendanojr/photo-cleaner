@@ -9,3 +9,8 @@ xcuserdata/
 *.xcuserstate
 DerivedData/
 build/
+
+# Claude Code: personal settings, agent worktrees and hook state. .claude/settings.json is shared.
+.claude/settings.local.json
+.claude/worktrees/
+.claude/hook-state/
