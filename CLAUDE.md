@@ -15,7 +15,7 @@ make                # every target
 
 - Run `xcodebuild` and the build and test targets **outside the Bash sandbox**. Inside it, codesigning silently doesn't run and tests fail to launch.
 - The simulator is the first available iPhone (`scripts/sim-destination.sh`). Override with `DEST='platform=iOS Simulator,name=iPhone 16'`.
-- `docs/ci.md` covers CI and the raw `xcodebuild` forms. XcodeBuildMCP (`.mcp.json`) can also build, launch and screenshot.
+- `docs/agent-workflow.md` covers skills, hooks (and turning them off), worktrees and when to plan. `docs/ci.md` covers CI and the raw `xcodebuild` forms. XcodeBuildMCP (`.mcp.json`) can also build, launch and screenshot.
 
 **Mock launch arguments** (Debug only; the full list is on `launch()` in `photo_swiperApp.swift`): `-mockLibrary YES`, `-startAt similar|batch|duplicates|video|pending|outOfSwipes|caughtUp|onboarding`, `-resetProgress YES`, `-resetOnboarding YES`, `-unlocked YES|NO`, `-mockProgress YES`, `-swipesLeft N`, `-refillSoon YES`.
 
