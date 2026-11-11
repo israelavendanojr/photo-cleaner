@@ -608,8 +608,9 @@ final class FeedViewModel {
     /// including when the user cancels the system prompt.
     ///
     /// Admin Tools' mock items never reach the library: they're only dropped from the pile, here and not
-    /// in the store, and their bytes count as freed so the post-delete flow runs. If real items were
-    /// chosen too and the library deletes none of them (cancelled, failed), the mocks stay as well.
+    /// in the store, and their bytes count as freed so the post-delete offer can show. Deleting only mocks
+    /// keeps undo and isn't counted as a delete (see `FollowUpCoordinator.queueFollowUp`). If real items
+    /// were chosen too and the library deletes none of them (cancelled, failed), the mocks stay as well.
     @discardableResult
     func deleteNow(_ items: [LibraryItem]) async -> Int64? {
         let pending = Set(pendingItems.map(\.id))
@@ -629,12 +630,15 @@ final class FeedViewModel {
         settle(ids, as: .deleted)
         settledIDs.formUnion(mockIDs)
         carriedPending.removeAll { ids.contains($0.id) || mockIDs.contains($0.id) }
-        // A deleted photo can't be swiped again.
-        history.removeAll()
+        if !deletedItems.isEmpty {
+            // A deleted photo can't be swiped again.
+            history.removeAll()
+        }
         saveProgress()
         if !deletedItems.isEmpty { await refreshLibraryTotal() }
         let freed = (deletedItems + mocks).reduce(0) { $0 + $1.bytes }
-        followUps.queueFollowUp(freed: freed, isUnlocked: isUnlocked, isWallPresented: isWallPresented, purchasedThisLaunch: purchasedThisLaunch)
+        followUps.queueFollowUp(freed: freed, isUnlocked: isUnlocked, isWallPresented: isWallPresented,
+                                purchasedThisLaunch: purchasedThisLaunch, isMockOnly: deletedItems.isEmpty)
         return freed
     }
 

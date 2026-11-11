@@ -260,6 +260,44 @@ struct AdminMockFeedTests {
         #expect(vm.pendingItems.map(\.id) == pile.map(\.id))
     }
 
+    @Test func deletingOnlyMockItemsIsNotCountedAndKeepsUndo() async throws {
+        let vm = await launch(bin: 100_000_000_000)
+        vm.decideCurrent(.right)
+        vm.admin.adminInsertMockCard(mock(.photo))
+        vm.decideCurrent(.left)
+        #expect(vm.canUndo)
+
+        #expect(await vm.deleteNow(vm.pendingItems) != nil)
+
+        #expect(vm.canUndo, "No photo left the library, so the real swipes can still be undone")
+        #expect(defaults.integer(forKey: DefaultsKey.deleteCount) == 0, "Not counted toward the review prompt")
+    }
+
+    @Test func mockOnlyDeletesNeverEarnAReviewPrompt() async throws {
+        let vm = await launch(bin: 100_000_000_000, unlocked: true)
+        vm.admin.adminInsertMockCard(mock(.video))
+        vm.decideCurrent(.left)
+
+        #expect(await vm.deleteNow(vm.pendingItems) != nil)
+        vm.releaseReviewPrompt()
+
+        #expect(!vm.isReviewPromptDue)
+        #expect(!vm.isDeleteUpsellDue)
+    }
+
+    @Test func whenTheLibraryDeletesNoneOfTheRealItemsTheMocksStay() async throws {
+        let vm = await launch(bin: 100_000_000_000)
+        library.onDelete = { items in DeletionOutcome(undeletable: items.map(\.id)) }
+        vm.decideCurrent(.left)
+        vm.admin.adminInsertMockCard(mock(.photo))
+        vm.decideCurrent(.left)
+        let mocks = vm.pendingItems.filter { $0.isAdminMock }
+
+        #expect(await vm.deleteNow(vm.pendingItems) == nil)
+        #expect(vm.pendingItems.map(\.id) == mocks.map(\.id), "The undeletable one leaves; the mocks stay")
+        expectNothingMockSaved()
+    }
+
     @Test func keepingMockItemsSavesNothing() async throws {
         let vm = await launch(bin: 100_000_000_000)
         vm.admin.adminInsertMockCard(mock(.screenshots))

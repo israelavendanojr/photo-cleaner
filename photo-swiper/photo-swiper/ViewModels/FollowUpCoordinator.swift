@@ -39,9 +39,11 @@ final class FollowUpCoordinator {
 
     /// Counts the delete and queues what follows it once the pile closes: the unlock offer for a free
     /// user (throttled, see `isDeleteUpsellAllowed`), or a review prompt if the delete earned one (see `ReviewPrompt`). Never both.
-    func queueFollowUp(freed: Int64, isUnlocked: Bool, isWallPresented: Bool, purchasedThisLaunch: Bool) {
+    /// `isMockOnly`: only Admin Tools' mock items were deleted. The offer can still show, so it can be
+    /// tested, but the delete isn't counted and never earns a review prompt.
+    func queueFollowUp(freed: Int64, isUnlocked: Bool, isWallPresented: Bool, purchasedThisLaunch: Bool, isMockOnly: Bool = false) {
         let prior = defaults.integer(forKey: DefaultsKey.deleteCount)
-        defaults.set(prior + 1, forKey: DefaultsKey.deleteCount)
+        if !isMockOnly { defaults.set(prior + 1, forKey: DefaultsKey.deleteCount) }
         isReviewPromptQueued = false
         isDeleteUpsellQueued = false
         guard !isWallPresented else { return }
@@ -52,7 +54,7 @@ final class FollowUpCoordinator {
             isDeleteUpsellQueued = true
             return
         }
-        guard !purchasedThisLaunch else { return }
+        guard !purchasedThisLaunch, !isMockOnly else { return }
         isReviewPromptQueued = ReviewPrompt.isEligible(
             freedBytes: freed,
             priorDeletes: prior,
