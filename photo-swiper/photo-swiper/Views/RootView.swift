@@ -1,7 +1,7 @@
 import StoreKit
 import SwiftUI
 
-/// Switches between onboarding, the tabs (feed and library), and the access states.
+/// Switches between onboarding, the tabs (feed, library, and Admin in Developer mode), and the access states.
 struct RootView: View {
     @Environment(FeedViewModel.self) private var vm
     @State private var tab: AppTab = .feed
@@ -18,6 +18,7 @@ struct RootView: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.requestReview) private var requestReview
     private let router = NotificationRouter.shared
+    private let devMode = DevMode.shared
 
     var body: some View {
         ZStack {
@@ -46,6 +47,10 @@ struct RootView: View {
         .onChange(of: scenePhase) { _, phase in
             // Refills earned while away land on return.
             if phase == .active { vm.refreshAllowance() }
+        }
+        .onChange(of: devMode.isEnabled) { _, enabled in
+            // Developer mode went off with the Admin tab up: it's gone, so back to the feed.
+            tab = AppTab.fallback(tab, devModeEnabled: enabled)
         }
         .onChange(of: router.feedRequests) {
             // A refill reminder was tapped.
@@ -132,23 +137,27 @@ struct RootView: View {
         }
     }
 
-    /// Both tabs stay mounted so the deck keeps its place while the library is up.
     /// Shown once when saved progress couldn't be opened at launch.
     private var progressLoadNotice: Binding<Bool> {
         Binding(get: { vm.isProgressLoadNoticePresented }, set: { if !$0 { vm.dismissProgressLoadNotice() } })
     }
 
+    /// Every tab stays mounted so the deck keeps its place while another is up.
     private var tabs: some View {
         ZStack {
             feedTab
                 .tabVisibility(tab == .feed)
             LibraryView(isActive: tab == .library)
                 .tabVisibility(tab == .library)
+            if devMode.isEnabled {
+                AdminToolsView(onOpenFeed: { tab = .feed }, onOpenLibrary: { tab = .library })
+                    .tabVisibility(tab == .admin)
+            }
         }
         .onGeometryChange(for: CGFloat.self) { $0.safeAreaInsets.bottom } action: { tabBarInset = $0 }
         .environment(\.tabBarInset, tabBarInset)
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            PillTabBar(items: AppTab.allCases.map(\.tabItem), selection: $tab)
+            PillTabBar(items: AppTab.visible(devModeEnabled: devMode.isEnabled).map(\.tabItem), selection: $tab)
                 .padding(.top, DS.Spacing.xs)
                 .padding(.bottom, DS.Spacing.xxs)
         }

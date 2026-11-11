@@ -804,7 +804,7 @@ final class photo_swiperUITests: XCTestCase {
     @MainActor
     func testDebugResetSwipes() throws {
         let app = launch("-swipesLeft", "0", "-unlocked", "NO")
-        openSettings(app)
+        openAdmin(app)
         let left = app.descendants(matching: .any)["settings.debug.swipesLeft"]
         scrollTo(left, in: app)
         XCTAssertEqual(left.label, "Swipes left, 0")
@@ -817,62 +817,80 @@ final class photo_swiperUITests: XCTestCase {
     @MainActor
     func testDeveloperModeSwitchesOffAndSevenTapsBringItBack() throws {
         let app = launch()
-        openSettings(app)
-        let devMode = app.switches["settings.debug.devMode"]
-        scrollTo(devMode, in: app)
-        XCTAssertEqual(devMode.value as? String, "1", "Debug builds start in Developer mode")
-        // The panel sits below, in the same scroll view, so it's in the tree without scrolling.
+        openAdmin(app)
+        // The tuning panel lives on the Admin tab now.
         let binSize = app.textFields["settings.tuning.freeBinMB"]
-        XCTAssertTrue(binSize.exists)
+        scrollTo(binSize, in: app)
         XCTAssertEqual(binSize.value as? String, "1000", "The free bin defaults to 1 GB")
         XCTAssertTrue(element(app, containing: "swipes/day").exists, "The derived per-day line shows")
         XCTAssertTrue(app.descendants(matching: .any)["settings.tuning.countdown"].exists)
 
+        openSettings(app)
+        let devMode = app.switches["settings.debug.devMode"]
+        scrollTo(devMode, in: app)
+        XCTAssertEqual(devMode.value as? String, "1", "Debug builds start in Developer mode")
+        XCTAssertFalse(app.buttons["settings.debug.resetSwipes"].exists, "Settings keeps only the switch")
+        let adminTab = app.buttons["Admin"]
+        XCTAssertTrue(adminTab.exists, "The Admin tab shows in Developer mode")
+
         flip(devMode)
-        XCTAssertTrue(devMode.waitForNonExistence(timeout: 3), "Off hides the Admin Tools section")
-        XCTAssertFalse(binSize.exists)
+        XCTAssertTrue(waitForValue(devMode, "0"))
+        XCTAssertTrue(adminTab.waitForNonExistence(timeout: 3), "Off hides the Admin tab")
 
         let version = app.descendants(matching: .any)["settings.version"]
         for _ in 0..<6 where !(version.exists && version.isHittable) { app.swipeDown() }
         XCTAssertTrue(version.isHittable)
         for _ in 0..<7 { version.tap() }
         XCTAssertTrue(app.descendants(matching: .any)["settings.devModeToast"].waitForExistence(timeout: 2))
-        XCTAssertTrue(devMode.waitForExistence(timeout: 3), "Seven taps turn it back on")
+        XCTAssertTrue(waitForValue(devMode, "1"), "Seven taps turn it back on")
+        XCTAssertTrue(adminTab.waitForExistence(timeout: 3), "And the Admin tab is back")
     }
 
     // MARK: Admin Tools
 
     @MainActor
-    func testAddingAMockSimilarCardPutsItOnTopOfTheFeed() throws {
+    func testMockCardsQueueInOrderAndOpenFeedShowsThem() throws {
         let app = launch()
         let before = topCard(app)
-        openSettings(app)
-        XCTAssertTrue(element(app, containing: "Admin Tools").exists, "The section is called Admin Tools")
-        let add = app.buttons["settings.admin.mock.similar"]
-        scrollTo(add, in: app)
-        add.tap()
+        openAdmin(app)
+        let similar = app.buttons["settings.admin.mock.similar"]
+        scrollTo(similar, in: app)
+        similar.tap()
+        XCTAssertTrue(similar.isHittable, "Adding a card stays on the Admin tab")
+        app.buttons["settings.admin.mock.photo"].tap()
+        let queued = app.descendants(matching: .any)["settings.admin.mock.queued"]
+        XCTAssertTrue(waitForLabel(queued, containing: "2", timeout: 2), "Read \(queued.label)")
 
-        XCTAssertTrue(waitForTopCard(app, containing: "admin-"), "Back on the feed with the mock card on top")
-        XCTAssertTrue(similarHero(app).waitForExistence(timeout: 3), "It's a similar shots card")
+        let open = app.buttons["settings.admin.mock.openFeed"]
+        scrollTo(open, in: app)
+        open.tap()
+        XCTAssertTrue(waitForTopCard(app, containing: "admin-"), "The feed opens with the first mock card on top")
+        XCTAssertTrue(similarHero(app).waitForExistence(timeout: 3), "The first one added comes first")
         attachScreenshot(app, "mock similar card")
 
+        swipe(app, forward: false)
+        XCTAssertTrue(waitForTopCard(app, containing: "admin-"), "Then the second mock card")
+        XCTAssertFalse(similarHero(app).exists, "It's the photo")
         swipe(app, forward: false)
         XCTAssertTrue(waitForTopCard(app, is: before), "The card that was on top is next")
     }
 
     @MainActor
-    func testRaisingThePostDeleteUpsellShowsIt() throws {
+    func testRaisingThePostDeleteUpsellShowsItOverAdmin() throws {
         // A pick saved from an earlier run would change what's raised.
         let app = launch("-unlocked", "NO", "-admin.upsellScreen", "postDelete")
-        openSettings(app)
+        openAdmin(app)
         let raise = app.buttons["settings.admin.raiseUpsell"]
         scrollTo(raise, in: app)
         XCTAssertTrue(raise.label.contains("Post-delete sheet"), "The default pick, read \(raise.label)")
         raise.tap()
 
         let title = app.descendants(matching: .any)["unlock.title"]
-        XCTAssertTrue(title.waitForExistence(timeout: 5), "The offer comes up once Settings closes")
+        XCTAssertTrue(title.waitForExistence(timeout: 3), "The offer comes up over the Admin tab")
         XCTAssertTrue(title.label.hasPrefix("Freed "), "Read \(title.label)")
+        title.swipeDown(velocity: .fast)
+        XCTAssertTrue(title.waitForNonExistence(timeout: 3))
+        XCTAssertTrue(raise.isHittable, "Dismissed, it's back on the Admin tab")
     }
 
     // MARK: Progress
@@ -897,7 +915,7 @@ final class photo_swiperUITests: XCTestCase {
     @MainActor
     func testDebugPlayConfetti() throws {
         let app = launch()
-        openSettings(app)
+        openAdmin(app)
         let play = app.buttons["settings.debug.playConfetti"]
         scrollTo(play, in: app)
         play.tap()
@@ -915,6 +933,15 @@ final class photo_swiperUITests: XCTestCase {
         XCTAssertTrue(gear.waitForExistence(timeout: 5))
         gear.tap()
         XCTAssertTrue(app.descendants(matching: .any)["settings.title"].waitForExistence(timeout: 3), "Settings opens")
+    }
+
+    /// The Admin tab, shown in Developer mode (on by default in debug builds).
+    @MainActor
+    private func openAdmin(_ app: XCUIApplication) {
+        let admin = app.buttons["Admin"]
+        XCTAssertTrue(admin.waitForExistence(timeout: 5), "The Admin tab shows")
+        admin.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["admin.title"].waitForExistence(timeout: 3), "Admin Tools opens")
     }
 
     /// Taps a SwiftUI switch on its knob; a tap on the label doesn't always flip it.

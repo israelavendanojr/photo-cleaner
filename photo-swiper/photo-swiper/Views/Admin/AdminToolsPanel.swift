@@ -26,7 +26,7 @@ struct AdminUpsellPanel: View {
     @State private var didReset = false
 
     var body: some View {
-        SettingsSection("Admin Tools · Upsell") {
+        SettingsSection("Upsell") {
             Button {
                 vm.admin.adminResetDeleteUpsell()
                 didReset = true
@@ -67,7 +67,7 @@ struct AdminMockCardsPanel: View {
     let onClose: () -> Void
 
     var body: some View {
-        SettingsSection("Admin Tools · Mock cards") {
+        SettingsSection("Mock cards") {
             ForEach(AdminMockKind.allCases) { kind in
                 row("Add \(kind.title.lowercased())", icon: kind.icon, id: "settings.admin.mock.\(kind.rawValue)") {
                     add(kind)
@@ -78,8 +78,8 @@ struct AdminMockCardsPanel: View {
             }
             row("Remove mock cards", icon: "xmark.bin", id: "settings.admin.mock.remove",
                 detail: "Mock cards never save a decision, fill the pile or cost a swipe.") {
-                vm.admin.adminRemoveMockCards()
-            }
+                    vm.admin.adminRemoveMockCards()
+                }
         }
     }
 
