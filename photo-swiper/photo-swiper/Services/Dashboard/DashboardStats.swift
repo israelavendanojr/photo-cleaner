@@ -46,6 +46,12 @@ struct DashboardSnapshot: Equatable, Codable, Sendable {
         var bytesPerDay: Double
         /// Nil when nothing new was added lately.
         var daysUntilFull: Double? { bytesPerDay > 0 ? Double(available) / bytesPerDay : nil }
+        var used: Int64 { max(0, total - available) }
+        /// False when the library is bigger than everything used on the device: its sizes are the originals',
+        /// and with Optimize iPhone Storage most of those are in iCloud. It then can't be shown as a share of the device.
+        var libraryFitsOnDevice: Bool { libraryBytes <= used }
+        /// Used by everything but the library. Nil when the library doesn't fit, so the split isn't known.
+        var other: Int64? { libraryFitsOnDevice ? used - libraryBytes : nil }
     }
 
     /// One kind's share of the library.
@@ -144,7 +150,7 @@ enum DashboardStats {
         if let profile = scan?.profile, profile.totalBytes > 0 {
             snapshot.timeline = timeline(profile, now: now, calendar: calendar)
             snapshot.composition = composition(profile)
-            snapshot.insights = insights(profile, calendar: calendar)
+            snapshot.insights = insights(profile, now: now, calendar: calendar)
             if let storage {
                 snapshot.forecast = DashboardSnapshot.Forecast(total: storage.total, available: storage.available, libraryBytes: profile.totalBytes,
                                                                bytesPerDay: Double(profile.addedRecently) / Double(LibraryProfile.recentDays))
@@ -153,12 +159,14 @@ enum DashboardStats {
         return snapshot
     }
 
-    /// The running size by month up to this one, the last `timelineMonths` of it; earlier months are
-    /// the first point's starting size.
+    /// The running size by month up to this one, over at most the last `timelineMonths` calendar months;
+    /// earlier months are the first point's starting size. Months with nothing taken have no point.
     static func timeline(_ profile: LibraryProfile, now: Date, calendar: Calendar) -> [DashboardSnapshot.MonthPoint] {
         let months = profile.monthly.keys.filter { $0 <= now }.sorted()
-        let shown = months.suffix(timelineMonths)
-        var total = months.prefix(months.count - shown.count).reduce(Int64(0)) { $0 + (profile.monthly[$1]?.bytes ?? 0) }
+        let thisMonth = calendar.dateInterval(of: .month, for: now)?.start ?? now
+        let cutoff = calendar.date(byAdding: .month, value: -(timelineMonths - 1), to: thisMonth) ?? .distantPast
+        let shown = months.filter { $0 >= cutoff }
+        var total = months.filter { $0 < cutoff }.reduce(Int64(0)) { $0 + (profile.monthly[$1]?.bytes ?? 0) }
         return shown.map { month in
             total += profile.monthly[month]?.bytes ?? 0
             return DashboardSnapshot.MonthPoint(date: month, total: total)
@@ -189,8 +197,9 @@ enum DashboardStats {
         var day = start
         while day <= today {
             dates.append(day)
+            // Back to the start of the day: where DST starts at midnight, a day begins at 01:00.
             guard let next = calendar.date(byAdding: .day, value: 1, to: day) else { break }
-            day = next
+            day = calendar.startOfDay(for: next)
         }
         let active = dates.compactMap { byDay[$0] }.filter { $0 > 0 }.sorted()
         let days = dates.map { date in
@@ -199,29 +208,39 @@ enum DashboardStats {
         }
 
         let weeks = Set(history.compactMap { calendar.dateInterval(of: .weekOfYear, for: $0.at)?.start })
-        var week = weeks.contains(thisWeek) ? thisWeek : calendar.date(byAdding: .weekOfYear, value: -1, to: thisWeek)
+        var week = weeks.contains(thisWeek) ? thisWeek : previousWeek(thisWeek, calendar: calendar)
         var streak = 0
         while let current = week, weeks.contains(current) {
             streak += 1
-            week = calendar.date(byAdding: .weekOfYear, value: -1, to: current)
+            week = previousWeek(current, calendar: calendar)
         }
         return DashboardSnapshot.Activity(days: days, activeDays: active.count, streakWeeks: streak)
     }
 
-    /// 1...4 by which quartile of `sorted` (the active days' bytes, ascending) `bytes` falls in; 0 for none.
-    static func level(of bytes: Int64, among sorted: [Int64]) -> Int {
-        guard bytes > 0, !sorted.isEmpty else { return 0 }
-        let below = sorted.filter { $0 < bytes }.count
-        return min(4, 1 + below * 4 / sorted.count)
+    /// The start of the week before the one starting at `week`. Stepping back from just before it, not by
+    /// subtracting a week, so a week that starts at 01:00 (DST at midnight) still lands on a week's start.
+    private static func previousWeek(_ week: Date, calendar: Calendar) -> Date? {
+        calendar.dateInterval(of: .weekOfYear, for: week.addingTimeInterval(-1))?.start
     }
 
-    static func insights(_ profile: LibraryProfile, calendar: Calendar) -> DashboardSnapshot.Insights {
+    /// 1...4 by where `bytes` ranks among `sorted` (the active days' bytes, ascending); 0 for none. The
+    /// biggest day is always 4, so a lone cleanup day shows dark, not as the lightest step.
+    static func level(of bytes: Int64, among sorted: [Int64]) -> Int {
+        guard bytes > 0, !sorted.isEmpty else { return 0 }
+        // The share of active days at or under this one, rounded up to a quarter, so ties share a level.
+        let atOrBelow = sorted.filter { $0 <= bytes }.count
+        return min(4, max(1, (atOrBelow * 4 + sorted.count - 1) / sorted.count))
+    }
+
+    /// Months after `now` are left out: a camera with a wrong clock shouldn't make next year the busiest.
+    static func insights(_ profile: LibraryProfile, now: Date, calendar: Calendar) -> DashboardSnapshot.Insights {
+        let monthly = profile.monthly.filter { $0.key <= now }
         // The most items; a tie goes to the more recent month.
-        let busiest = profile.monthly.max { first, second in
+        let busiest = monthly.max { first, second in
             first.value.count != second.value.count ? first.value.count < second.value.count : first.key < second.key
         }
         var years: [Int: Int] = [:]
-        for (month, bucket) in profile.monthly { years[calendar.component(.year, from: month), default: 0] += bucket.count }
+        for (month, bucket) in monthly { years[calendar.component(.year, from: month), default: 0] += bucket.count }
         let perYear = years.keys.sorted().suffix(insightYears).map { DashboardSnapshot.YearCount(year: $0, count: years[$0] ?? 0) }
         return DashboardSnapshot.Insights(
             busiestMonth: busiest?.key, busiestMonthCount: busiest?.value.count ?? 0, perYear: Array(perYear),
@@ -257,7 +276,9 @@ enum DashboardStats {
         let start = calendar.startOfDay(for: first)
         let today = max(start, calendar.startOfDay(for: now))
         var points = [DashboardSnapshot.DayPoint]()
-        if let before = calendar.date(byAdding: .day, value: -1, to: start) { points.append(.init(date: before, total: 0)) }
+        if let before = calendar.date(byAdding: .day, value: -1, to: start) {
+            points.append(.init(date: calendar.startOfDay(for: before), total: 0))
+        }
         var total: Int64 = 0
         for day in byDay.keys.sorted() {
             total += byDay[day] ?? 0
@@ -277,7 +298,7 @@ enum DashboardStats {
         var week = thisWeek
         while week >= firstWeek, weeks.count < maxWeeks {
             weeks.append(.init(date: week, bytes: byWeek[week] ?? 0))
-            guard let previous = calendar.date(byAdding: .weekOfYear, value: -1, to: week) else { break }
+            guard let previous = previousWeek(week, calendar: calendar) else { break }
             week = previous
         }
         return weeks.reversed()

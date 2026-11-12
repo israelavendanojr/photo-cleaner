@@ -149,6 +149,31 @@ struct DashboardInsightsTests {
         #expect(activity.streakWeeks == weeks)
     }
 
+    @Test func aLoneCleanupDayIsTheDarkestAndTiesShareALevel() throws {
+        let lone = try #require(make(history: [cleanup(1, 10)]).activity)
+        #expect(lone.days.map(\.level).max() == 4)
+        let tied = try #require(make(history: [cleanup(1, 10), cleanup(2, 10), cleanup(3, 5)]).activity)
+        let levels = Dictionary(tied.days.map { ($0.bytes, $0.level) }, uniquingKeysWith: { first, _ in first })
+        #expect(levels[10] == 4 && levels[5] == 2)
+    }
+
+    /// In Beirut, DST starts at midnight: the last Sunday of March begins at 01:00. Days and weeks after it
+    /// still line up, with weeks starting on Sunday.
+    @Test func daysAndWeeksSurviveDSTStartingAtMidnight() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "Asia/Beirut")!
+        calendar.firstWeekday = 1
+        let date = { (month: Int, day: Int) in calendar.date(from: DateComponents(year: 2025, month: month, day: day, hour: 12))! }
+        #expect(calendar.component(.hour, from: calendar.startOfDay(for: date(3, 30))) == 1, "Midnight doesn't exist that day")
+        let history = [date(3, 25), date(4, 1), date(4, 8)].map { CleanupEntry(at: $0, category: .photo, count: 1, bytes: 100) }
+
+        let activity = DashboardStats.activity(history, now: date(4, 9), calendar: calendar)
+        #expect(activity.activeDays == 3)
+        #expect(activity.days.filter { $0.bytes > 0 }.count == 3)
+        #expect(activity.days.allSatisfy { $0.date == calendar.startOfDay(for: $0.date) })
+        #expect(activity.streakWeeks == 3)
+    }
+
     // MARK: Library
 
     @Test func theForecastDividesWhatsFreeByTheRecentPace() throws {
@@ -161,6 +186,14 @@ struct DashboardInsightsTests {
         let still = try #require(make(profile: profile([month(2025, 1): .init(count: 1, bytes: 5)]), storage: storage).forecast)
         #expect(still.daysUntilFull == nil, "Nothing new lately: no date")
         #expect(make(profile: profile([month(2025, 1): .init(count: 1, bytes: 5)])).forecast == nil, "No device storage: no forecast")
+    }
+
+    /// With Optimize iPhone Storage the library's originals can be bigger than the phone.
+    @Test func aLibraryBiggerThanWhatsUsedIsntSplitOutOfTheDevice() {
+        let fits = DashboardSnapshot.Forecast(total: 128, available: 18, libraryBytes: 64, bytesPerDay: 1)
+        #expect(fits.libraryFitsOnDevice && fits.other == 46)
+        let inCloud = DashboardSnapshot.Forecast(total: 128, available: 18, libraryBytes: 300, bytesPerDay: 1)
+        #expect(!inCloud.libraryFitsOnDevice && inCloud.other == nil && inCloud.used == 110)
     }
 
     @Test func theTimelineKeepsTheLastSixtyMonthsAndStartsFromWhatCameBefore() throws {
@@ -190,6 +223,22 @@ struct DashboardInsightsTests {
         #expect(insights.busiestMonthCount == 50)
         #expect(insights.perYear.map(\.year) == Array(2018...2025))
         #expect(insights.oldestUnreviewedYear == 2014)
+    }
+
+    @Test func theTimelineSpansCalendarMonthsNotMonthsWithPhotos() throws {
+        let timeline = try #require(make(profile: profile([
+            month(1985, 6): .init(count: 1, bytes: 7), month(2024, 2): .init(count: 1, bytes: 10), month(2025, 11): .init(count: 1, bytes: 20),
+        ])).timeline)
+        #expect(timeline.map(\.date) == [month(2024, 2), month(2025, 11)], "1985 is before the window")
+        #expect(timeline.map(\.total) == [17, 37])
+    }
+
+    @Test func monthsAfterNowArentInsights() throws {
+        let insights = try #require(make(profile: profile([
+            month(2025, 3): .init(count: 5, bytes: 1), month(2031, 1): .init(count: 90, bytes: 1),
+        ])).insights)
+        #expect(insights.busiestMonth == month(2025, 3))
+        #expect(insights.perYear.map(\.year) == [2025])
     }
 
     @Test func aSnapshotCachedBeforeTheseSectionsStillDecodes() throws {
@@ -252,7 +301,7 @@ private final class SlowScanBuilder: FeedBuilding, @unchecked Sendable {
 
     func makeSession(number: Int, options: FeedOptions) async -> Session { Session(number: number, cards: []) }
 
-    func libraryScan(excluding: Set<LibraryItem.ID>) async -> LibraryScan? {
+    func libraryScan(excluding: Set<LibraryItem.ID>, removed: Set<LibraryItem.ID>) async -> LibraryScan? {
         let first = lock.withLock { scans += 1; return scans == 1 }
         if first { await withCheckedContinuation { continuation in lock.withLock { waiting = continuation } } }
         return MockFeedBuilder.scan
@@ -308,6 +357,18 @@ struct DashboardControllerTests {
 
         #expect(controller.snapshot == nil)
         #expect(!FileManager.default.fileExists(atPath: url.path()))
+    }
+
+    private struct FixedStorage: DeviceStorageReading {
+        func current() -> DeviceStorage? { DeviceStorage(total: 128_000_000_000, available: 18_000_000_000) }
+    }
+
+    @Test func theDevicesStorageReachesTheForecast() async throws {
+        let controller = DashboardController(builder: MockFeedBuilder(), store: InMemoryProgressStore(), storage: FixedStorage(),
+                                             cacheURL: nil, now: { now })
+        await controller.refresh(reviewedFraction: 0)
+        let forecast = try #require(controller.snapshot?.forecast)
+        #expect(forecast.available == 18_000_000_000)
     }
 
     private let now = Date(timeIntervalSince1970: 1_800_000_000)
