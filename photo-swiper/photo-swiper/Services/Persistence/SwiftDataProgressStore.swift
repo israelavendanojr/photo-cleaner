@@ -1,3 +1,4 @@
+import CoreData
 import Foundation
 import OSLog
 import SwiftData
@@ -24,6 +25,8 @@ final class SwiftDataProgressStore: ProgressStoring {
     private let decoder = JSONDecoder()
     /// Nil until first needed, and after a failed save.
     private var mirror: Mirror?
+    /// The history has been checked for deletes made before it existed (`backfillHistoryIfNeeded`).
+    private var historyChecked = false
 
     init(container: ModelContainer, defaults: UserDefaults? = .standard) {
         self.container = container
@@ -32,14 +35,39 @@ final class SwiftDataProgressStore: ProgressStoring {
 
     /// The app's container: the default on-disk store, a store at `url`, or one in memory.
     /// Progress and the feature index share it, so both live in one file. Its models are versioned;
-    /// see `BristleSchemaV1` before changing any of them.
-    nonisolated static func makeContainer(url: URL? = nil, inMemory: Bool = false) throws -> ModelContainer {
+    /// see `BristleSchema.swift` before changing any of them.
+    ///
+    /// The migration plan only knows the versioned layouts. A store written before versioning can have
+    /// another layout (from before the index, or before its duplicate fields), and staged migration
+    /// refuses it as an unknown version. Such a store opens the way it always did instead: without a plan,
+    /// so Core Data infers a lightweight migration to the current models.
+    ///
+    /// Only a store from before V2 gets that second try (`isOlderThanV2`). A store from a newer build, or one
+    /// whose own migration failed, would otherwise be migrated down or past its custom stage and lose data;
+    /// it keeps its file and the error is thrown, as before.
+    /// - Parameter allowsUnplannedFallback: Tests turn it off to prove a store opens through the plan.
+    nonisolated static func makeContainer(url: URL? = nil, inMemory: Bool = false,
+                                          allowsUnplannedFallback: Bool = true) throws -> ModelContainer {
         let configuration = if let url { ModelConfiguration(url: url) } else { ModelConfiguration(isStoredInMemoryOnly: inMemory) }
-        return try ModelContainer(
-            for: Schema(versionedSchema: BristleSchemaV1.self),
-            migrationPlan: BristleMigrationPlan.self,
-            configurations: configuration
-        )
+        let schema = Schema(versionedSchema: BristleSchemaV2.self)
+        do {
+            return try ModelContainer(for: schema, migrationPlan: BristleMigrationPlan.self, configurations: configuration)
+        } catch {
+            guard allowsUnplannedFallback, !inMemory, isOlderThanV2(storeAt: configuration.url, schema: schema),
+                  let container = try? ModelContainer(for: schema, configurations: configuration) else { throw error }
+            Logger.app(category: "progress").notice("Opened progress without the migration plan after: \(error)")
+            return container
+        }
+    }
+
+    /// The store on disk was written before V2: it has no `CleanupEvent` table, which every later version
+    /// keeps, and no table this build doesn't know.
+    nonisolated static func isOlderThanV2(storeAt url: URL, schema: Schema) -> Bool {
+        guard let metadata = try? NSPersistentStoreCoordinator.metadataForPersistentStore(type: .sqlite, at: url),
+              let hashes = metadata[NSStoreModelVersionHashesKey] as? [String: Any] else { return false }
+        let stored = Set(hashes.keys)
+        let known = Set(schema.entities.map(\.name))
+        return !stored.contains(String(describing: CleanupEvent.self)) && stored.isSubset(of: known)
     }
 
     /// The app's on-disk store, or one at `url` (tests).
@@ -89,6 +117,7 @@ final class SwiftDataProgressStore: ProgressStoring {
             record.sessionNumber = change.sessionNumber
             record.bytes = change.item.bytes
             record.itemData = itemData
+            record.categoryRaw = change.category?.rawValue
             if record.settlementRaw != change.settlement?.rawValue {
                 record.settlementRaw = change.settlement?.rawValue
                 record.settledAt = change.settlement == nil ? nil : .now
@@ -165,6 +194,47 @@ final class SwiftDataProgressStore: ProgressStoring {
         var descriptor = FetchDescriptor<ItemProgress>(predicate: #Predicate { $0.settlementRaw == deleted })
         descriptor.propertiesToFetch = [\.bytes]
         return fetch(descriptor).reduce(0) { $0 + $1.bytes }
+    }
+
+    // MARK: Cleanup history
+
+    func recordCleanup(_ entries: [CleanupEntry]) {
+        guard !entries.isEmpty else { return }
+        backfillHistoryIfNeeded()
+        for entry in entries { context.insert(event(from: entry)) }
+        persist()
+    }
+
+    func cleanupHistory() -> [CleanupEntry] {
+        backfillHistoryIfNeeded()
+        let rows = fetch(FetchDescriptor<CleanupEvent>(sortBy: [SortDescriptor(\.at)]))
+        return rows.compactMap { row in
+            CleanupCategory(rawValue: row.categoryRaw).map { CleanupEntry(at: row.at, category: $0, count: row.count, bytes: row.bytes) }
+        }
+    }
+
+    /// Fills in the history once for deletes made before it existed (stores from V1), one entry per day
+    /// and category, so cleared-over-time adds up to `freedBytes()`. Runs only while the history is empty,
+    /// and before the first entry is added, so it can't count a delete twice.
+    private func backfillHistoryIfNeeded() {
+        guard !historyChecked else { return }
+        historyChecked = true
+        let hasHistory = ((try? context.fetchCount(FetchDescriptor<CleanupEvent>())) ?? 0) > 0
+        guard !hasHistory else { return }
+        let deleted: String? = Settlement.deleted.rawValue
+        let rows = fetch(FetchDescriptor<ItemProgress>(predicate: #Predicate { $0.settlementRaw == deleted }))
+        guard !rows.isEmpty else { return }
+        let settled = rows.compactMap { row -> (Date, LibraryItem, CleanupCategory)? in
+            guard let item = try? decoder.decode(LibraryItem.self, from: row.itemData) else { return nil }
+            let category = row.categoryRaw.flatMap(CleanupCategory.init(rawValue:)) ?? .inferred(from: item)
+            return (row.settledAt ?? row.decidedAt, item, category)
+        }
+        for entry in CleanupEntry.backfilled(from: settled) { context.insert(event(from: entry)) }
+        persist()
+    }
+
+    private func event(from entry: CleanupEntry) -> CleanupEvent {
+        CleanupEvent(id: UUID(), at: entry.at, count: entry.count, bytes: entry.bytes, categoryRaw: entry.category.rawValue)
     }
 
     func lastSessionNumber() -> Int {
@@ -259,11 +329,13 @@ final class SwiftDataProgressStore: ProgressStoring {
         do {
             try context.delete(model: ItemProgress.self)
             try context.delete(model: SessionProgress.self)
+            try context.delete(model: CleanupEvent.self)
         } catch {
             Self.log.error("Couldn't reset progress: \(error)")
         }
         persist()
         mirror = nil
+        historyChecked = false
         localSkipFavorites = true
         defaults?.removeObject(forKey: Self.skipFavoritesKey)
     }
@@ -287,7 +359,8 @@ final class SwiftDataProgressStore: ProgressStoring {
               let item = try? decoder.decode(LibraryItem.self, from: record.itemData) else { return nil }
         return StoredDecision(
             decision: decision, decidedAt: record.decidedAt, sessionNumber: record.sessionNumber,
-            item: item, settlement: record.settlementRaw.flatMap(Settlement.init(rawValue:))
+            item: item, settlement: record.settlementRaw.flatMap(Settlement.init(rawValue:)),
+            category: record.categoryRaw.flatMap(CleanupCategory.init(rawValue:))
         )
     }
 

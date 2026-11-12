@@ -37,7 +37,8 @@ private extension FeedViewModel {
     /// every minute instead of every six hours. `-simulateComplete YES` shows the library as 100% reviewed
     /// (display only, nothing saved) and forgets that the confetti played, so it plays on the Library tab.
     /// `-resetDevMode YES` turns Developer mode back on, its debug default, whatever an earlier run saved,
-    /// so UI tests always find the Admin tab.
+    /// so UI tests always find the Admin tab. `-mockHistory YES` fills the mock cleanup history with about ten
+    /// weeks of made-up deletes, for the Library dashboard's chart; `-showLibrary YES` opens on that tab.
     /// Release builds always run on the real library.
     static func launch() -> FeedViewModel {
         let vm = launchServices()
@@ -114,7 +115,10 @@ private extension FeedViewModel {
         }
         let store = SwiftDataProgressStore(container: container)
         #if DEBUG
-        if UserDefaults.standard.bool(forKey: "resetProgress") { store.reset() }
+        if UserDefaults.standard.bool(forKey: "resetProgress") {
+            store.reset()
+            try? FileManager.default.removeItem(at: DashboardController.defaultCacheURL)
+        }
         #endif
         let index = FeatureIndex(container: container)
         let indexer = LibraryIndexer(source: PhotoKitIndexSource(), analyzer: VisionImageAnalyzer(), index: index,
@@ -129,7 +133,8 @@ private extension FeedViewModel {
             allowanceStore: SwipeAllowanceStore(defaults: .standard),
             freeTier: .shared,
             features: .shared,
-            notifier: RefillNotifier(center: SystemNotificationCenter(), defaults: .standard)
+            notifier: RefillNotifier(center: SystemNotificationCenter(), defaults: .standard),
+            dashboardCache: DashboardController.defaultCacheURL
         )
     }
 
@@ -138,11 +143,20 @@ private extension FeedViewModel {
 
     #if DEBUG
     /// `-mockProgress YES`: saved mock progress in its own file, apart from the real one. Otherwise in memory.
+    /// `-mockHistory YES` gives an empty history about ten weeks of made-up cleanups.
     static func mockProgressStore() -> any ProgressStoring {
-        guard UserDefaults.standard.bool(forKey: "mockProgress") else { return InMemoryProgressStore() }
+        let store = savedMockProgressStore() ?? InMemoryProgressStore()
+        if UserDefaults.standard.bool(forKey: "mockHistory"), store.cleanupHistory().isEmpty {
+            store.recordCleanup(MockHistory.entries(now: .now))
+        }
+        return store
+    }
+
+    private static func savedMockProgressStore() -> (any ProgressStoring)? {
+        guard UserDefaults.standard.bool(forKey: "mockProgress") else { return nil }
         let url = URL.applicationSupportDirectory.appending(path: "mock-progress.store")
         try? FileManager.default.createDirectory(at: .applicationSupportDirectory, withIntermediateDirectories: true)
-        guard let container = try? SwiftDataProgressStore.makeContainer(url: url) else { return InMemoryProgressStore() }
+        guard let container = try? SwiftDataProgressStore.makeContainer(url: url) else { return nil }
         let store = SwiftDataProgressStore(container: container, defaults: nil)
         if UserDefaults.standard.bool(forKey: "resetProgress") { store.reset() }
         return store

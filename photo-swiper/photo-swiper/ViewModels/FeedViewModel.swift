@@ -14,6 +14,7 @@ import OSLog
 /// - `OnboardingFlow`: first-launch onboarding, which can hold `phase` while the first deck is dealt.
 /// - `ReminderController`: refill reminders and the clutter estimate they quote.
 /// - `FollowUpCoordinator`: the review prompt or unlock offer a delete earns.
+/// - `DashboardController`: the Library tab's cached numbers: cleared over time and what's left to clear.
 /// Collaborators never reach each other; effects that span them (a refill front-loading the deck,
 /// an unlock cancelling reminders) are sequenced here. The Admin tab's tools live in
 /// `AdminController` (`vm.admin`), which changes the deck only through this class's admin intents;
@@ -46,6 +47,11 @@ final class FeedViewModel {
     private(set) var returningCard: ReturningCard?
     private(set) var stats = LibraryStats(totalItems: 0, reviewedItems: 0, freedBytes: 0)
     private(set) var access = LibraryAccess.full
+    /// The one kind of clutter the feed offers, picked from the dashboard. Nil offers everything.
+    /// Not saved: a relaunch is back to the full feed.
+    private(set) var feedFocus: CleanupCategory?
+    /// Goes up each time something asks for the Feed tab. RootView switches tabs when it changes.
+    private(set) var feedRequests = 0
     /// The system access prompt is up.
     private(set) var isRequestingAccess = false
     /// Access was just granted from onboarding and the first session is being built.
@@ -125,6 +131,8 @@ final class FeedViewModel {
     let reminders: ReminderController
     /// First-launch onboarding, which can hold the screen while the first deck is dealt.
     let onboarding: OnboardingFlow
+    /// The Library tab's numbers, cached between launches.
+    let dashboard: DashboardController
     /// The Admin tab's tools (Developer mode).
     @ObservationIgnored private(set) lazy var admin = AdminController(vm: self, entitlements: entitlements, defaults: defaults, notifier: notifier, now: now)
 
@@ -148,6 +156,7 @@ final class FeedViewModel {
         features: FeatureAvailabilityTunables? = nil,
         notifier: RefillNotifier? = nil,
         progressLoadFailed: Bool = false,
+        dashboardCache: URL? = nil,
         now: @escaping () -> Date = Date.init
     ) {
         self.library = library
@@ -165,6 +174,7 @@ final class FeedViewModel {
         followUps = FollowUpCoordinator(defaults: defaults, freeTier: freeTier, now: now)
         onboarding = OnboardingFlow(defaults: defaults, notifier: notifier, library: library)
         reminders = ReminderController(notifier: notifier, builder: builder, store: store, now: now)
+        dashboard = DashboardController(builder: builder, store: store, cacheURL: dashboardCache, now: now)
         gate = SwipeGate(entitlements: entitlements, allowanceStore: allowanceStore ?? SwipeAllowanceStore(), freeTier: freeTier, now: now)
         skipFavorites = store.skipFavorites
         hasCelebratedComplete = defaults.bool(forKey: DefaultsKey.celebratedComplete)
@@ -627,6 +637,8 @@ final class FeedViewModel {
         guard !deletedItems.isEmpty || !mocks.isEmpty else { return nil }
         let ids = Set(deletedItems.map(\.id))
         let mockIDs = Set(mocks.map(\.id))
+        // Before settling: the store's first history write fills in older deletes, and these must not be among them.
+        recordCleanup(deletedItems)
         settle(ids, as: .deleted)
         settledIDs.formUnion(mockIDs)
         carriedPending.removeAll { ids.contains($0.id) || mockIDs.contains($0.id) }
@@ -639,15 +651,92 @@ final class FeedViewModel {
         let freed = (deletedItems + mocks).reduce(0) { $0 + $1.bytes }
         followUps.queueFollowUp(freed: freed, isUnlocked: isUnlocked, isWallPresented: isWallPresented,
                                 purchasedThisLaunch: purchasedThisLaunch, isMockOnly: deletedItems.isEmpty)
+        if !deletedItems.isEmpty { Task { await refreshDashboard() } }
         return freed
+    }
+
+    /// Adds a delete to the cleanup history, one entry per category, at the time it happened.
+    /// Each item's category is the one saved with its decision; older decisions fall back to a guess.
+    private func recordCleanup(_ deleted: [LibraryItem]) {
+        guard !deleted.isEmpty else { return }
+        let saved = store.decisions(for: Set(deleted.map(\.id)))
+        store.recordCleanup(CleanupEntry.entries(for: deleted, at: now()) { saved[$0.id]?.category ?? .inferred(from: $0) })
+    }
+
+    // MARK: Dashboard
+
+    /// The Library tab's last numbers, possibly from the cache. Nil before the first refresh on a new install.
+    var dashboardSnapshot: DashboardSnapshot? { dashboard.snapshot }
+    var isDashboardRefreshing: Bool { dashboard.isRefreshing }
+
+    /// Works the Library tab's numbers out again: pull to refresh, and after a delete.
+    func refreshDashboard() async {
+        // What's decided or dealt, from memory. The builder adds its last page's exclusions, so this never
+        // reads every saved decision on the main actor.
+        let excluding = Set(decisions.keys).union(cards.flatMap(\.items).map(\.id)).union(pendingItems.map(\.id))
+        await dashboard.refresh(reviewedFraction: libraryReviewedFraction, excluding: excluding)
+    }
+
+    /// Refreshes the Library tab's numbers if they're missing or old, when the tab is shown.
+    func refreshDashboardIfStale() async {
+        guard dashboard.isStale else { return }
+        await refreshDashboard()
+    }
+
+    // MARK: Focus
+
+    /// Shows only one kind of clutter in the feed, or everything again with nil, and asks for the Feed tab.
+    ///
+    /// The current card never changes, whatever its kind: the user may be partway through it, and a decision
+    /// must land on the card they acted on. Only the cards after it that don't fit are dropped, and a page
+    /// being built without the focus is thrown away. New pages bring the rest. Nothing is decided.
+    func focusFeed(on category: CleanupCategory?) {
+        defer { showFeed() }
+        guard category != feedFocus else { return }
+        feedFocus = category
+        if let category, var current = session, current.cards.count > index + 1 {
+            current.cards = Array(current.cards.prefix(index + 1)) + current.cards.dropFirst(index + 1).filter { $0.matches(category) }
+            session = current
+            // Partial reviews of dropped cards go with them. Undo only reaches cards up to the current one.
+            let kept = Set(current.cards.map(\.id))
+            drafts = drafts.filter { kept.contains($0.key) }
+            marks = marks.filter { kept.contains($0.key) }
+            saveProgress()
+        }
+        // A page on its way was built for the old focus.
+        deckGeneration += 1
+        pageTask?.cancel()
+        pageTask = nil
+        isLibraryExhausted = false
+        if phase == .caughtUp {
+            Task { await checkAgain() }
+        } else {
+            fillIfNeeded()
+        }
+    }
+
+    /// What a decision files `item` under. A free user's duplicate and similar sets arrive split into
+    /// single photos, so in a feed focused on those, a single photo is still one of them.
+    private func category(of item: LibraryItem, on card: FeedCard) -> CleanupCategory {
+        let category = CleanupCategory.of(item, on: card)
+        if category == .photo, let focus = feedFocus, focus == .duplicate || focus == .similar { return focus }
+        return category
+    }
+
+    /// Asks for the Feed tab, e.g. from the dashboard's empty state.
+    func showFeed() {
+        feedRequests += 1
     }
 
     /// "Check again" from caught up: deals a fresh deck if anything turned up, e.g. new photos
     /// or "later" items back from their cooldown. Never gated: only swipes are.
     func checkAgain() async {
         guard phase == .caughtUp else { return }
+        let generation = deckGeneration
         let next = await makeSession(number: nextPageNumber)
-        guard !next.cards.isEmpty else { return }
+        // Another check, or a change of focus, may have dealt a deck or asked again meanwhile; only the
+        // latest deals, so a deck the user is already on is never replaced.
+        guard phase == .caughtUp, generation == deckGeneration, !next.cards.isEmpty else { return }
         apply(next)
     }
 
@@ -752,6 +841,7 @@ final class FeedViewModel {
     /// Forgets every saved decision, the pile, and preferences, then deals a fresh first deck.
     func adminClearAllDecisions() async {
         store.reset()
+        dashboard.clear()
         settledIDs = []
         skipFavorites = store.skipFavorites
         apply(await makeSession(number: 1))
@@ -869,7 +959,10 @@ final class FeedViewModel {
         let decidedAt = now()
         let sessionNumber = session?.number ?? 0
         let changes: [LibraryItem.ID: StoredDecision?] = isMock ? [:] : Dictionary(uniqueKeysWithValues: card.items.compactMap { item in
-            outcome[item.id].map { (item.id, StoredDecision(decision: $0, decidedAt: decidedAt, sessionNumber: sessionNumber, item: item)) }
+            outcome[item.id].map {
+                (item.id, StoredDecision(decision: $0, decidedAt: decidedAt, sessionNumber: sessionNumber, item: item,
+                                         category: category(of: item, on: card)))
+            }
         })
 
         let cleared = card.items.filter { outcome[$0.id] == .delete }.reduce(0) { $0 + $1.bytes }
@@ -909,7 +1002,7 @@ final class FeedViewModel {
     private func appendPage() async {
         let generation = deckGeneration
         let inDeck = Set(session?.items.map(\.id) ?? [])
-        var options = FeedOptions(skipFavorites: skipFavorites, excluding: store.excludedFromNewSession(asOf: now()))
+        var options = FeedOptions(skipFavorites: skipFavorites, excluding: store.excludedFromNewSession(asOf: now()), focus: feedFocus)
         options.excluding.formUnion(inDeck)
         options.excluding.formUnion(decisions.keys)
         let page = gated(await builder.makeSession(number: nextPageNumber, options: options))
@@ -1082,7 +1175,7 @@ final class FeedViewModel {
 
     /// - Parameter placeBudget: Overrides how long to wait on place names; nil keeps the default.
     private func makeSession(number: Int, placeBudget: Duration? = nil) async -> Session {
-        var options = FeedOptions(skipFavorites: skipFavorites, excluding: store.excludedFromNewSession(asOf: now()))
+        var options = FeedOptions(skipFavorites: skipFavorites, excluding: store.excludedFromNewSession(asOf: now()), focus: feedFocus)
         if let placeBudget { options.placeBudget = placeBudget }
         return gated(await builder.makeSession(number: number, options: options))
     }

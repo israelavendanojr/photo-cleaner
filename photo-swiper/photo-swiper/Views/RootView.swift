@@ -123,6 +123,8 @@ struct RootView: View {
             }
         }
         .onGeometryChange(for: CGFloat.self) { $0.safeAreaInsets.bottom } action: { tabBarInset = $0 }
+        // The dashboard asks for the feed: a suggestion was tapped, or "Start reviewing".
+        .onChange(of: vm.feedRequests) { tab = .feed }
         .environment(\.tabBarInset, tabBarInset)
         // Over whichever tab is up, and over caught up too, so Admin Tools can raise it from their tab.
         .sheet(isPresented: Bindable(vm).isWallPresented) {

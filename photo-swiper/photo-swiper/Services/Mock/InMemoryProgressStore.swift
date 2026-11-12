@@ -6,6 +6,10 @@ import Foundation
 final class InMemoryProgressStore: ProgressStoring {
     private var records: [LibraryItem.ID: StoredDecision] = [:]
     private var saved: SavedSession?
+    private var history: [CleanupEntry] = []
+    /// When each item was settled, for the history's backfill.
+    private var settledAt: [LibraryItem.ID: Date] = [:]
+    private var historyChecked = false
     var skipFavorites = true
 
     nonisolated init() {}
@@ -21,6 +25,7 @@ final class InMemoryProgressStore: ProgressStoring {
     func settle(_ ids: Set<LibraryItem.ID>, as settlement: Settlement) {
         for id in ids where records[id]?.settlement == nil {
             records[id]?.settlement = settlement
+            settledAt[id] = .now
         }
     }
 
@@ -29,7 +34,10 @@ final class InMemoryProgressStore: ProgressStoring {
     }
 
     func reopen(_ ids: Set<LibraryItem.ID>) {
-        for id in ids { records[id]?.settlement = nil }
+        for id in ids {
+            records[id]?.settlement = nil
+            settledAt[id] = nil
+        }
     }
 
     func pile() -> [LibraryItem] {
@@ -46,6 +54,28 @@ final class InMemoryProgressStore: ProgressStoring {
 
     func freedBytes() -> Int64 {
         records.values.filter { $0.settlement == .deleted }.reduce(0) { $0 + $1.item.bytes }
+    }
+
+    func recordCleanup(_ entries: [CleanupEntry]) {
+        guard !entries.isEmpty else { return }
+        backfillHistoryIfNeeded()
+        history += entries
+    }
+
+    func cleanupHistory() -> [CleanupEntry] {
+        backfillHistoryIfNeeded()
+        return history.sorted { $0.at < $1.at }
+    }
+
+    /// The same once-only fill as `SwiftDataProgressStore`'s.
+    private func backfillHistoryIfNeeded() {
+        guard !historyChecked else { return }
+        historyChecked = true
+        guard history.isEmpty else { return }
+        let settled = records.filter { $0.value.settlement == .deleted }.map { id, record in
+            (settledAt[id] ?? record.decidedAt, record.item, record.category ?? .inferred(from: record.item))
+        }
+        history = CleanupEntry.backfilled(from: settled)
     }
 
     func lastSessionNumber() -> Int {
@@ -76,6 +106,9 @@ final class InMemoryProgressStore: ProgressStoring {
     func reset() {
         records = [:]
         saved = nil
+        history = []
+        settledAt = [:]
+        historyChecked = false
         skipFavorites = true
     }
 }

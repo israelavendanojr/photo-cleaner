@@ -31,6 +31,12 @@ protocol ProgressStoring: AnyObject {
     /// The highest page number seen, or 0.
     func lastSessionNumber() -> Int
 
+    /// Adds to the cleanup history. Called once per delete from the pile, never for mock items.
+    func recordCleanup(_ entries: [CleanupEntry])
+    /// Every cleanup, oldest first. Deletes made before the history existed are filled in once,
+    /// one entry per day and category, so the history adds up to `freedBytes()`.
+    func cleanupHistory() -> [CleanupEntry]
+
     /// The current deck.
     func loadSession() -> SavedSession?
     /// Nil clears the saved deck.
@@ -71,6 +77,8 @@ struct StoredDecision: Equatable, Sendable {
     var item: LibraryItem
     /// Nil while the decision is still open.
     var settlement: Settlement?
+    /// What the item was decided as, from its card. Nil in decisions saved before categories existed.
+    var category: CleanupCategory?
 
     /// Keep and delete are final; "later" sits out for `laterCooldown`.
     func blocksNewSession(asOf now: Date) -> Bool {
@@ -80,6 +88,35 @@ struct StoredDecision: Equatable, Sendable {
     var isPending: Bool { decision == .delete && settlement == nil }
     /// Not deleted by this app or gone some other way. Undeletable items are still there.
     var isInLibrary: Bool { settlement != .deleted && settlement != .gone }
+}
+
+/// Space cleared in one category at one time: a row of the cleanup history.
+struct CleanupEntry: Equatable, Codable, Sendable {
+    var at: Date
+    var category: CleanupCategory
+    var count: Int
+    var bytes: Int64
+
+    /// One entry per category among `items`, all at `at`, in `CleanupCategory` order.
+    /// `category` says what each item was decided as.
+    static func entries(for items: [LibraryItem], at: Date, category: (LibraryItem) -> CleanupCategory) -> [CleanupEntry] {
+        let grouped = Dictionary(grouping: items, by: category)
+        return CleanupCategory.allCases.compactMap { kind in
+            guard let members = grouped[kind], !members.isEmpty else { return nil }
+            return CleanupEntry(at: at, category: kind, count: members.count, bytes: members.reduce(0) { $0 + $1.bytes })
+        }
+    }
+
+    /// The history for deletes made before it was recorded: one entry per day (at its start) and
+    /// category, oldest first. `settled` is each deleted item with when it was settled and its category.
+    static func backfilled(from settled: [(Date, LibraryItem, CleanupCategory)], calendar: Calendar = .current) -> [CleanupEntry] {
+        let byDay = Dictionary(grouping: settled) { calendar.startOfDay(for: $0.0) }
+        return byDay.keys.sorted().flatMap { day in
+            let members = byDay[day] ?? []
+            let categories = Dictionary(uniqueKeysWithValues: members.map { ($0.1.id, $0.2) })
+            return entries(for: members.map(\.1), at: day) { categories[$0.id] ?? .inferred(from: $0) }
+        }
+    }
 }
 
 /// How much of the deck `ProgressStoring.commit` writes.

@@ -1,6 +1,7 @@
 import SwiftUI
 
-/// Rounded label: the "Best pick" and "Keep" markers, a video's length, swipes left.
+/// Rounded label: the "Best pick" and "Keep" markers, a video's length, swipes left, the feed's focus.
+/// A trailing symbol (`xmark` on the focus chip) takes the text color, never brick.
 struct Chip: View {
     enum Style {
         /// Brick text on tint, e.g. swipes left.
@@ -13,6 +14,7 @@ struct Chip: View {
 
     let text: String
     var systemImage: String?
+    var trailingSystemImage: String?
     var style: Style = .brick
     var size: Font.TextStyle = .subheadline
 
@@ -24,6 +26,11 @@ struct Chip: View {
                     .foregroundStyle(iconColor)
             }
             Text(text)
+            if let trailingSystemImage {
+                Image(systemName: trailingSystemImage)
+                    .imageScale(.small)
+                    .accessibilityHidden(true)
+            }
         }
         .font(.system(size, weight: .semibold))
         .foregroundStyle(foreground)
@@ -59,6 +66,7 @@ struct Chip: View {
     VStack(spacing: 16) {
         Chip(text: "3 left", size: .caption)
         Chip(text: "Best pick", systemImage: "star.fill", style: .plain)
+        Chip(text: "Only videos", trailingSystemImage: "xmark", style: .plain, size: .caption)
         Chip(text: "4:12", style: .frosted)
             .padding()
             .background(DS.Palette.ink.opacity(0.6))

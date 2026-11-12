@@ -2,15 +2,34 @@ import Foundation
 
 /// Display formatting shared by every screen.
 enum Format {
-    /// "3.4 MB", "38 MB", "1.23 GB".
+    /// "3.4 MB", "38 MB", "1.23 GB", in the decimal units the Photos and Settings apps use. Never smaller
+    /// than MB, so a small item reads "0.1 MB", and nothing reads "0 MB" rather than "Zero KB".
     static func size(_ bytes: Int64) -> String {
         guard bytes > 0 else { return "0 MB" }
-        let mb = Double(bytes) / 1_000_000
-        if mb >= 1000 {
-            let gb = mb / 1000
-            return gb >= 10 ? String(format: "%.1f GB", gb) : String(format: "%.2f GB", gb)
-        }
-        return mb < 10 ? String(format: "%.1f MB", mb) : "\(Int(mb.rounded())) MB"
+        // Made per call, like `relative`'s: formatters aren't Sendable, and one is cheap to make.
+        let formatter = ByteCountFormatter()
+        formatter.countStyle = .file
+        formatter.allowedUnits = [.useMB, .useGB, .useTB]
+        return formatter.string(fromByteCount: bytes)
+    }
+
+    /// "21%", for a 0...1 fraction.
+    static func percent(_ fraction: Double) -> String {
+        "\(Int((fraction * 100).rounded()))%"
+    }
+
+    /// "+1.2 GB" or "−340 MB", for a change.
+    static func signedSize(_ bytes: Int64) -> String {
+        bytes < 0 ? "−\(size(-bytes))" : "+\(size(bytes))"
+    }
+
+    /// "5 min ago", "yesterday", "just now" under a minute.
+    static func relative(_ date: Date, now: Date = .now) -> String {
+        guard now.timeIntervalSince(date) >= 60 else { return "just now" }
+        // Made per call: it isn't Sendable, and this runs about once a minute.
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .short
+        return formatter.localizedString(for: date, relativeTo: now)
     }
 
     /// "Saturday, September 14".
