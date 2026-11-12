@@ -1,10 +1,8 @@
 import SwiftUI
 
-/// The top of the dashboard: total space cleared, this week against last, library health, and how much of
-/// the library has been reviewed. Before anything is cleared it's an invitation to start instead.
+/// The top of the dashboard: total space cleared and how much of the library has been reviewed. Before anything is cleared it's an invitation to start instead.
 struct HeroSection: View {
     @Environment(FeedViewModel.self) private var vm
-    @Environment(\.dynamicTypeSize) private var typeSize
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// The dashboard's numbers, or a stand-in while they load.
     let snapshot: DashboardSnapshot
@@ -26,32 +24,15 @@ struct HeroSection: View {
         .animation(reduceMotion ? nil : DS.Motion.calm, value: clearedBytes)
     }
 
-    /// Side by side, or stacked at accessibility sizes so the number keeps its size.
     private var cleared: some View {
-        let layout = typeSize.isAccessibilitySize
-            ? AnyLayout(VStackLayout(alignment: .leading, spacing: DS.Spacing.l))
-            : AnyLayout(HStackLayout(alignment: .center, spacing: DS.Spacing.m))
-        return layout {
-            VStack(alignment: .leading, spacing: DS.Spacing.xxs) {
-                Text("Space cleared")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(DS.Palette.ink)
-                Text(Format.size(clearedBytes))
-                    .dsSerif(48, relativeTo: .largeTitle)
-                    .monospacedDigit()
-                    .foregroundStyle(DS.Palette.brick)
-                    .contentTransition(.numericText(value: Double(clearedBytes)))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.6)
-                StatDelta(current: snapshot.clearedThisWeek, previous: snapshot.clearedLastWeek)
-                    .redacted(reason: isLoading ? .placeholder : [])
-            }
-            .accessibilityElement(children: .combine)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            RingGauge(value: snapshot.health, caption: "Health")
-                .redacted(reason: isLoading ? .placeholder : [])
-                .accessibilityHint("How little clutter is left, and how much you've reviewed")
-        }
+        Text(Format.size(clearedBytes))
+            .dsSerif(48, relativeTo: .largeTitle)
+            .monospacedDigit()
+            .foregroundStyle(DS.Palette.brick)
+            .contentTransition(.numericText(value: Double(clearedBytes)))
+            .lineLimit(1)
+            .minimumScaleFactor(0.6)
+            .accessibilityLabel("\(Format.size(clearedBytes)) cleared")
     }
 
     /// Nothing cleared yet: say what this screen will show, and send them to the feed.

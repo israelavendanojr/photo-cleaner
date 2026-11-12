@@ -53,22 +53,8 @@ enum DS {
         static let tab = Animation.spring(duration: 0.4, bounce: 0.22)
     }
 
-    /// Swift Charts, so every chart reads as one family. Colors come from `Palette`: a brick series
-    /// (it's space cleared) over a `brickTint` area, `line` gridlines, `secondary` axis labels.
+    /// The dashboard's small charts: the composition bar and the heatmap.
     enum Chart {
-        /// Plot height at the default text size; scale it with `@ScaledMetric`.
-        static let height: CGFloat = 168
-        /// A small supporting chart inside a section (photos per year).
-        static let compactHeight: CGFloat = 100
-        static let lineWidth: CGFloat = 2
-        /// Rounded data end of a bar; the baseline end stays square.
-        static let barCornerRadius: CGFloat = 4
-        /// The scrubbing rule.
-        static let ruleWidth: CGFloat = 1
-        /// Area of the selected point's dot, in points squared (Swift Charts' `symbolSize`).
-        static let pointSize: CGFloat = 64
-        /// Bars other than the scrubbed one, while scrubbing.
-        static let dimmedOpacity: Double = 0.35
         /// A categorical breakdown in ink, biggest first. Labels carry identity; the shades only separate.
         static let categoryOpacities: [Double] = [1, 0.62, 0.36, 0.18]
         /// The gap between segments of a stacked bar, in the card's color.
@@ -83,15 +69,6 @@ enum DS {
         static let heatCellRadius: CGFloat = 3
         /// The color key beside a legend row, at the default text size; scale it with `@ScaledMetric`.
         static let swatchSize: CGFloat = 14
-        /// A projection's dashes, so it never reads as measured.
-        static let projectionDash: [CGFloat] = [4, 4]
-    }
-
-    /// The dashboard's health ring.
-    enum Ring {
-        /// Diameter at the default text size; scale it with `@ScaledMetric`.
-        static let diameter: CGFloat = 92
-        static let lineWidth: CGFloat = 8
     }
 }
 

@@ -86,8 +86,7 @@ private extension FeedViewModel {
             }
             return FeedViewModel(
                 library: MockPhotoLibrary(), builder: MockFeedBuilder(), store: mockProgressStore(), entitlements: entitlements,
-                allowanceStore: SwipeAllowanceStore(initial: allowance), freeTier: .shared, features: .shared, notifier: notifier,
-                deviceStorage: MockDeviceStorage()
+                allowanceStore: SwipeAllowanceStore(initial: allowance), freeTier: .shared, features: .shared, notifier: notifier
             )
         }
         if let left = debugSwipesLeft {
@@ -135,8 +134,7 @@ private extension FeedViewModel {
             freeTier: .shared,
             features: .shared,
             notifier: RefillNotifier(center: SystemNotificationCenter(), defaults: .standard),
-            dashboardCache: DashboardController.defaultCacheURL,
-            deviceStorage: VolumeStorageReader()
+            dashboardCache: DashboardController.defaultCacheURL
         )
     }
 

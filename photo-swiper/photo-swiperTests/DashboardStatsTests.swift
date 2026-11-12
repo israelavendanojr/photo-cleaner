@@ -19,17 +19,14 @@ struct DashboardStatsTests {
         CleanupEntry(at: now.addingTimeInterval(-daysAgo * day), category: category, count: 1, bytes: bytes)
     }
 
-    private func make(_ history: [CleanupEntry], scan: LibraryScan? = nil, reviewed: Double = 0) -> DashboardSnapshot {
-        DashboardStats.make(history: history, scan: scan, reviewedFraction: reviewed, now: now, calendar: Self.calendar)
+    private func make(_ history: [CleanupEntry], scan: LibraryScan? = nil) -> DashboardSnapshot {
+        DashboardStats.make(history: history, scan: scan, now: now, calendar: Self.calendar)
     }
 
     @Test func nothingClearedIsAllZero() {
         let snapshot = make([])
         #expect(snapshot.totalCleared == 0)
-        #expect(snapshot.cumulative.isEmpty)
-        #expect(snapshot.weekly.isEmpty)
         #expect(snapshot.opportunities.isEmpty)
-        #expect(snapshot.health == nil)
         #expect(snapshot.computedAt == now)
     }
 
@@ -38,29 +35,6 @@ struct DashboardStatsTests {
         #expect(snapshot.totalCleared == 1_126)
         #expect(snapshot.clearedThisWeek == 120)
         #expect(snapshot.clearedLastWeek == 6)
-    }
-
-    @Test func theRunningTotalStartsAtZeroRisesAndReachesToday() throws {
-        let snapshot = make([entry(10, 300), entry(10, 200), entry(3, 50)])
-        let totals = snapshot.cumulative.map(\.total)
-        #expect(totals == [0, 500, 550, 550])
-        #expect(zip(totals, totals.dropFirst()).allSatisfy { $0 <= $1 })
-        #expect(snapshot.cumulative.last?.date == Self.calendar.startOfDay(for: now))
-        #expect(snapshot.cumulative.last?.total == snapshot.totalCleared)
-    }
-
-    @Test func weeksRunFromTheFirstCleanupToThisWeekWithEmptyWeeksIncluded() throws {
-        let snapshot = make([entry(16, 300), entry(1, 40)])
-        #expect(snapshot.weekly.map(\.bytes) == [300, 0, 40])
-        let starts = snapshot.weekly.map(\.date)
-        #expect(starts.allSatisfy { Self.calendar.component(.weekday, from: $0) == 2 }, "Weeks start on the calendar's first weekday")
-        #expect(snapshot.weekly.reduce(0) { $0 + $1.bytes } == snapshot.totalCleared)
-    }
-
-    @Test func weeksAreCapped() {
-        let snapshot = make([entry(400, 1), entry(0, 1)])
-        #expect(snapshot.weekly.count == DashboardStats.maxWeeks)
-        #expect(snapshot.weekly.last?.bytes == 1)
     }
 
     @Test func opportunitiesAreBiggestFirstAndTiesKeepCategoryOrder() {
@@ -74,20 +48,9 @@ struct DashboardStatsTests {
         #expect(snapshot.opportunities.map(\.category) == [.video, .duplicate, .screenshot])
         #expect(snapshot.recoverableBytes == 1_900)
     }
-
-    @Test(arguments: [(Int64(0), 1.0, 1.0), (10_000, 0.0, 0.0), (5_000, 0.5, 0.5), (20_000, 1.0, 0.5)])
-    func healthWeighsClutterAndReviewEqually(recoverable: Int64, reviewed: Double, expected: Double) throws {
-        let health = try #require(DashboardStats.health(recoverable: recoverable, of: 10_000, reviewedFraction: reviewed))
-        #expect(abs(health - expected) < 0.000_1)
-        #expect((0...1).contains(health))
-    }
-
-    @Test func noHealthUntilSomethingIsAnalyzed() {
-        #expect(DashboardStats.health(recoverable: 0, of: 0, reviewedFraction: 0.5) == nil)
-    }
 }
 
-/// The library profile's sections: timeline, forecast, composition, activity and insights.
+/// The library's composition and the activity heatmap.
 struct DashboardInsightsTests {
     private static let calendar: Calendar = {
         var calendar = Calendar(identifier: .gregorian)
@@ -104,18 +67,8 @@ struct DashboardInsightsTests {
         CleanupEntry(at: now.addingTimeInterval(-daysAgo * day), category: .photo, count: 1, bytes: bytes)
     }
 
-    private func month(_ year: Int, _ month: Int) -> Date {
-        Self.calendar.date(from: DateComponents(year: year, month: month, day: 1))!
-    }
-
-    private func profile(_ monthly: [Date: LibraryScan.Bucket], recent: Int64 = 0, oldest: Date? = nil) -> LibraryProfile {
-        let all = LibraryScan.Bucket(count: monthly.values.reduce(0) { $0 + $1.count }, bytes: monthly.values.reduce(0) { $0 + $1.bytes })
-        return LibraryProfile(composition: [.photo: all], monthly: monthly, addedRecently: recent, oldestUnreviewed: oldest)
-    }
-
-    private func make(history: [CleanupEntry] = [], profile: LibraryProfile? = nil, storage: DeviceStorage? = nil) -> DashboardSnapshot {
-        DashboardStats.make(history: history, scan: LibraryScan(profile: profile), reviewedFraction: 0, storage: storage,
-                            now: now, calendar: Self.calendar)
+    private func make(history: [CleanupEntry] = [], profile: LibraryProfile? = nil) -> DashboardSnapshot {
+        DashboardStats.make(history: history, scan: LibraryScan(profile: profile), now: now, calendar: Self.calendar)
     }
 
     // MARK: Activity
@@ -176,77 +129,43 @@ struct DashboardInsightsTests {
 
     // MARK: Library
 
-    @Test func theForecastDividesWhatsFreeByTheRecentPace() throws {
-        let storage = DeviceStorage(total: 10_000, available: 900)
-        let paced = try #require(make(profile: profile([month(2025, 11): .init(count: 1, bytes: 900)], recent: 900), storage: storage).forecast)
-        #expect(paced.bytesPerDay == 10)
-        #expect(paced.daysUntilFull == 90)
-        #expect(paced.libraryBytes == 900)
-
-        let still = try #require(make(profile: profile([month(2025, 1): .init(count: 1, bytes: 5)]), storage: storage).forecast)
-        #expect(still.daysUntilFull == nil, "Nothing new lately: no date")
-        #expect(make(profile: profile([month(2025, 1): .init(count: 1, bytes: 5)])).forecast == nil, "No device storage: no forecast")
-    }
-
-    /// With Optimize iPhone Storage the library's originals can be bigger than the phone.
-    @Test func aLibraryBiggerThanWhatsUsedIsntSplitOutOfTheDevice() {
-        let fits = DashboardSnapshot.Forecast(total: 128, available: 18, libraryBytes: 64, bytesPerDay: 1)
-        #expect(fits.libraryFitsOnDevice && fits.other == 46)
-        let inCloud = DashboardSnapshot.Forecast(total: 128, available: 18, libraryBytes: 300, bytesPerDay: 1)
-        #expect(!inCloud.libraryFitsOnDevice && inCloud.other == nil && inCloud.used == 110)
-    }
-
-    @Test func theTimelineKeepsTheLastSixtyMonthsAndStartsFromWhatCameBefore() throws {
-        var monthly: [Date: LibraryScan.Bucket] = [:]
-        for back in 0..<70 { monthly[Self.calendar.date(byAdding: .month, value: -back, to: month(2025, 11))!] = .init(count: 1, bytes: 10) }
-        let timeline = try #require(make(profile: profile(monthly)).timeline)
-        #expect(timeline.count == DashboardStats.timelineMonths)
-        #expect(timeline.first?.total == 110, "Ten earlier months fold into the first point")
-        #expect(timeline.last?.total == 700)
-        #expect(zip(timeline, timeline.dropFirst()).allSatisfy { $0.total <= $1.total })
-    }
-
     @Test func compositionIsBiggestFirstWithTiesInKindOrder() throws {
         let library = LibraryProfile(composition: [
             .photo: .init(count: 3, bytes: 500), .screenshot: .init(count: 9, bytes: 500), .video: .init(count: 1, bytes: 1_000),
-        ], monthly: [month(2025, 1): .init(count: 13, bytes: 2_000)])
+        ])
         let slices = try #require(make(profile: library).composition)
         #expect(slices.map(\.kind) == [.video, .screenshot, .photo])
         #expect(slices.map(\.share) == [0.5, 0.25, 0.25])
-    }
-
-    @Test func insightsPickTheBusiestMonthAndRecentYears() throws {
-        var monthly: [Date: LibraryScan.Bucket] = [month(2024, 3): .init(count: 50, bytes: 1), month(2025, 3): .init(count: 50, bytes: 1)]
-        for year in 2014...2023 { monthly[month(year, 6)] = .init(count: 5, bytes: 1) }
-        let insights = try #require(make(profile: profile(monthly, oldest: month(2014, 6))).insights)
-        #expect(insights.busiestMonth == month(2025, 3), "A tie goes to the more recent month")
-        #expect(insights.busiestMonthCount == 50)
-        #expect(insights.perYear.map(\.year) == Array(2018...2025))
-        #expect(insights.oldestUnreviewedYear == 2014)
-    }
-
-    @Test func theTimelineSpansCalendarMonthsNotMonthsWithPhotos() throws {
-        let timeline = try #require(make(profile: profile([
-            month(1985, 6): .init(count: 1, bytes: 7), month(2024, 2): .init(count: 1, bytes: 10), month(2025, 11): .init(count: 1, bytes: 20),
-        ])).timeline)
-        #expect(timeline.map(\.date) == [month(2024, 2), month(2025, 11)], "1985 is before the window")
-        #expect(timeline.map(\.total) == [17, 37])
-    }
-
-    @Test func monthsAfterNowArentInsights() throws {
-        let insights = try #require(make(profile: profile([
-            month(2025, 3): .init(count: 5, bytes: 1), month(2031, 1): .init(count: 90, bytes: 1),
-        ])).insights)
-        #expect(insights.busiestMonth == month(2025, 3))
-        #expect(insights.perYear.map(\.year) == [2025])
     }
 
     @Test func aSnapshotCachedBeforeTheseSectionsStillDecodes() throws {
         let older = DashboardSnapshot(totalCleared: 5, computedAt: now)
         let json = try JSONEncoder().encode(older)
         let keys = try #require(JSONSerialization.jsonObject(with: json) as? [String: Any]).keys
-        #expect(!keys.contains("timeline") && !keys.contains("activity"))
+        #expect(!keys.contains("composition") && !keys.contains("activity"))
         #expect(try JSONDecoder().decode(DashboardSnapshot.self, from: json) == older)
+    }
+
+    /// A snapshot cached by the build before this one, with sections that are gone now (health, the running
+    /// total, weekly totals, the timeline, the forecast, insights). It still decodes; the extra keys are ignored.
+    @Test func aSnapshotCachedWithSectionsThatAreGoneStillDecodes() throws {
+        let json = """
+        {"totalCleared":8120000000,"clearedThisWeek":2820000000,"clearedLastWeek":0,
+         "cumulative":[{"date":784000000,"total":0},{"date":784086400,"total":8120000000}],
+         "weekly":[{"date":784000000,"bytes":8120000000}],
+         "opportunities":[{"category":"video","count":38,"bytes":6120000000}],
+         "health":0.53,"scanPercent":86,"computedAt":784100000,
+         "timeline":[{"date":784000000,"total":64000000000}],
+         "forecast":{"total":128000000000,"available":18000000000,"libraryBytes":64000000000,"bytesPerDay":1000000},
+         "composition":[{"kind":"video","count":1430,"bytes":24300000000,"share":0.38}],
+         "activity":{"days":[{"date":784000000,"bytes":100,"level":4}],"activeDays":1,"streakWeeks":1},
+         "insights":{"busiestMonth":784000000,"busiestMonthCount":400,"perYear":[{"year":2025,"count":400}],"oldestUnreviewedYear":2020}}
+        """
+        let snapshot = try JSONDecoder().decode(DashboardSnapshot.self, from: Data(json.utf8))
+        #expect(snapshot.totalCleared == 8_120_000_000)
+        #expect(snapshot.clearedThisWeek == 2_820_000_000)
+        #expect(snapshot.scanPercent == 86)
+        #expect(snapshot.composition?.first?.kind == .video)
     }
 }
 
@@ -328,11 +247,11 @@ struct DashboardControllerTests {
         let store = InMemoryProgressStore()
         let builder = SlowScanBuilder()
         let controller = DashboardController(builder: builder, store: store, cacheURL: nil, now: { now })
-        let first = Task { await controller.refresh(reviewedFraction: 0) }
+        let first = Task { await controller.refresh() }
         await until { builder.isWaiting }
 
         store.recordCleanup([CleanupEntry(at: now, category: .photo, count: 2, bytes: 700)])
-        let second = Task { await controller.refresh(reviewedFraction: 0) }
+        let second = Task { await controller.refresh() }
         builder.release()
         await first.value
         await second.value
@@ -348,7 +267,7 @@ struct DashboardControllerTests {
         store.recordCleanup([CleanupEntry(at: now, category: .photo, count: 1, bytes: 500)])
         let builder = SlowScanBuilder()
         let controller = DashboardController(builder: builder, store: store, cacheURL: url, now: { now })
-        let running = Task { await controller.refresh(reviewedFraction: 0) }
+        let running = Task { await controller.refresh() }
         await until { builder.isWaiting }
 
         controller.clear()
@@ -357,18 +276,6 @@ struct DashboardControllerTests {
 
         #expect(controller.snapshot == nil)
         #expect(!FileManager.default.fileExists(atPath: url.path()))
-    }
-
-    private struct FixedStorage: DeviceStorageReading {
-        func current() -> DeviceStorage? { DeviceStorage(total: 128_000_000_000, available: 18_000_000_000) }
-    }
-
-    @Test func theDevicesStorageReachesTheForecast() async throws {
-        let controller = DashboardController(builder: MockFeedBuilder(), store: InMemoryProgressStore(), storage: FixedStorage(),
-                                             cacheURL: nil, now: { now })
-        await controller.refresh(reviewedFraction: 0)
-        let forecast = try #require(controller.snapshot?.forecast)
-        #expect(forecast.available == 18_000_000_000)
     }
 
     private let now = Date(timeIntervalSince1970: 1_800_000_000)
@@ -386,7 +293,7 @@ struct DashboardControllerTests {
         #expect(controller.snapshot == nil)
         #expect(controller.isStale)
 
-        await controller.refresh(reviewedFraction: 0.25)
+        await controller.refresh()
 
         let snapshot = try #require(controller.snapshot)
         #expect(snapshot.totalCleared == 900)
@@ -401,7 +308,7 @@ struct DashboardControllerTests {
     @Test func itGoesStaleAfterAWhile() async {
         var clock = now
         let controller = DashboardController(builder: MockFeedBuilder(), store: InMemoryProgressStore(), cacheURL: nil, now: { clock })
-        await controller.refresh(reviewedFraction: 0)
+        await controller.refresh()
         #expect(!controller.isStale)
         clock = now.addingTimeInterval(DashboardController.staleAfter + 1)
         #expect(controller.isStale)
@@ -410,7 +317,7 @@ struct DashboardControllerTests {
     @Test func clearingForgetsTheCache() async {
         let url = cacheURL()
         let controller = DashboardController(builder: MockFeedBuilder(), store: InMemoryProgressStore(), cacheURL: url, now: { now })
-        await controller.refresh(reviewedFraction: 0)
+        await controller.refresh()
         controller.clear()
         #expect(controller.snapshot == nil)
         #expect(!FileManager.default.fileExists(atPath: url.path()))

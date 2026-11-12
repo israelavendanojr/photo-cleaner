@@ -43,11 +43,6 @@ enum Haptics {
         UISelectionFeedbackGenerator().selectionChanged()
     }
 
-    /// Scrubbing a chart landed on another point.
-    static func scrub() {
-        UISelectionFeedbackGenerator().selectionChanged()
-    }
-
     /// Pull to refresh brought new numbers.
     static func refreshed() {
         UIImpactFeedbackGenerator(style: .soft).impactOccurred(intensity: 0.6)

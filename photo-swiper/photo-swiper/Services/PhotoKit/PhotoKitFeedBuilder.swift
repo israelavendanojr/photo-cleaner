@@ -80,8 +80,7 @@ actor PhotoKitFeedBuilder: FeedBuilding {
         let decided = excluding.union(lastExcluding)
         var scan = LibraryScan.make(features: features, excluding: decided, duplicates: lastGroups.duplicates,
                                     similar: lastGroups.similar, scanPercent: lastScanPercent)
-        scan.profile = LibraryProfile.make(features: features, livePhotos: livePhotoIDs(at: generation), decided: decided,
-                                           removed: removed, now: .now)
+        scan.profile = LibraryProfile.make(features: features, livePhotos: livePhotoIDs(at: generation), removed: removed)
         return scan
     }
 

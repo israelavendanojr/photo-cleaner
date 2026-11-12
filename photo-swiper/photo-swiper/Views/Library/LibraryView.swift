@@ -1,8 +1,7 @@
 import SwiftUI
 import UIKit
 
-/// The Library tab, a dashboard: space cleared and library health, what's still worth a look, cleared
-/// over time, then the pile. The numbers come from `DashboardController`'s cached snapshot, shown at once
+/// The Library tab, a dashboard: space cleared, the library's makeup, then the pile. The numbers come from `DashboardController`'s cached snapshot, shown at once
 /// and refreshed when stale or pulled. The gear opens Settings. Confetti falls the first time it's seen at 100%.
 struct LibraryView: View {
     /// The tab is on screen. Both tabs stay mounted, so this says when the confetti can be seen.
@@ -18,8 +17,6 @@ struct LibraryView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     header
-                    TrustBadge()
-                        .padding(.top, DS.Spacing.xs)
                     dashboard
                         .padding(.top, DS.Spacing.l)
                     pile
@@ -108,27 +105,13 @@ struct LibraryView: View {
         let cleared = max(vm.freedBytes, snapshot?.totalCleared ?? 0)
         return VStack(alignment: .leading, spacing: DS.Spacing.xl) {
             HeroSection(snapshot: shown, isLoading: isLoading, clearedBytes: cleared)
-            OpportunitiesSection(snapshot: shown)
-                .redacted(reason: isLoading ? .placeholder : [])
-                .disabled(isLoading)
-            if cleared > 0, shown.cumulative.count > 1 {
-                ClearedChartSection(snapshot: shown)
-                    .redacted(reason: isLoading ? .placeholder : [])
-                    .disabled(isLoading)
-            }
             Group {
-                if let timeline = shown.timeline, timeline.count > 1 {
-                    StorageTimelineSection(timeline: timeline, forecast: shown.forecast, isScanning: shown.scanPercent != nil)
-                }
                 if let composition = shown.composition, !composition.isEmpty {
                     CompositionSection(slices: composition)
                 }
                 // Only once there's something to show; before the first cleanup the hero says what to do.
                 if cleared > 0, let activity = shown.activity {
                     ActivitySection(activity: activity)
-                }
-                if let insights = shown.insights, insights.busiestMonth != nil {
-                    InsightsSection(insights: insights)
                 }
             }
             .redacted(reason: isLoading ? .placeholder : [])
@@ -149,10 +132,6 @@ struct LibraryView: View {
             }
             .buttonStyle(.plain)
             .accessibilityHint("Shows what's waiting to be cleared")
-            Divider()
-                .overlay(DS.Palette.line)
-                .padding(.leading, 52)
-            OverviewRow(icon: "clock", title: "Saved for later", value: "\(vm.laterCount)")
             if vm.access == .limited {
                 Divider()
                     .overlay(DS.Palette.line)
