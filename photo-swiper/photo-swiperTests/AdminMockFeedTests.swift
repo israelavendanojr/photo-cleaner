@@ -246,6 +246,18 @@ struct AdminMockFeedTests {
         #expect(freed == bytes(pile))
         #expect(vm.pendingItems.isEmpty)
         expectNothingMockSaved()
+        #expect(store.recordedCleanups.reduce(0) { $0 + $1.bytes } == bytes(real), "Only real items join the cleanup history")
+        #expect(store.recordedCleanups.reduce(0) { $0 + $1.count } == real.count)
+    }
+
+    @Test func deletingOnlyMockItemsRecordsNoHistory() async throws {
+        let vm = await launch(bin: 100_000_000_000)
+        vm.admin.adminInsertMockCard(mock(.video))
+        vm.decideCurrent(.left)
+
+        #expect(await vm.deleteNow(vm.pendingItems) != nil)
+        #expect(store.recordedCleanups.isEmpty)
+        #expect(store.cleanupHistory().isEmpty)
     }
 
     @Test func cancellingTheSystemPromptKeepsTheMockItemsToo() async throws {
@@ -396,6 +408,8 @@ private struct EmptyBuilder: FeedBuilding {
 final class SpyProgressStore: ProgressStoring {
     private let base = InMemoryProgressStore()
     private(set) var writtenIDs: [LibraryItem.ID] = []
+    /// Every cleanup entry recorded, in order.
+    private(set) var recordedCleanups: [CleanupEntry] = []
 
     func decisions(for ids: Set<LibraryItem.ID>) -> [LibraryItem.ID: StoredDecision] { base.decisions(for: ids) }
     func save(_ changes: [LibraryItem.ID: StoredDecision?]) {
@@ -419,6 +433,12 @@ final class SpyProgressStore: ProgressStoring {
     func reviewedCount() -> Int { base.reviewedCount() }
     func freedBytes() -> Int64 { base.freedBytes() }
     func lastSessionNumber() -> Int { base.lastSessionNumber() }
+    func recordCleanup(_ entries: [CleanupEntry]) {
+        recordedCleanups += entries
+        base.recordCleanup(entries)
+    }
+
+    func cleanupHistory() -> [CleanupEntry] { base.cleanupHistory() }
     func loadSession() -> SavedSession? { base.loadSession() }
     func saveSession(_ saved: SavedSession?) { base.saveSession(saved) }
     @discardableResult

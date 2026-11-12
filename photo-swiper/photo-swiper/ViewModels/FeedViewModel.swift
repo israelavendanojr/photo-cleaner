@@ -627,6 +627,8 @@ final class FeedViewModel {
         guard !deletedItems.isEmpty || !mocks.isEmpty else { return nil }
         let ids = Set(deletedItems.map(\.id))
         let mockIDs = Set(mocks.map(\.id))
+        // Before settling: the store's first history write fills in older deletes, and these must not be among them.
+        recordCleanup(deletedItems)
         settle(ids, as: .deleted)
         settledIDs.formUnion(mockIDs)
         carriedPending.removeAll { ids.contains($0.id) || mockIDs.contains($0.id) }
@@ -640,6 +642,14 @@ final class FeedViewModel {
         followUps.queueFollowUp(freed: freed, isUnlocked: isUnlocked, isWallPresented: isWallPresented,
                                 purchasedThisLaunch: purchasedThisLaunch, isMockOnly: deletedItems.isEmpty)
         return freed
+    }
+
+    /// Adds a delete to the cleanup history, one entry per category, at the time it happened.
+    /// Each item's category is the one saved with its decision; older decisions fall back to a guess.
+    private func recordCleanup(_ deleted: [LibraryItem]) {
+        guard !deleted.isEmpty else { return }
+        let saved = store.decisions(for: Set(deleted.map(\.id)))
+        store.recordCleanup(CleanupEntry.entries(for: deleted, at: now()) { saved[$0.id]?.category ?? .inferred(from: $0) })
     }
 
     /// "Check again" from caught up: deals a fresh deck if anything turned up, e.g. new photos
@@ -869,7 +879,10 @@ final class FeedViewModel {
         let decidedAt = now()
         let sessionNumber = session?.number ?? 0
         let changes: [LibraryItem.ID: StoredDecision?] = isMock ? [:] : Dictionary(uniqueKeysWithValues: card.items.compactMap { item in
-            outcome[item.id].map { (item.id, StoredDecision(decision: $0, decidedAt: decidedAt, sessionNumber: sessionNumber, item: item)) }
+            outcome[item.id].map {
+                (item.id, StoredDecision(decision: $0, decidedAt: decidedAt, sessionNumber: sessionNumber, item: item,
+                                         category: CleanupCategory.of(item, on: card)))
+            }
         })
 
         let cleared = card.items.filter { outcome[$0.id] == .delete }.reduce(0) { $0 + $1.bytes }

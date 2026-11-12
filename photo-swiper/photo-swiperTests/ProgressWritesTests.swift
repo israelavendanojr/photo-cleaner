@@ -189,6 +189,8 @@ private final class CountingStore: ProgressStoring {
     func reviewedCount() -> Int { base.reviewedCount() }
     func freedBytes() -> Int64 { base.freedBytes() }
     func lastSessionNumber() -> Int { base.lastSessionNumber() }
+    func recordCleanup(_ entries: [CleanupEntry]) { base.recordCleanup(entries) }
+    func cleanupHistory() -> [CleanupEntry] { base.cleanupHistory() }
     func loadSession() -> SavedSession? { base.loadSession() }
 
     func saveSession(_ saved: SavedSession?) {
