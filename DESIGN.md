@@ -43,7 +43,7 @@ Defined in `DS.Palette` ([`DesignSystem.swift`](photo-swiper/photo-swiper/Design
 | 46 | `.largeTitle` | medium | Welcome headline |
 | 40 | `.largeTitle` | medium | Onboarding page titles |
 | 34 | `.largeTitle` | medium | Screen titles (Library, pile, Admin, `UpsellLayout`); regular on empty states ("Nothing cleared yet") |
-| 28 | `.title2` | regular | `ToClearCounter`, `RingGauge`'s score |
+| 28 | `.title2` | regular | `ToClearCounter` |
 | 26 | `.title` | regular | Photo card date |
 | 22 | `.title3` | regular, *italic* for group cards | Similar and duplicate card titles, the unlock offer's "One-time purchase." |
 | 20 | `.title3` | regular | Video card date |
@@ -117,10 +117,11 @@ Put the shadow on the background shape, not on the view that holds text, so the 
 | `gentle` | Screen-level transitions, big reveals, onboarding entrances |
 | `page` | Moving between onboarding pages |
 | `tab` | The tab bar's selection capsule |
+| `countUpDuration`, `countUpSteps` | The dashboard's space cleared counting up from zero: once per launch, in steps of `calm` numeric-text changes, easing out |
 
 **Reduce Motion:** read `@Environment(\.accessibilityReduceMotion)` and show the end state at once, or swap movement for a fade. Examples: `OnboardingEntrance`, `DealIn`, `SwipeableCard` (no nudges), `ConfettiView` (a fading note instead of confetti), `StackedPhotosIllustration`.
 
-**Haptics** come from `Haptics` ([`Haptics.swift`](photo-swiper/photo-swiper/DesignSystem/Haptics.swift)), with one function per moment: `threshold`, `advance` (also a dashboard suggestion tapped), `accessGranted`, `delete`, `refused`, `confirm`, `unlocked`, `tabChange`, `scrub` (a chart's selection lands on another point), `refreshed` (pull to refresh finished). A new moment gets a new function there. Views don't create `UI*FeedbackGenerator`s or use `.sensoryFeedback` directly.
+**Haptics** come from `Haptics` ([`Haptics.swift`](photo-swiper/photo-swiper/DesignSystem/Haptics.swift)), with one function per moment: `threshold`, `advance` (also a dashboard suggestion tapped), `accessGranted`, `delete`, `refused`, `confirm`, `unlocked`, `tabChange`, `refreshed` (pull to refresh finished). A new moment gets a new function there. Views don't create `UI*FeedbackGenerator`s or use `.sensoryFeedback` directly.
 
 ## Components
 
@@ -132,7 +133,7 @@ All of these are in [`DesignSystem/Components/`](photo-swiper/photo-swiper/Desig
 | `CircleActionButton` | The feed's round action-bar buttons with a caption. `.destructive` for Delete, `.neutral` for Keep and Later. |
 | `CircleIconButton` | The outlined 44pt icon button in top bars (Undo, Close). Requires `accessibilityLabel`. |
 | `PressScaleStyle` | The press-down scale for custom icon buttons. It also dims the button when disabled. |
-| `Chip` | Small rounded labels. `.brick` for counts tied to clearing (swipes left), `.plain` for neutral markers over imagery (Best pick, Keep) and the feed's focus ("Only videos ×", with `trailingSystemImage: "xmark"`, which takes the text color), `.frosted` for text over video. |
+| `Chip` | Small rounded labels. `.brick` for counts tied to clearing (swipes left), `.plain` for neutral markers over imagery (Best pick, Keep) and the feed's focus ("Only large videos ×", with `trailingSystemImage: "xmark"`, which takes the text color), `.frosted` for text over video. A row of single-select choices uses `.option` (ink on card in a `line` outline) and `.selected` (white on ink), each in a button at least `DS.Tap.minimum` tall with the `.isSelected` trait on the chosen one. |
 | `PillTabBar` | The floating tab bar. Its selection animates with `DS.Motion.tab` and fires `Haptics.tabChange`. |
 | `ProgressLine` | A thin progress track. Ink by default, brick for amounts to clear. It reads its percentage to VoiceOver. |
 | `ToClearCounter` | The brick serif running total, with a "+3.4 MB" chip that pops above it. |
@@ -140,29 +141,26 @@ All of these are in [`DesignSystem/Components/`](photo-swiper/photo-swiper/Desig
 | `ConfettiView` | The celebration after freeing space. It never takes touches, announces `message`, and falls back to a note under Reduce Motion. |
 | `OpenSettingsButton` | Any link to the app's page in iOS Settings (permissions). |
 | `SwipeStamp` (in `Views/Feed/`) | The Delete, Keep and Later wash over a card. It's also used in onboarding's demo. |
-| `DashboardCard` | A dashboard section: a `.headline` ink title (`.isHeader`) with an optional trailing accessory (a status, a picker) that drops under the title when it doesn't fit, then content, on a `card` panel at `Radius.inner` with `softShadow()` on the shape. Use it for every Library section. |
-| `RingGauge` | A 0...1 score as a ring with a serif number and a caption (library health). Ink, never brick: a score isn't an amount to clear. Nil shows "—". Diameter from `DS.Ring` through `@ScaledMetric`. |
-| `StatDelta` | This period against the last under a big number ("+860 MB vs last week"), ink with an arrow, one VoiceOver sentence. Never brick or green. |
-| `TrustBadge` | "Processed on device": ink on `muted`, `lock.shield`. Only where the claim is true, which is everywhere in this app. |
+| `DashboardCard` | A dashboard panel: a header view, then content, on a `card` panel at `Radius.inner` with `softShadow()` on the shape. The library card uses it. |
+| `BinCard` | The pile on the dashboard, drawn as a brick bin (it's what will be deleted), sized by `DS.Bin`. With a free limit the bin fills against it ("56.6 MB of 64 MB", "Full at …" when full); unlocked, the first `DS.Bin.stackCount` photos fan out over the rim. Empty, it stays and says so in ink. Wrap it in the link to the pile only when there's something in it: a disabled link would dim its text. One VoiceOver sentence. |
 
-Formatting goes through `Format` (`size`, `signedSize`, `percent`, `relative`, `day`, `shortDay`, `month`, `shortMonth`, `year`, `range`, `duration`, `countdown`, `roughDays`, `untilFull`, `spelled`, `count`). `size` uses `ByteCountFormatter` in decimal units from MB up, as Photos and Settings do ("1.2 GB", "0.1 MB"), and reads "0 MB" for nothing. `relative` reads "5 min. ago", or "just now" under a minute.
+Formatting goes through `Format` (`size`, `signedSize`, `percent`, `signedPercent`, `weeklyChange`, `day`, `shortDay`, `shortMonth`, `range`, `duration`, `countdown`, `roughDays`, `spelled`, `count`). `size` uses `ByteCountFormatter` in decimal units from MB up, as Photos and Settings do ("1.2 GB", "0.1 MB"), and reads "0 MB" for nothing. `signedPercent` has one decimal ("+34.5%", "−25.0%"); `weeklyChange` reads "+1.2 GB (+34.5%) vs last week", or "+1.2 GB this week" when last week cleared nothing.
+
+### The Library dashboard
+
+Three parts, top to bottom, and nothing else: the hero, the bin, the library card. Each says one thing; no number appears twice.
+
+- **Hero** (`HeroSection`). Space cleared as the brick serif 48 number, with no label over it. Under it, this week against last (`Format.weeklyChange`): brick when more was cleared, `secondary` when less, since brick only means space freed and a drop isn't that; hidden when neither week cleared anything. The first time the tab is seen each launch, the number counts up from zero (`DS.Motion.countUpDuration` in `countUpSteps` numeric-text steps) and the change fades up once it lands; under Reduce Motion, and on later visits, both show at once. Before anything is cleared it's "Nothing cleared yet" with "Start reviewing". Below, the review heatmap.
+- **Bin** (`BinCard`), right under the hero. Under limited access only, "Add more photos" and "Photo access" rows follow it.
+- **Library card** (`LibraryCard`). Header: the share reviewed, with a `ProgressLine`. Then the composition bar with its key, then one row of single-select chips (Duplicates, Similar, Large videos, Videos, Live Photos, Screenshots, Bursts, Saved for later; empty ones hidden), which scrolls sideways. The first chip selected has the most space to recover. The selected chip lights up its slice of the bar (in ink, the others in `line`) and shows its count, its size, a strip of its five biggest items (`DS.LibraryCard.thumbSize` at most, sharing the width) and "Review these", which focuses the feed. A size is brick only when it's an amount to clear (duplicates and similar count only their extras, large videos, screenshots, bursts); the library's own kinds and what's saved for later are ink.
 
 ### Charts
 
-Swift Charts only, styled from `DS.Chart` (in `DesignSystem.swift`) so every chart reads as one family. The first is `ClearedChartSection` on the Library tab.
+The dashboard's two small charts are drawn with SwiftUI shapes from `DS.Chart`, and read as one family:
 
-- **One series, no legend.** The card's title names it. Space cleared is brick (it's freed space): a `DS.Chart.lineWidth` (2pt) line over a `brickTint` area, or brick bars whose data end is rounded by `DS.Chart.barCornerRadius` (4pt) and whose baseline end stays square.
-- **A running total is stepped** (`.interpolationMethod(.stepEnd)`). It only changes on the days something was cleared, and a smoothed line would show it rising before that.
-- **Recessive axes.** Gridlines in `line`, labels in `.caption2` `secondary`, at most 3 or 4 of them, and formatted with `Format`. Values never take the series color; the readout above the plot is ink.
-- **Scrubbing.** `chartXSelection` picks the nearest point. Show a `secondary` `RuleMark` (`DS.Chart.ruleWidth`) and a brick point (`DS.Chart.pointSize`); while scrubbing, other bars dim to `DS.Chart.dimmedOpacity`. The readout above the plot switches to the selected point, and each new point fires `Haptics.scrub()`.
-- **Height** comes from `DS.Chart.height` through `@ScaledMetric`, so the plot grows with text.
-- **VoiceOver.** Give the chart an `accessibilityLabel` and an `accessibilityChartDescriptor` (Audio Graphs) with a one-sentence summary.
-- **Reduce Motion:** switching modes or data animates with `DS.Motion.calm`, and doesn't animate at all under Reduce Motion.
-- **Something that isn't space cleared is ink,** not brick: the library's size over time (an ink line over a `muted` area), the per-year bars.
-- **A projection is dashed** (`DS.Chart.projectionDash`), in its own series so it never joins the measured line, and the copy says what it assumes and hedges what it can't know ("if new photos and videos stay on this iPhone at your recent pace … it would be full", "Other apps count too"). Never claim a figure the device can't back: when the library's originals are bigger than what's used (iCloud), the storage bar shows only used and free.
-- **A breakdown by category** (`CompositionSection`) is one stacked bar in ink shades (`DS.Chart.categoryOpacities`, biggest first) with `DS.Chart.segmentGap` between segments, and a labeled row per category with a `DS.Chart.swatchSize` swatch. There are no category colors: the photos are the color in this app, and brick means deletion. The labels carry identity; the lightest shades are decoration only, so never let a shade alone say what something is.
-- **A heatmap** (`ActivitySection`) is a grid of `DS.Chart.heatCellSize` cells with `heatCellGap` and `heatCellRadius`, a column per week. Level 0 is `line`, level 1 `brickTint`, then brick at `DS.Chart.heatOpacities` (it's space cleared). It has a "Less … More" key and one VoiceOver summary. When the cells, scaled with text, don't fit, the grid scrolls sideways inside its card (`ViewThatFits`) with the latest week in view; it never widens the page.
-- **Size bars** (storage, composition) are `DS.Chart.stackedBarHeight` tall, scaled with `@ScaledMetric`, in a `Capsule()`, hidden from VoiceOver with the numbers given in a sentence beside them. A small supporting chart uses `DS.Chart.compactHeight`.
+- **No category colors.** The photos are the color in this app, and brick means deletion. Anything that isn't space cleared is ink.
+- **The composition bar** is one stacked bar in ink shades (`DS.Chart.categoryOpacities`, biggest first) with `DS.Chart.segmentGap` between segments, `DS.Chart.stackedBarHeight` tall through `@ScaledMetric`, in a `Capsule()`. A key gives each segment a `DS.Chart.swatchSize` swatch, a name and a size, so a shade never says what something is on its own. VoiceOver reads the breakdown as one sentence.
+- **The review heatmap** (`ReviewHeatmap`) is a grid of `DS.Chart.heatCellSize` cells with `heatCellGap` and `heatCellRadius`, a column per week over 16 weeks, counting photos reviewed (keeps included). Level 0 is `line`, then ink at `DS.Chart.heatOpacities`. It has a "Less … More" key, a caption with the total, and one VoiceOver summary. When the cells, scaled with text, don't fit, the grid scrolls sideways (`ViewThatFits`) with the latest week in view; it never widens the page. No streak: a missed day costs nothing.
 
 ## Accessibility
 
@@ -227,6 +225,6 @@ These are known gaps in the code as of this file's first version. They're docume
 - **Duplicated toast:** `SettingsView` builds the same ink capsule toast twice, and there's no shared component.
 - **Press styles differ:** `PressScaleStyle` dims to 0.4 when disabled, and the tab bar's private `TabPressStyle` doesn't.
 - **Two screen gutters:** 20 (`l`) in most screens and 28 (`xl`) in onboarding. The reason isn't written down.
-- **Literal 44pt tap targets:** `.frame(minHeight: 44)` in `FeedFocusChip` and the dashboard's suggestion rows. There's no tap-target token yet.
+- **Literal 44pt tap target:** `.frame(minHeight: 44)` in `FeedFocusChip`, where `DS.Tap.minimum` now exists.
 - **`Chip` has no XXL preview.**
 - **Debug-only exceptions:** `RankDebugBadge` uses a fixed font, black, and a radius of 6. It's Debug-only and can stay.
