@@ -46,6 +46,10 @@ actor PhotoKitFeedBuilder: FeedBuilding {
     /// Without an index, every candidate is read live, as before the index existed.
     /// Similar groups the last session found but didn't show, for the clutter estimate.
     private var similarGroupsLeft = 0
+    /// The last page's duplicate and similar sets, for the dashboard's scan. Ids only.
+    private var lastGroups: (duplicates: [PlannedGroup], similar: [PlannedGroup]) = ([], [])
+    /// How far the index had got when the last page was built. Nil once complete.
+    private var lastScanPercent: Int?
 
     init(index: (any FeatureIndexReading)? = nil, catalog: any AssetCatalog = PhotoKitAssetCatalog(),
          geocoder: any Geocoding = CLGeocoding()) {
@@ -62,6 +66,15 @@ actor PhotoKitFeedBuilder: FeedBuilding {
         return estimate
     }
 
+    /// The index's features plus the last page's groups. Before the first page there are no groups yet,
+    /// so duplicates and similar shots show up once the feed has been built.
+    func libraryScan(excluding: Set<LibraryItem.ID>) async -> LibraryScan? {
+        guard let index else { return nil }
+        let features = await index.indexed().mapValues(\.features)
+        return LibraryScan.make(features: features, excluding: excluding, duplicates: lastGroups.duplicates,
+                                similar: lastGroups.similar, scanPercent: lastScanPercent)
+    }
+
     func makeSession(number: Int, options: FeedOptions) async -> Session {
         let started = Date.now
         let signposts = Self.signposter
@@ -76,6 +89,8 @@ actor PhotoKitFeedBuilder: FeedBuilding {
         let slots = planner.plan(pool.candidates, groups: groups.similar, duplicates: groups.duplicates, now: .now)
         signposts.endInterval("plan", planning)
         similarGroupsLeft = groups.similar.count - slots.filter(\.isSimilar).count
+        lastGroups = (groups.duplicates, groups.similar)
+        lastScanPercent = pool.scanPercent
         #if DEBUG
         if UserDefaults.standard.bool(forKey: "logSimilarity") { logSimilarity(groups, session: number) }
         #endif

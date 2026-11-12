@@ -14,6 +14,7 @@ import OSLog
 /// - `OnboardingFlow`: first-launch onboarding, which can hold `phase` while the first deck is dealt.
 /// - `ReminderController`: refill reminders and the clutter estimate they quote.
 /// - `FollowUpCoordinator`: the review prompt or unlock offer a delete earns.
+/// - `DashboardController`: the Library tab's cached numbers: cleared over time and what's left to clear.
 /// Collaborators never reach each other; effects that span them (a refill front-loading the deck,
 /// an unlock cancelling reminders) are sequenced here. The Admin tab's tools live in
 /// `AdminController` (`vm.admin`), which changes the deck only through this class's admin intents;
@@ -125,6 +126,8 @@ final class FeedViewModel {
     let reminders: ReminderController
     /// First-launch onboarding, which can hold the screen while the first deck is dealt.
     let onboarding: OnboardingFlow
+    /// The Library tab's numbers, cached between launches.
+    let dashboard: DashboardController
     /// The Admin tab's tools (Developer mode).
     @ObservationIgnored private(set) lazy var admin = AdminController(vm: self, entitlements: entitlements, defaults: defaults, notifier: notifier, now: now)
 
@@ -148,6 +151,7 @@ final class FeedViewModel {
         features: FeatureAvailabilityTunables? = nil,
         notifier: RefillNotifier? = nil,
         progressLoadFailed: Bool = false,
+        dashboardCache: URL? = nil,
         now: @escaping () -> Date = Date.init
     ) {
         self.library = library
@@ -165,6 +169,7 @@ final class FeedViewModel {
         followUps = FollowUpCoordinator(defaults: defaults, freeTier: freeTier, now: now)
         onboarding = OnboardingFlow(defaults: defaults, notifier: notifier, library: library)
         reminders = ReminderController(notifier: notifier, builder: builder, store: store, now: now)
+        dashboard = DashboardController(builder: builder, store: store, cacheURL: dashboardCache, now: now)
         gate = SwipeGate(entitlements: entitlements, allowanceStore: allowanceStore ?? SwipeAllowanceStore(), freeTier: freeTier, now: now)
         skipFavorites = store.skipFavorites
         hasCelebratedComplete = defaults.bool(forKey: DefaultsKey.celebratedComplete)
@@ -641,6 +646,7 @@ final class FeedViewModel {
         let freed = (deletedItems + mocks).reduce(0) { $0 + $1.bytes }
         followUps.queueFollowUp(freed: freed, isUnlocked: isUnlocked, isWallPresented: isWallPresented,
                                 purchasedThisLaunch: purchasedThisLaunch, isMockOnly: deletedItems.isEmpty)
+        if !deletedItems.isEmpty { Task { await refreshDashboard() } }
         return freed
     }
 
@@ -650,6 +656,19 @@ final class FeedViewModel {
         guard !deleted.isEmpty else { return }
         let saved = store.decisions(for: Set(deleted.map(\.id)))
         store.recordCleanup(CleanupEntry.entries(for: deleted, at: now()) { saved[$0.id]?.category ?? .inferred(from: $0) })
+    }
+
+    // MARK: Dashboard
+
+    /// Works the Library tab's numbers out again: pull to refresh, and after a delete.
+    func refreshDashboard() async {
+        await dashboard.refresh(reviewedFraction: libraryReviewedFraction)
+    }
+
+    /// Refreshes the Library tab's numbers if they're missing or old, when the tab is shown.
+    func refreshDashboardIfStale() async {
+        guard dashboard.isStale else { return }
+        await refreshDashboard()
     }
 
     /// "Check again" from caught up: deals a fresh deck if anything turned up, e.g. new photos
@@ -762,6 +781,7 @@ final class FeedViewModel {
     /// Forgets every saved decision, the pile, and preferences, then deals a fresh first deck.
     func adminClearAllDecisions() async {
         store.reset()
+        dashboard.clear()
         settledIDs = []
         skipFavorites = store.skipFavorites
         apply(await makeSession(number: 1))

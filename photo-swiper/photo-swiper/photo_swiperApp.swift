@@ -114,7 +114,10 @@ private extension FeedViewModel {
         }
         let store = SwiftDataProgressStore(container: container)
         #if DEBUG
-        if UserDefaults.standard.bool(forKey: "resetProgress") { store.reset() }
+        if UserDefaults.standard.bool(forKey: "resetProgress") {
+            store.reset()
+            try? FileManager.default.removeItem(at: DashboardController.defaultCacheURL)
+        }
         #endif
         let index = FeatureIndex(container: container)
         let indexer = LibraryIndexer(source: PhotoKitIndexSource(), analyzer: VisionImageAnalyzer(), index: index,
@@ -129,7 +132,8 @@ private extension FeedViewModel {
             allowanceStore: SwipeAllowanceStore(defaults: .standard),
             freeTier: .shared,
             features: .shared,
-            notifier: RefillNotifier(center: SystemNotificationCenter(), defaults: .standard)
+            notifier: RefillNotifier(center: SystemNotificationCenter(), defaults: .standard),
+            dashboardCache: DashboardController.defaultCacheURL
         )
     }
 

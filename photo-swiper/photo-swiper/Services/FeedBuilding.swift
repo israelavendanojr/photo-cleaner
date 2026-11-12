@@ -5,8 +5,11 @@ protocol FeedBuilding: Sendable {
     func makeSession(number: Int, options: FeedOptions) async -> Session
     /// What's left to clear outside the current session, roughly. Nil when there's nothing to go on.
     func clutterEstimate(excluding: Set<LibraryItem.ID>, now: Date) async -> ClutterEstimate?
+    /// What's left to clear by kind, for the dashboard. Nil when there's nothing to go on yet.
+    func libraryScan(excluding: Set<LibraryItem.ID>) async -> LibraryScan?
 }
 
 extension FeedBuilding {
     func clutterEstimate(excluding: Set<LibraryItem.ID>, now: Date) async -> ClutterEstimate? { nil }
+    func libraryScan(excluding: Set<LibraryItem.ID>) async -> LibraryScan? { nil }
 }

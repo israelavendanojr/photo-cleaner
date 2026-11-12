@@ -6,7 +6,7 @@ import Foundation
 ///
 /// Card positions mirror the reference demo: videos at 3 and 11, similar shots
 /// at 6 and 15, a screenshot batch at 8, three copies of one photo at 13, single photos everywhere
-/// else. That's 45 photos, more than a real page's target, so the demo shows off every card kind. 
+/// else. That's 45 photos, more than a real page's target, so the demo shows off every card kind.
 struct MockFeedBuilder: FeedBuilding {
     static let cardsPerSession = 20
     /// Pages after this come back empty.
@@ -20,6 +20,22 @@ struct MockFeedBuilder: FeedBuilding {
     func clutterEstimate(excluding: Set<LibraryItem.ID>, now: Date) async -> ClutterEstimate? {
         ClutterEstimate(likelyClearCount: 1_240, likelyClearBytes: 8_400_000_000, screenshotCount: 312, similarGroupCount: 46)
     }
+
+    /// A plausible mid-sized library, mostly analyzed.
+    func libraryScan(excluding: Set<LibraryItem.ID>) async -> LibraryScan? {
+        Self.scan
+    }
+
+    static let scan = LibraryScan(
+        buckets: [
+            .video: .init(count: 38, bytes: 6_120_000_000),
+            .duplicate: .init(count: 214, bytes: 1_870_000_000),
+            .similar: .init(count: 486, bytes: 1_310_000_000),
+            .screenshot: .init(count: 312, bytes: 540_000_000),
+            .burst: .init(count: 92, bytes: 260_000_000),
+        ],
+        indexedCount: 17_820, indexedBytes: 64_000_000_000, scanPercent: 86
+    )
 
     /// Synchronous variant for previews and launch-time setup.
     func makeSessionNow(number: Int, options: FeedOptions = FeedOptions()) -> Session {
