@@ -71,7 +71,7 @@ struct RefillNotifierTests {
         let one = ClutterEstimate(similarGroupCount: 1)
         #expect(RefillReminderPlanner.refillBody(amount: 10, estimate: one) == "10 swipes are back · 1 set of similar shots waiting")
         let bytes = ClutterEstimate(likelyClearBytes: 1_200_000_000)
-        #expect(RefillReminderPlanner.refillBody(amount: 10, estimate: bytes) == "10 swipes are back · about 1.20 GB to clear")
+        #expect(RefillReminderPlanner.refillBody(amount: 10, estimate: bytes) == "10 swipes are back · about 1.2 GB to clear")
         #expect(RefillReminderPlanner.refillBody(amount: 10, estimate: nil) == "10 swipes are back")
         #expect(RefillReminderPlanner.refillBody(amount: 10, estimate: ClutterEstimate()) == "10 swipes are back")
     }

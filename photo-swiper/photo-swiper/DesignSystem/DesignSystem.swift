@@ -52,6 +52,27 @@ enum DS {
         /// The tab bar's selection capsule sliding between tabs. A little bounce so it lands.
         static let tab = Animation.spring(duration: 0.4, bounce: 0.22)
     }
+
+    /// Swift Charts, so every chart reads as one family. Colors come from `Palette`: a brick series
+    /// (it's space cleared) over a `brickTint` area, `line` gridlines, `secondary` axis labels.
+    enum Chart {
+        /// Plot height at the default text size; scale it with `@ScaledMetric`.
+        static let height: CGFloat = 168
+        static let lineWidth: CGFloat = 2
+        /// Rounded data end of a bar; the baseline end stays square.
+        static let barCornerRadius: CGFloat = 4
+        /// The scrubbing rule.
+        static let ruleWidth: CGFloat = 1
+        /// Area of the selected point's dot, in points squared (Swift Charts' `symbolSize`).
+        static let pointSize: CGFloat = 64
+    }
+
+    /// The dashboard's health ring.
+    enum Ring {
+        /// Diameter at the default text size; scale it with `@ScaledMetric`.
+        static let diameter: CGFloat = 92
+        static let lineWidth: CGFloat = 8
+    }
 }
 
 // MARK: - Typography
