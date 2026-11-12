@@ -35,4 +35,28 @@ enum CleanupCategory: String, CaseIterable, Codable, Hashable, Sendable {
         if item.features?.isInBurst == true { return .burst }
         return .photo
     }
+
+    /// The same guess from features alone, as the feed builder sees an item.
+    static func inferred(from features: AssetFeatures) -> CleanupCategory {
+        if features.isVideo { return .video }
+        if features.isScreenshot { return .screenshot }
+        if features.isInBurst { return .burst }
+        return .photo
+    }
+}
+
+extension FeedCard {
+    /// The card belongs in a feed focused on `category`. Group cards are their group's kind; a single
+    /// card is what its item is, so a free user's unbundled duplicate reads as a photo.
+    func matches(_ category: CleanupCategory) -> Bool {
+        switch self {
+        case .duplicates: category == .duplicate
+        case .similar: category == .similar
+        case .batch(let batch):
+            switch batch.kind {
+            case .screenshots: category == .screenshot
+            }
+        case .photo(let item), .video(let item): CleanupCategory.inferred(from: item) == category
+        }
+    }
 }

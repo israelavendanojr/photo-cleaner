@@ -47,6 +47,11 @@ final class FeedViewModel {
     private(set) var returningCard: ReturningCard?
     private(set) var stats = LibraryStats(totalItems: 0, reviewedItems: 0, freedBytes: 0)
     private(set) var access = LibraryAccess.full
+    /// The one kind of clutter the feed offers, picked from the dashboard. Nil offers everything.
+    /// Not saved: a relaunch is back to the full feed.
+    private(set) var feedFocus: CleanupCategory?
+    /// Goes up each time something asks for the Feed tab. RootView switches tabs when it changes.
+    private(set) var feedRequests = 0
     /// The system access prompt is up.
     private(set) var isRequestingAccess = false
     /// Access was just granted from onboarding and the first session is being built.
@@ -671,6 +676,39 @@ final class FeedViewModel {
         await refreshDashboard()
     }
 
+    // MARK: Focus
+
+    /// Shows only one kind of clutter in the feed, or everything again with nil, and asks for the Feed tab.
+    ///
+    /// The current card never changes, whatever its kind: the user may be partway through it, and a decision
+    /// must land on the card they acted on. Only the cards after it that don't fit are dropped, and a page
+    /// being built without the focus is thrown away. New pages bring the rest. Nothing is decided.
+    func focusFeed(on category: CleanupCategory?) {
+        defer { showFeed() }
+        guard category != feedFocus else { return }
+        feedFocus = category
+        if let category, var current = session, current.cards.count > index + 1 {
+            current.cards = Array(current.cards.prefix(index + 1)) + current.cards.dropFirst(index + 1).filter { $0.matches(category) }
+            session = current
+            saveProgress()
+        }
+        // A page on its way was built for the old focus.
+        deckGeneration += 1
+        pageTask?.cancel()
+        pageTask = nil
+        isLibraryExhausted = false
+        if phase == .caughtUp {
+            Task { await checkAgain() }
+        } else {
+            fillIfNeeded()
+        }
+    }
+
+    /// Asks for the Feed tab, e.g. from the dashboard's empty state.
+    func showFeed() {
+        feedRequests += 1
+    }
+
     /// "Check again" from caught up: deals a fresh deck if anything turned up, e.g. new photos
     /// or "later" items back from their cooldown. Never gated: only swipes are.
     func checkAgain() async {
@@ -942,7 +980,7 @@ final class FeedViewModel {
     private func appendPage() async {
         let generation = deckGeneration
         let inDeck = Set(session?.items.map(\.id) ?? [])
-        var options = FeedOptions(skipFavorites: skipFavorites, excluding: store.excludedFromNewSession(asOf: now()))
+        var options = FeedOptions(skipFavorites: skipFavorites, excluding: store.excludedFromNewSession(asOf: now()), focus: feedFocus)
         options.excluding.formUnion(inDeck)
         options.excluding.formUnion(decisions.keys)
         let page = gated(await builder.makeSession(number: nextPageNumber, options: options))
@@ -1115,7 +1153,7 @@ final class FeedViewModel {
 
     /// - Parameter placeBudget: Overrides how long to wait on place names; nil keeps the default.
     private func makeSession(number: Int, placeBudget: Duration? = nil) async -> Session {
-        var options = FeedOptions(skipFavorites: skipFavorites, excluding: store.excludedFromNewSession(asOf: now()))
+        var options = FeedOptions(skipFavorites: skipFavorites, excluding: store.excludedFromNewSession(asOf: now()), focus: feedFocus)
         if let placeBudget { options.placeBudget = placeBudget }
         return gated(await builder.makeSession(number: number, options: options))
     }

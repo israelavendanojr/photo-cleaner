@@ -31,4 +31,6 @@ struct FeedOptions: Sendable {
     var excluding: Set<LibraryItem.ID> = []
     /// How long to wait on place names for captions. Zero skips the lookup.
     var placeBudget: Duration = .milliseconds(1500)
+    /// Only this kind of clutter, when the user focused the feed from the dashboard. Nil offers everything.
+    var focus: CleanupCategory?
 }

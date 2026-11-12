@@ -41,7 +41,7 @@ struct MockFeedBuilder: FeedBuilding {
     func makeSessionNow(number: Int, options: FeedOptions = FeedOptions()) -> Session {
         guard number <= Self.pageCount else { return Session(number: number, cards: []) }
         var factory = Factory(session: number, options: options)
-        let cards = (0..<Self.cardsPerSession).map { factory.card(at: $0) }
+        let cards = (0..<Self.cardsPerSession).map { factory.card(at: $0) }.filter { card in options.focus.map(card.matches) ?? true }
         return Session(number: number, cards: cards, scanPercentAtStart: number == 1 ? 38 : nil)
     }
 }

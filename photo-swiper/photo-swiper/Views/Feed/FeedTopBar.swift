@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Undo, the free swipes left or the scanning note, and the running "to clear" total.
+/// Undo, the free swipes left, the feed's focus or the scanning note, and the running "to clear" total.
 struct FeedTopBar: View {
     /// Free users see how many swipes are left from here down.
     static let lowSwipes = 5
@@ -54,6 +54,10 @@ struct FeedTopBar: View {
             }
             .fixedSize()
             .transition(.opacity)
+        } else if let focus = vm.feedFocus {
+            FeedFocusChip(focus: focus)
+                .fixedSize()
+                .transition(.opacity)
         } else if let percent = vm.scanningPercent {
             HStack(spacing: 6) {
                 Circle()
@@ -82,6 +86,27 @@ private struct SwipesLeftPill: View {
         .accessibilityLabel("\(left) swipes left")
         .accessibilityHint("Shows when more swipes arrive")
         .accessibilityIdentifier("feed.swipesLeft")
+    }
+}
+
+/// "Only videos ×": the feed is focused from the dashboard. Tapping shows everything again.
+struct FeedFocusChip: View {
+    @Environment(FeedViewModel.self) private var vm
+    let focus: CleanupCategory
+
+    var body: some View {
+        Button {
+            withAnimation(DS.Motion.calm) { vm.focusFeed(on: nil) }
+        } label: {
+            Chip(text: focus.focusTitle, trailingSystemImage: "xmark", style: .plain, size: .caption)
+                .softShadow()
+                .frame(minHeight: 44)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(PressScaleStyle())
+        .accessibilityLabel("Showing \(focus.title.lowercased())")
+        .accessibilityHint("Shows everything again")
+        .accessibilityIdentifier("feed.focus")
     }
 }
 

@@ -86,7 +86,9 @@ actor PhotoKitFeedBuilder: FeedBuilding {
         let groups = await groups(in: pool, skipFavorites: options.skipFavorites)
         signposts.endInterval("grouping", grouping, "\(groups.duplicatePrintCount + groups.similarPrintCount) prints")
         let planning = signposts.beginInterval("plan")
-        let slots = planner.plan(pool.candidates, groups: groups.similar, duplicates: groups.duplicates, now: .now)
+        let focused = FeedFocus.apply(.init(candidates: pool.candidates, duplicates: groups.duplicates, similar: groups.similar),
+                                      focus: options.focus)
+        let slots = planner.plan(focused.candidates, groups: focused.similar, duplicates: focused.duplicates, now: .now)
         signposts.endInterval("plan", planning)
         similarGroupsLeft = groups.similar.count - slots.filter(\.isSimilar).count
         lastGroups = (groups.duplicates, groups.similar)
