@@ -11,6 +11,10 @@ struct FeedBuilderTests {
         var deleted: Set<LibraryItem.ID> = []
         /// Indexed items are read live only when `index` lacks them; these have their own metadata.
         var liveFeatures: [LibraryItem.ID: AssetFeatures] = [:]
+        /// Live Photos, as the catalog reports them.
+        var live: Set<LibraryItem.ID> = []
+
+        func livePhotoIDs() -> Set<LibraryItem.ID> { live }
 
         func entries(skipFavorites: Bool) -> [CandidatePool.Entry] {
             candidates
@@ -98,6 +102,18 @@ struct FeedBuilderTests {
         #expect(kinds == ["similar", "duplicates"])
         #expect(grouped.isDisjoint(with: singles))
         #expect(excluded.count == library.candidates.filter { !$0.features.isFavorite }.count, "Every item is dealt once")
+    }
+
+    /// The dashboard's breakdown counts Live Photos from the catalog, and every indexed item once.
+    @Test func theLibraryScanCountsLivePhotosFromTheCatalog() async throws {
+        let stills = library.candidates.filter { !$0.features.isVideo }.prefix(5).map(\.id)
+        let catalog = FakeCatalog(candidates: library.candidates, live: Set(stills))
+        let scan = try #require(await builder(FakeIndex(library), catalog: catalog).libraryScan(excluding: []))
+        let profile = try #require(scan.profile)
+
+        #expect(profile.composition[.livePhoto]?.count == stills.count)
+        #expect(profile.composition.values.reduce(0) { $0 + $1.count } == library.candidates.count)
+        #expect(profile.totalBytes == library.candidates.reduce(0) { $0 + $1.features.bytes })
     }
 
     @Test func excludedItemsNeverAppear() async {

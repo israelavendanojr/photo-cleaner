@@ -74,8 +74,11 @@ actor PhotoKitFeedBuilder: FeedBuilding {
     func libraryScan(excluding: Set<LibraryItem.ID>) async -> LibraryScan? {
         guard let index else { return nil }
         let features = await index.indexed().mapValues(\.features)
-        return LibraryScan.make(features: features, excluding: excluding.union(lastExcluding), duplicates: lastGroups.duplicates,
-                                similar: lastGroups.similar, scanPercent: lastScanPercent)
+        let decided = excluding.union(lastExcluding)
+        var scan = LibraryScan.make(features: features, excluding: decided, duplicates: lastGroups.duplicates,
+                                    similar: lastGroups.similar, scanPercent: lastScanPercent)
+        scan.profile = LibraryProfile.make(features: features, livePhotos: catalog.livePhotoIDs(), decided: decided, now: .now)
+        return scan
     }
 
     func makeSession(number: Int, options: FeedOptions) async -> Session {

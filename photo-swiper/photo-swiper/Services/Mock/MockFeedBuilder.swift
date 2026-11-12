@@ -34,8 +34,35 @@ struct MockFeedBuilder: FeedBuilding {
             .screenshot: .init(count: 312, bytes: 540_000_000),
             .burst: .init(count: 92, bytes: 260_000_000),
         ],
-        indexedCount: 17_820, indexedBytes: 64_000_000_000, scanPercent: 86
+        indexedCount: 17_820, indexedBytes: 64_000_000_000, scanPercent: 86, profile: profile
     )
+
+    /// Six years of a typical camera roll: busier summers, more video lately, about 64 GB in all.
+    static var profile: LibraryProfile {
+        var rng = SeededGenerator(seed: 21)
+        let calendar = Calendar.current
+        let thisMonth = calendar.dateInterval(of: .month, for: .now)?.start ?? .now
+        var monthly: [Date: LibraryScan.Bucket] = [:]
+        var recent: Int64 = 0
+        for back in 0..<72 {
+            guard let month = calendar.date(byAdding: .month, value: -back, to: thisMonth) else { continue }
+            let summer = [6, 7, 8].contains(calendar.component(.month, from: month)) ? 1.8 : 1.0
+            let count = Int((150 + rng.unit() * 160) * summer)
+            let bytes = Int64(Double(count) * (2_600_000 + Double(72 - back) * 40_000) * (0.8 + rng.unit() * 0.4))
+            monthly[month] = .init(count: count, bytes: bytes)
+            if back < 3 { recent += bytes }
+        }
+        return LibraryProfile(
+            composition: [
+                .video: .init(count: 1_420, bytes: 24_100_000_000),
+                .livePhoto: .init(count: 5_210, bytes: 15_300_000_000),
+                .screenshot: .init(count: 2_180, bytes: 2_000_000_000),
+                .photo: .init(count: 9_010, bytes: 22_600_000_000),
+            ],
+            monthly: monthly, addedRecently: recent,
+            oldestUnreviewed: calendar.date(byAdding: .year, value: -6, to: thisMonth)
+        )
+    }
 
     /// Synchronous variant for previews and launch-time setup.
     func makeSessionNow(number: Int, options: FeedOptions = FeedOptions()) -> Session {

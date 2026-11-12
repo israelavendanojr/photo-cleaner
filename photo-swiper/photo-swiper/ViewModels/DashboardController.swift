@@ -19,6 +19,8 @@ final class DashboardController {
 
     private let builder: any FeedBuilding
     private let store: any ProgressStoring
+    /// Nil where there's no device to ask (tests): no forecast.
+    private let storage: (any DeviceStorageReading)?
     /// Where the snapshot is cached between launches. Nil keeps it in memory (tests, previews).
     private let cacheURL: URL?
     private let calendar: Calendar
@@ -36,10 +38,11 @@ final class DashboardController {
         var excluding: Set<LibraryItem.ID>
     }
 
-    init(builder: any FeedBuilding, store: any ProgressStoring, cacheURL: URL?, calendar: Calendar = .current,
-         now: @escaping () -> Date) {
+    init(builder: any FeedBuilding, store: any ProgressStoring, storage: (any DeviceStorageReading)? = nil, cacheURL: URL?,
+         calendar: Calendar = .current, now: @escaping () -> Date) {
         self.builder = builder
         self.store = store
+        self.storage = storage
         self.cacheURL = cacheURL
         self.calendar = calendar
         self.now = now

@@ -157,6 +157,7 @@ final class FeedViewModel {
         notifier: RefillNotifier? = nil,
         progressLoadFailed: Bool = false,
         dashboardCache: URL? = nil,
+        deviceStorage: (any DeviceStorageReading)? = nil,
         now: @escaping () -> Date = Date.init
     ) {
         self.library = library
@@ -174,7 +175,7 @@ final class FeedViewModel {
         followUps = FollowUpCoordinator(defaults: defaults, freeTier: freeTier, now: now)
         onboarding = OnboardingFlow(defaults: defaults, notifier: notifier, library: library)
         reminders = ReminderController(notifier: notifier, builder: builder, store: store, now: now)
-        dashboard = DashboardController(builder: builder, store: store, cacheURL: dashboardCache, now: now)
+        dashboard = DashboardController(builder: builder, store: store, storage: deviceStorage, cacheURL: dashboardCache, now: now)
         gate = SwipeGate(entitlements: entitlements, allowanceStore: allowanceStore ?? SwipeAllowanceStore(), freeTier: freeTier, now: now)
         skipFavorites = store.skipFavorites
         hasCelebratedComplete = defaults.bool(forKey: DefaultsKey.celebratedComplete)
@@ -193,10 +194,12 @@ final class FeedViewModel {
         allowanceTunables: SwipeAllowance.Tunables = .standard,
         freeTier: FreeTierTunables? = nil,
         features: FeatureAvailabilityTunables? = nil,
-        notifier: RefillNotifier? = nil
+        notifier: RefillNotifier? = nil,
+        deviceStorage: (any DeviceStorageReading)? = nil
     ) {
         self.init(library: library, builder: builder, store: store, entitlements: entitlements, allowanceStore: allowanceStore,
-                  allowanceTunables: allowanceTunables, freeTier: freeTier, features: features, notifier: notifier)
+                  allowanceTunables: allowanceTunables, freeTier: freeTier, features: features, notifier: notifier,
+                  deviceStorage: deviceStorage)
         libraryStats = stats
         apply(session)
         refreshTotals()

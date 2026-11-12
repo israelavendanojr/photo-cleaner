@@ -27,6 +27,8 @@ struct LibraryScan: Equatable, Codable, Sendable {
     var indexedBytes: Int64 = 0
     /// How far the index has got, 0...100. Nil once it's complete.
     var scanPercent: Int?
+    /// The whole library by kind and month. Nil where the builder can't see the library (tests).
+    var profile: LibraryProfile?
 
     /// Sorts undecided items into buckets.
     ///
