@@ -138,8 +138,7 @@ struct LibraryView: View {
         BinCard(
             count: vm.pendingItems.count,
             bytes: vm.pendingBytes,
-            limit: vm.pileLimitBytes.map { (counted: vm.pileCountedBytes, bytes: $0) },
-            thumbnails: vm.pendingItems.prefix(DS.Bin.stackCount).map(\.image)
+            limit: vm.pileLimitBytes.map { (counted: vm.pileCountedBytes, bytes: $0) }
         )
     }
 
