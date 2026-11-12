@@ -108,7 +108,7 @@ struct FeedBuilderTests {
     @Test func theLibraryScanCountsLivePhotosFromTheCatalog() async throws {
         let stills = library.candidates.filter { !$0.features.isVideo }.prefix(5).map(\.id)
         let catalog = FakeCatalog(candidates: library.candidates, live: Set(stills))
-        let scan = try #require(await builder(FakeIndex(library), catalog: catalog).libraryScan(excluding: []))
+        let scan = try #require(await builder(FakeIndex(library), catalog: catalog).libraryScan(excluding: [], removed: []))
         let profile = try #require(scan.profile)
 
         #expect(profile.composition[.livePhoto]?.count == stills.count)

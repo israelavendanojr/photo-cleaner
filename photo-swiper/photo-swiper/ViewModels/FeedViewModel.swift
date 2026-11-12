@@ -78,6 +78,9 @@ final class FeedViewModel {
     private var carriedPending: [LibraryItem] = []
     /// Items deleted, gone from the library, or undeletable. They stay decided but are no longer pending.
     private var settledIDs: Set<LibraryItem.ID> = []
+    /// Of those, the ones no longer in the library (deleted or gone), for the dashboard: the index drops
+    /// them later, or under limited access never.
+    private var removedIDs: Set<LibraryItem.ID> = []
     /// Pending deletes outside a limited selection, which the app can't see or delete. They're hidden
     /// from the pile but stay pending in the store, so they come back once the app can see them again.
     private var outOfReachIDs: Set<LibraryItem.ID> = []
@@ -677,7 +680,7 @@ final class FeedViewModel {
         // What's decided or dealt, from memory. The builder adds its last page's exclusions, so this never
         // reads every saved decision on the main actor.
         let excluding = Set(decisions.keys).union(cards.flatMap(\.items).map(\.id)).union(pendingItems.map(\.id))
-        await dashboard.refresh(reviewedFraction: libraryReviewedFraction, excluding: excluding)
+        await dashboard.refresh(reviewedFraction: libraryReviewedFraction, excluding: excluding, removed: removedIDs)
     }
 
     /// Refreshes the Library tab's numbers if they're missing or old, when the tab is shown.
@@ -1141,6 +1144,7 @@ final class FeedViewModel {
     private func settle(_ ids: Set<LibraryItem.ID>, as settlement: Settlement) {
         guard !ids.isEmpty else { return }
         settledIDs.formUnion(ids)
+        if settlement != .undeletable { removedIDs.formUnion(ids) }
         let real = ids.filter { !LibraryItem.isAdminMock(id: $0) }
         if !real.isEmpty { store.settle(real, as: settlement) }
     }

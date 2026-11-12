@@ -18,8 +18,9 @@ struct LibraryProfileTests {
         AssetFeatures(createdAt: now.addingTimeInterval(-daysAgo * day), bytes: bytes, isVideo: video, isScreenshot: screenshot)
     }
 
-    private func make(_ features: [LibraryItem.ID: AssetFeatures], live: Set<LibraryItem.ID> = [], decided: Set<LibraryItem.ID> = []) -> LibraryProfile {
-        LibraryProfile.make(features: features, livePhotos: live, decided: decided, now: now, calendar: Self.calendar)
+    private func make(_ features: [LibraryItem.ID: AssetFeatures], live: Set<LibraryItem.ID> = [], decided: Set<LibraryItem.ID> = [],
+                      removed: Set<LibraryItem.ID> = []) -> LibraryProfile {
+        LibraryProfile.make(features: features, livePhotos: live, decided: decided, removed: removed, now: now, calendar: Self.calendar)
     }
 
     @Test func anEmptyLibraryIsEmpty() {
@@ -77,5 +78,19 @@ struct LibraryProfileTests {
             "newer": item(10, bytes: 1),
         ], decided: ["decided-oldest"])
         #expect(profile.oldestUnreviewed == now.addingTimeInterval(-2_000 * day))
+    }
+
+    @Test func deletedItemsDontCountThoughTheIndexStillHasThem() {
+        let profile = make(["kept": item(1, bytes: 100), "deleted": item(1, bytes: 2_000, video: true)], removed: ["deleted"])
+        #expect(profile.totalBytes == 100)
+        #expect(profile.composition[.video] == nil)
+        #expect(profile.addedRecently == 100)
+    }
+
+    @Test func anItemWithNoDateCountsInTheTotalButInNoMonth() {
+        let profile = make(["undated": AssetFeatures(createdAt: .distantPast, bytes: 50), "dated": item(1, bytes: 10)])
+        #expect(profile.totalBytes == 60)
+        #expect(profile.monthly.count == 1)
+        #expect(profile.oldestUnreviewed == now.addingTimeInterval(-day))
     }
 }

@@ -31,11 +31,12 @@ final class DashboardController {
     private var completed = 0
     /// Results of runs started at or before this are dropped: `clear()` came after them.
     private var clearedAt = 0
-    private var latest = Inputs(reviewedFraction: 0, excluding: [])
+    private var latest = Inputs(reviewedFraction: 0, excluding: [], removed: [])
 
     private struct Inputs {
         var reviewedFraction: Double
         var excluding: Set<LibraryItem.ID>
+        var removed: Set<LibraryItem.ID>
     }
 
     init(builder: any FeedBuilding, store: any ProgressStoring, storage: (any DeviceStorageReading)? = nil, cacheURL: URL?,
@@ -64,10 +65,11 @@ final class DashboardController {
     /// covers it and any others that came in meanwhile, so a delete made mid-run is never left out.
     /// - Parameter excluding: Items decided or in the deck, from what the caller has in memory. The builder
     ///   adds what its last page excluded, so this never has to read every saved decision.
-    func refresh(reviewedFraction: Double, excluding: Set<LibraryItem.ID> = []) async {
+    /// - Parameter removed: Items deleted or gone that the index may not have dropped yet.
+    func refresh(reviewedFraction: Double, excluding: Set<LibraryItem.ID> = [], removed: Set<LibraryItem.ID> = []) async {
         requested += 1
         let mine = requested
-        latest = Inputs(reviewedFraction: reviewedFraction, excluding: excluding)
+        latest = Inputs(reviewedFraction: reviewedFraction, excluding: excluding, removed: removed)
         while completed < mine {
             if let running {
                 await running.value
@@ -100,11 +102,13 @@ final class DashboardController {
     private func compute(_ inputs: Inputs, target: Int) async {
         // The history is a small read on the main actor; the scan and the sums aren't on it.
         let history = store.cleanupHistory()
-        let scan = await builder.libraryScan(excluding: inputs.excluding)
+        let scan = await builder.libraryScan(excluding: inputs.excluding, removed: inputs.removed)
         let now = now(), calendar = calendar, reviewed = inputs.reviewedFraction, storage = storage
         let next = await Task.detached(priority: .utility) {
-            DashboardStats.make(history: history, scan: scan, reviewedFraction: reviewed, storage: storage?.current(),
-                                now: now, calendar: calendar)
+            // Free space is only read when there's a library to set it against, for the storage bar.
+            let device = scan?.profile == nil ? nil : storage?.current()
+            return DashboardStats.make(history: history, scan: scan, reviewedFraction: reviewed, storage: device,
+                                       now: now, calendar: calendar)
         }.value
         guard target > clearedAt else { return }
         snapshot = next

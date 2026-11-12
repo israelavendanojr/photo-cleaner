@@ -22,7 +22,7 @@ struct MockFeedBuilder: FeedBuilding {
     }
 
     /// A plausible mid-sized library, mostly analyzed.
-    func libraryScan(excluding: Set<LibraryItem.ID>) async -> LibraryScan? {
+    func libraryScan(excluding: Set<LibraryItem.ID>, removed: Set<LibraryItem.ID>) async -> LibraryScan? {
         Self.scan
     }
 
