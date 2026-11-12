@@ -11,8 +11,9 @@ enum FeedFocus {
         var similar: [PlannedGroup]
     }
 
-    /// Duplicate and similar focus keep their groups and only the candidates in them. Any other kind keeps
-    /// the candidates of that kind and no groups, so they show as single cards. Nil changes nothing.
+    /// Duplicate and similar focus keep their groups and only the candidates in them. A large-video,
+    /// screenshot or burst focus keeps the candidates the dashboard counts as that kind
+    /// (`LibraryScan.suggested`) and no groups, so they show as single cards. Nil changes nothing.
     static func apply(_ input: Input, focus: CleanupCategory?) -> Input {
         guard let focus else { return input }
         switch focus {
@@ -20,8 +21,10 @@ enum FeedFocus {
             return Input(candidates: members(of: input.duplicates, in: input.candidates), duplicates: input.duplicates, similar: [])
         case .similar:
             return Input(candidates: members(of: input.similar, in: input.candidates), duplicates: [], similar: input.similar)
-        case .screenshot, .video, .burst, .photo:
-            return Input(candidates: input.candidates.filter { CleanupCategory.inferred(from: $0.features) == focus },
+        case .screenshot, .video, .burst:
+            return Input(candidates: input.candidates.filter { LibraryScan.suggested($0.features) == focus }, duplicates: [], similar: [])
+        case .photo:
+            return Input(candidates: input.candidates.filter { CleanupCategory.inferred(from: $0.features) == .photo },
                          duplicates: [], similar: [])
         }
     }

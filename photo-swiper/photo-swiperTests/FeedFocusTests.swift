@@ -14,6 +14,35 @@ private final class RecordingBuilder: FeedBuilding, @unchecked Sendable {
     }
 }
 
+/// One photo, then nothing, until `gated` is set: then each page waits for `release()`, and its card says
+/// which build and focus it came from. `@unchecked` is safe: every access holds `lock`.
+private final class GatedBuilder: FeedBuilding, @unchecked Sendable {
+    private let lock = NSLock()
+    private var calls = 0
+    private var waiting: [CheckedContinuation<Void, Never>] = []
+    var gated = false
+
+    var waitingCount: Int { lock.withLock { waiting.count } }
+
+    func makeSession(number: Int, options: FeedOptions) async -> Session {
+        let (call, gate) = lock.withLock { calls += 1; return (calls, gated) }
+        if call == 1 { return Session(number: number, cards: [.photo(Self.photo("first"))]) }
+        guard gate else { return Session(number: number, cards: []) }
+        await withCheckedContinuation { continuation in lock.withLock { waiting.append(continuation) } }
+        return Session(number: number, cards: [.photo(Self.photo("\(options.focus?.rawValue ?? "all")-\(call)"))])
+    }
+
+    /// Lets the oldest waiting build finish.
+    func releaseOldest() {
+        let next = lock.withLock { waiting.isEmpty ? nil : waiting.removeFirst() }
+        next?.resume()
+    }
+
+    static func photo(_ id: String) -> LibraryItem {
+        LibraryItem(id: id, kind: .photo, date: .now, location: nil, bytes: 1_000_000, image: .bundled("photo-sunset"))
+    }
+}
+
 /// A dashboard suggestion focuses the feed on one kind of clutter. The card on top never changes, and
 /// decisions still land on the card the user acted on (CLAUDE.md → Rules).
 @MainActor
@@ -89,17 +118,50 @@ struct FeedFocusTests {
         #expect(vm.feedRequests == 2, "Still takes the user to the feed")
     }
 
+    private func until(_ condition: () -> Bool) async {
+        for _ in 0..<200 where !condition() {
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+    }
+
+    /// Two checks from caught up overlap: "Check again", then a focus. The older one finishing first
+    /// deals nothing; only the latest deals, so a deck the user is on is never replaced under them.
+    @Test func onlyTheLatestCheckFromCaughtUpDeals() async throws {
+        let builder = GatedBuilder()
+        let vm = await started(builder)
+        vm.decideCurrent(.right)
+        await vm.waitForPage()
+        try #require(vm.phase == .caughtUp)
+
+        builder.gated = true
+        let first = Task { await vm.checkAgain() }
+        await until { builder.waitingCount == 1 }
+        vm.focusFeed(on: .video)
+        await until { builder.waitingCount == 2 }
+
+        builder.releaseOldest()
+        await first.value
+        #expect(vm.phase == .caughtUp, "The check from before the focus deals nothing")
+
+        builder.releaseOldest()
+        await until { vm.phase != .caughtUp }
+        #expect(vm.currentCard?.items.first?.id.hasPrefix("video-") == true, "The latest, focused build is dealt")
+    }
+
     // MARK: Narrowing a page
 
     private let date = Date(timeIntervalSince1970: 1_800_000_000)
 
-    private func candidate(_ id: String, video: Bool = false, screenshot: Bool = false) -> RankCandidate {
-        RankCandidate(id: id, features: AssetFeatures(createdAt: date, bytes: 1, isVideo: video, isScreenshot: screenshot))
+    private func candidate(_ id: String, bytes: Int64 = 1, video: Bool = false, screenshot: Bool = false) -> RankCandidate {
+        RankCandidate(id: id, features: AssetFeatures(createdAt: date, bytes: bytes, isVideo: video, isScreenshot: screenshot))
     }
 
     private var input: FeedFocus.Input {
         FeedFocus.Input(
-            candidates: [candidate("p1"), candidate("p2"), candidate("v", video: true), candidate("s", screenshot: true), candidate("d1"), candidate("d2")],
+            candidates: [
+                candidate("p1"), candidate("p2"), candidate("v", bytes: LibraryScan.largeVideoBytes, video: true),
+                candidate("small-v", bytes: 1_000, video: true), candidate("s", screenshot: true), candidate("d1"), candidate("d2"),
+            ],
             duplicates: [PlannedGroup(ids: ["d1", "d2"], bestID: "d1", reason: "")],
             similar: [PlannedGroup(ids: ["p1", "p2"], bestID: "p1", reason: "")]
         )
@@ -122,7 +184,7 @@ struct FeedFocusTests {
 
     @Test func aKindFocusKeepsThatKindAsSingleCards() {
         let videos = FeedFocus.apply(input, focus: .video)
-        #expect(videos.candidates.map(\.id) == ["v"])
+        #expect(videos.candidates.map(\.id) == ["v"], "Only large videos, as the dashboard counts them")
         #expect(videos.duplicates.isEmpty && videos.similar.isEmpty)
         #expect(FeedFocus.apply(input, focus: .screenshot).candidates.map(\.id) == ["s"])
     }

@@ -51,15 +51,19 @@ struct LibraryScan: Equatable, Codable, Sendable {
         for (id, item) in features where !excluding.contains(id) {
             scan.indexedCount += 1
             scan.indexedBytes += item.bytes
-            guard !grouped.contains(id), !item.isFavorite else { continue }
-            if item.isVideo {
-                if item.bytes >= largeVideoBytes { scan.buckets[.video, default: Bucket()].add(item.bytes) }
-            } else if item.isScreenshot {
-                scan.buckets[.screenshot, default: Bucket()].add(item.bytes)
-            } else if item.isInBurst, !item.isBurstPick, item.isUserBurstPick != true {
-                scan.buckets[.burst, default: Bucket()].add(item.bytes)
-            }
+            guard !grouped.contains(id), !item.isFavorite, let category = suggested(item) else { continue }
+            scan.buckets[category, default: Bucket()].add(item.bytes)
         }
         return scan
+    }
+
+    /// The kind a single item is suggested as, if any: a large video, a screenshot, or a burst shot the
+    /// user or the camera didn't pick. A focused feed offers exactly these (`FeedFocus`), so a suggestion
+    /// leads to what it counted.
+    static func suggested(_ item: AssetFeatures) -> CleanupCategory? {
+        if item.isVideo { return item.bytes >= largeVideoBytes ? .video : nil }
+        if item.isScreenshot { return .screenshot }
+        if item.isInBurst, !item.isBurstPick, item.isUserBurstPick != true { return .burst }
+        return nil
     }
 }

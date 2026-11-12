@@ -47,7 +47,8 @@ enum CleanupCategory: String, CaseIterable, Codable, Hashable, Sendable {
 
 extension FeedCard {
     /// The card belongs in a feed focused on `category`. Group cards are their group's kind; a single
-    /// card is what its item is, so a free user's unbundled duplicate reads as a photo.
+    /// card is what its item is, so a free user's unbundled duplicate reads as a photo. Videos count only
+    /// when large, as the dashboard counts them (`LibraryScan.largeVideoBytes`).
     func matches(_ category: CleanupCategory) -> Bool {
         switch self {
         case .duplicates: category == .duplicate
@@ -56,7 +57,8 @@ extension FeedCard {
             switch batch.kind {
             case .screenshots: category == .screenshot
             }
-        case .photo(let item), .video(let item): CleanupCategory.inferred(from: item) == category
+        case .video(let item): category == .video && item.bytes >= LibraryScan.largeVideoBytes
+        case .photo(let item): CleanupCategory.inferred(from: item) == category
         }
     }
 }

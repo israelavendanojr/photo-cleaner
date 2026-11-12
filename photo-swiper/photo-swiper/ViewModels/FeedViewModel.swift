@@ -694,6 +694,10 @@ final class FeedViewModel {
         if let category, var current = session, current.cards.count > index + 1 {
             current.cards = Array(current.cards.prefix(index + 1)) + current.cards.dropFirst(index + 1).filter { $0.matches(category) }
             session = current
+            // Partial reviews of dropped cards go with them. Undo only reaches cards up to the current one.
+            let kept = Set(current.cards.map(\.id))
+            drafts = drafts.filter { kept.contains($0.key) }
+            marks = marks.filter { kept.contains($0.key) }
             saveProgress()
         }
         // A page on its way was built for the old focus.
@@ -708,6 +712,14 @@ final class FeedViewModel {
         }
     }
 
+    /// What a decision files `item` under. A free user's duplicate and similar sets arrive split into
+    /// single photos, so in a feed focused on those, a single photo is still one of them.
+    private func category(of item: LibraryItem, on card: FeedCard) -> CleanupCategory {
+        let category = CleanupCategory.of(item, on: card)
+        if category == .photo, let focus = feedFocus, focus == .duplicate || focus == .similar { return focus }
+        return category
+    }
+
     /// Asks for the Feed tab, e.g. from the dashboard's empty state.
     func showFeed() {
         feedRequests += 1
@@ -717,8 +729,11 @@ final class FeedViewModel {
     /// or "later" items back from their cooldown. Never gated: only swipes are.
     func checkAgain() async {
         guard phase == .caughtUp else { return }
+        let generation = deckGeneration
         let next = await makeSession(number: nextPageNumber)
-        guard !next.cards.isEmpty else { return }
+        // Another check, or a change of focus, may have dealt a deck or asked again meanwhile; only the
+        // latest deals, so a deck the user is already on is never replaced.
+        guard phase == .caughtUp, generation == deckGeneration, !next.cards.isEmpty else { return }
         apply(next)
     }
 
@@ -943,7 +958,7 @@ final class FeedViewModel {
         let changes: [LibraryItem.ID: StoredDecision?] = isMock ? [:] : Dictionary(uniqueKeysWithValues: card.items.compactMap { item in
             outcome[item.id].map {
                 (item.id, StoredDecision(decision: $0, decidedAt: decidedAt, sessionNumber: sessionNumber, item: item,
-                                         category: CleanupCategory.of(item, on: card)))
+                                         category: category(of: item, on: card)))
             }
         })
 
