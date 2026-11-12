@@ -26,7 +26,8 @@ struct OpportunitiesSection: View {
     }
 
     private var emptyText: String {
-        snapshot.health == nil
+        // Only say there's nothing once the whole library has been looked at.
+        snapshot.health == nil || snapshot.scanPercent != nil
             ? "Still looking through your library. Suggestions show up as it's analyzed."
             : "Nothing obvious left to clear."
     }
