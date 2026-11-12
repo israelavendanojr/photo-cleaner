@@ -23,6 +23,19 @@ enum Format {
         "\(Int((fraction * 100).rounded()))%"
     }
 
+    /// "+34.5%" or "−25.0%", for a change as a fraction, to one decimal.
+    static func signedPercent(_ fraction: Double) -> String {
+        let magnitude = abs(fraction).formatted(.percent.precision(.fractionLength(1)))
+        return fraction < 0 ? "−\(magnitude)" : "+\(magnitude)"
+    }
+
+    /// Space cleared this week against last: "+1.2 GB (+34.5%) vs last week", "−0.4 GB (−25.0%) vs last
+    /// week", or "+1.2 GB this week" when last week cleared nothing.
+    static func weeklyChange(_ change: DashboardSnapshot.WeeklyChange) -> String {
+        guard let percent = change.percent else { return "\(signedSize(change.delta)) this week" }
+        return "\(signedSize(change.delta)) (\(signedPercent(percent))) vs last week"
+    }
+
     /// "+1.2 GB" or "−340 MB", for a change.
     static func signedSize(_ bytes: Int64) -> String {
         bytes < 0 ? "−\(size(-bytes))" : "+\(size(bytes))"

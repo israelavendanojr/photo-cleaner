@@ -668,6 +668,16 @@ final class FeedViewModel {
 
     // MARK: Dashboard
 
+    /// The dashboard's number has counted up this launch. It plays once, not on every visit to the tab.
+    private(set) var hasPlayedDashboardEntrance = false
+
+    func markDashboardEntrancePlayed() {
+        hasPlayedDashboardEntrance = true
+    }
+
+    /// How many decisions were in memory at the last dashboard refresh, to tell when it's behind the feed.
+    private var decisionsAtDashboardRefresh = 0
+
     /// The Library tab's last numbers, possibly from the cache. Nil before the first refresh on a new install.
     var dashboardSnapshot: DashboardSnapshot? { dashboard.snapshot }
     var isDashboardRefreshing: Bool { dashboard.isRefreshing }
@@ -677,12 +687,14 @@ final class FeedViewModel {
         // What's decided or dealt, from memory. The builder adds its last page's exclusions, so this never
         // reads every saved decision on the main actor.
         let excluding = Set(decisions.keys).union(cards.flatMap(\.items).map(\.id)).union(pendingItems.map(\.id))
+        decisionsAtDashboardRefresh = decisions.count
         await dashboard.refresh(excluding: excluding, removed: removedIDs)
     }
 
-    /// Refreshes the Library tab's numbers if they're missing or old, when the tab is shown.
+    /// Refreshes the Library tab's numbers when the tab is shown, if they're missing, old, or the user has
+    /// decided something since, so today's square in the heatmap and the chips keep up with the feed.
     func refreshDashboardIfStale() async {
-        guard dashboard.isStale else { return }
+        guard dashboard.isStale || decisions.count != decisionsAtDashboardRefresh else { return }
         await refreshDashboard()
     }
 

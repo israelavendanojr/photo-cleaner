@@ -74,6 +74,29 @@ struct ProgressStoreTests {
         #expect(store.freedBytes() == items[0].bytes)
     }
 
+    /// The heatmap's counts come from the decisions: keeps and deletes by the day they were made, deleted
+    /// ones included, later and anything before `since` left out, and an undone decision gone.
+    @Test(arguments: Kind.allCases)
+    func reviewsAreCountedByTheDayTheyWereMade(_ kind: Kind) throws {
+        let store = try makeStore(kind)
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+        let today = calendar.startOfDay(for: now), yesterday = today.addingTimeInterval(-86_400)
+        let items = session.items
+        store.save([
+            items[0].id: record(items[0], .keep, at: today.addingTimeInterval(60)),
+            items[1].id: record(items[1], .delete, at: today.addingTimeInterval(7_200)),
+            items[2].id: record(items[2], .keep, at: yesterday.addingTimeInterval(3_600)),
+            items[3].id: record(items[3], .later, at: today.addingTimeInterval(60)),
+            items[4].id: record(items[4], .keep, at: yesterday.addingTimeInterval(-86_400)),
+            items[5].id: record(items[5], .keep, at: today),
+        ])
+        store.settle([items[1].id], as: .deleted)
+        store.save([items[5].id: nil])
+
+        #expect(store.reviewsByDay(since: yesterday, calendar: calendar) == [today: 2, yesterday: 1])
+    }
+
     @Test(arguments: Kind.allCases)
     func laterItemsSitOutForADay(_ kind: Kind) throws {
         let store = try makeStore(kind)

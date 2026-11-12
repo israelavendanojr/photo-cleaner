@@ -51,9 +51,13 @@ enum DS {
         static let page = Animation.spring(duration: 0.45, bounce: 0)
         /// The tab bar's selection capsule sliding between tabs. A little bounce so it lands.
         static let tab = Animation.spring(duration: 0.4, bounce: 0.22)
+        /// The dashboard's space cleared counting up from zero, once per launch: how long it takes, in how
+        /// many steps (each a `calm` numeric-text change), easing out so it slows as it lands.
+        static let countUpDuration: Duration = .milliseconds(900)
+        static let countUpSteps = 16
     }
 
-    /// The dashboard's small charts: the composition bar and the heatmap.
+    /// The dashboard's small charts: the composition bar and the review heatmap.
     enum Chart {
         /// A categorical breakdown in ink, biggest first. Labels carry identity; the shades only separate.
         static let categoryOpacities: [Double] = [1, 0.62, 0.36, 0.18]
@@ -61,8 +65,8 @@ enum DS {
         static let segmentGap: CGFloat = 2
         /// A one-line stacked bar (composition, storage) at the default text size; scale it with `@ScaledMetric`.
         static let stackedBarHeight: CGFloat = 12
-        /// Heatmap levels 1...4 as brick strengths (level 0 is `line`). Level 1 uses `brickTint`, not this.
-        static let heatOpacities: [Double] = [0, 0.45, 0.7, 1]
+        /// Heatmap levels 1...4 as ink strengths (level 0 is `line`). Reviews aren't space cleared, so not brick.
+        static let heatOpacities: [Double] = [0.16, 0.36, 0.62, 1]
         /// A heatmap cell at the default text size; scale it with `@ScaledMetric`.
         static let heatCellSize: CGFloat = 14
         static let heatCellGap: CGFloat = 3

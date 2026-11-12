@@ -189,6 +189,13 @@ final class SwiftDataProgressStore: ProgressStoring {
         }
     }
 
+    func reviewsByDay(since: Date, calendar: Calendar) -> [Date: Int] {
+        let later = Decision.later.rawValue
+        var descriptor = FetchDescriptor<ItemProgress>(predicate: #Predicate { $0.decidedAt >= since && $0.decisionRaw != later })
+        descriptor.propertiesToFetch = [\.decidedAt]
+        return Dictionary(grouping: fetch(descriptor)) { calendar.startOfDay(for: $0.decidedAt) }.mapValues(\.count)
+    }
+
     func freedBytes() -> Int64 {
         let deleted: String? = Settlement.deleted.rawValue
         var descriptor = FetchDescriptor<ItemProgress>(predicate: #Predicate { $0.settlementRaw == deleted })

@@ -2,8 +2,8 @@ import Foundation
 import Observation
 import OSLog
 
-/// The Library tab's dashboard: the cleanup history and what's left to clear, worked out off the main
-/// thread and cached on disk, so the tab shows the last numbers at once and updates when they're in.
+/// The Library tab's dashboard: the cleanup history, reviews by day and what's left to clear, worked out
+/// off the main thread and cached on disk, so the tab shows the last numbers at once and updates when they're in.
 /// `FeedViewModel` owns it.
 @Observable
 @MainActor
@@ -96,12 +96,13 @@ final class DashboardController {
     }
 
     private func compute(_ inputs: Inputs, target: Int) async {
-        // The history is a small read on the main actor; the scan and the sums aren't on it.
-        let history = store.cleanupHistory()
-        let scan = await builder.libraryScan(excluding: inputs.excluding, removed: inputs.removed)
+        // The history and the heatmap's days are small reads on the main actor; the scan and the sums aren't on it.
         let now = now(), calendar = calendar
+        let history = store.cleanupHistory()
+        let reviews = store.reviewsByDay(since: DashboardStats.activityStart(now: now, calendar: calendar), calendar: calendar)
+        let scan = await builder.libraryScan(excluding: inputs.excluding, removed: inputs.removed)
         let next = await Task.detached(priority: .utility) {
-            DashboardStats.make(history: history, scan: scan, now: now, calendar: calendar)
+            DashboardStats.make(history: history, scan: scan, reviews: reviews, now: now, calendar: calendar)
         }.value
         guard target > clearedAt else { return }
         snapshot = next

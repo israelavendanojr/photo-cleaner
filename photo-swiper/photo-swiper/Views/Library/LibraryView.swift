@@ -104,14 +104,10 @@ struct LibraryView: View {
         let isLoading = snapshot == nil
         let cleared = max(vm.freedBytes, snapshot?.totalCleared ?? 0)
         return VStack(alignment: .leading, spacing: DS.Spacing.xl) {
-            HeroSection(snapshot: shown, isLoading: isLoading, clearedBytes: cleared)
+            HeroSection(snapshot: shown, isLoading: isLoading, clearedBytes: cleared, isActive: isActive)
             Group {
                 if let composition = shown.composition, !composition.isEmpty {
                     CompositionSection(slices: composition)
-                }
-                // Only once there's something to show; before the first cleanup the hero says what to do.
-                if cleared > 0, let activity = shown.activity {
-                    ActivitySection(activity: activity)
                 }
             }
             .redacted(reason: isLoading ? .placeholder : [])

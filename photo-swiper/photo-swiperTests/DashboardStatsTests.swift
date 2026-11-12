@@ -37,6 +37,39 @@ struct DashboardStatsTests {
         #expect(snapshot.clearedLastWeek == 6)
     }
 
+    // MARK: Week over week
+
+    @Test func noChangeLineWhenNeitherWeekClearedAnything() {
+        #expect(DashboardStats.weeklyChange(this: 0, last: 0) == nil)
+        #expect(make([entry(20, 500)]).weeklyChange == nil, "Older cleanups don't make a line")
+    }
+
+    @Test(arguments: [
+        (Int64(1_620), Int64(1_200), Int64(420), 0.35),
+        (Int64(300), Int64(400), Int64(-100), -0.25),
+        (Int64(0), Int64(400), Int64(-400), -1.0),
+        (Int64(500), Int64(500), Int64(0), 0.0),
+    ])
+    func theChangeIsThisWeekAgainstLast(this: Int64, last: Int64, delta: Int64, percent: Double) throws {
+        let change = try #require(DashboardStats.weeklyChange(this: this, last: last))
+        #expect(change.delta == delta)
+        #expect(abs(try #require(change.percent) - percent) < 0.000_001)
+        #expect(change.isDown == (delta < 0))
+    }
+
+    @Test func nothingLastWeekHasNoPercentage() throws {
+        let change = try #require(DashboardStats.weeklyChange(this: 1_200, last: 0))
+        #expect(change.delta == 1_200)
+        #expect(change.percent == nil)
+        #expect(!change.isDown)
+    }
+
+    @Test func theSnapshotsChangeUsesItsTwoWeeks() throws {
+        let change = try #require(make([entry(1, 300), entry(8, 200)]).weeklyChange)
+        #expect(change.delta == 100)
+        #expect(change.percent == 0.5)
+    }
+
     @Test func opportunitiesAreBiggestFirstAndTiesKeepCategoryOrder() {
         let scan = LibraryScan(buckets: [
             .screenshot: .init(count: 9, bytes: 500),
@@ -63,68 +96,64 @@ struct DashboardInsightsTests {
     private let now = Date(timeIntervalSince1970: 1_762_948_800)
     private let day: TimeInterval = 86_400
 
-    private func cleanup(_ daysAgo: Double, _ bytes: Int64 = 100) -> CleanupEntry {
-        CleanupEntry(at: now.addingTimeInterval(-daysAgo * day), category: .photo, count: 1, bytes: bytes)
+    /// `count` reviews on the day `daysAgo` days back.
+    private func reviewed(_ entries: [(daysAgo: Double, count: Int)]) -> [Date: Int] {
+        Dictionary(entries.map { (Self.calendar.startOfDay(for: now.addingTimeInterval(-$0.daysAgo * day)), $0.count) }, uniquingKeysWith: +)
     }
 
-    private func make(history: [CleanupEntry] = [], profile: LibraryProfile? = nil) -> DashboardSnapshot {
-        DashboardStats.make(history: history, scan: LibraryScan(profile: profile), now: now, calendar: Self.calendar)
+    private func make(reviews: [Date: Int] = [:], profile: LibraryProfile? = nil) -> DashboardSnapshot {
+        DashboardStats.make(history: [], scan: LibraryScan(profile: profile), reviews: reviews, now: now, calendar: Self.calendar)
     }
 
-    // MARK: Activity
+    // MARK: Reviews
 
     @Test func theHeatmapRunsSixteenWholeWeeksToToday() throws {
-        let activity = try #require(make().activity)
+        let activity = try #require(make().reviews)
         #expect(activity.days.count == 15 * 7 + 3, "Fifteen whole weeks, then Monday to Wednesday")
         #expect(Self.calendar.component(.weekday, from: try #require(activity.days.first).date) == 2)
+        #expect(activity.days.first?.date == DashboardStats.activityStart(now: now, calendar: Self.calendar))
         #expect(activity.days.last?.date == Self.calendar.startOfDay(for: now))
         #expect(activity.days.allSatisfy { $0.level == 0 })
-        #expect(activity.streakWeeks == 0)
+        #expect(activity.total == 0)
     }
 
-    @Test func levelsAreQuartilesOfTheDaysWithCleanups() throws {
-        let activity = try #require(make(history: [cleanup(1, 10), cleanup(2, 20), cleanup(3, 30), cleanup(4, 40)]).activity)
-        let levels = Dictionary(activity.days.map { ($0.bytes, $0.level) }, uniquingKeysWith: { first, _ in first })
+    @Test func levelsAreQuartilesOfTheDaysWithReviews() throws {
+        let activity = try #require(make(reviews: reviewed([(1, 10), (2, 20), (3, 30), (4, 40)])).reviews)
+        let levels = Dictionary(activity.days.map { ($0.count, $0.level) }, uniquingKeysWith: { first, _ in first })
         #expect(levels[10] == 1 && levels[20] == 2 && levels[30] == 3 && levels[40] == 4)
         #expect(levels[0] == 0)
         #expect(activity.activeDays == 4)
+        #expect(activity.total == 100)
     }
 
-    @Test(arguments: [
-        ([Double](), 0),
-        ([0.0, 7, 14], 3), // this week and the two before
-        ([7.0, 14], 2), // none yet this week: last week's run still counts
-        ([0.0, 14], 1), // a missed week breaks it
-        ([0.0, 0.5, 1], 1), // several days in one week count once
-    ])
-    func theStreakCountsWeeksInARow(daysAgo: [Double], weeks: Int) throws {
-        let activity = try #require(make(history: daysAgo.map { cleanup($0) }).activity)
-        #expect(activity.streakWeeks == weeks)
+    @Test func reviewsBeforeTheFirstWeekArentShown() throws {
+        let activity = try #require(make(reviews: reviewed([(1, 5), (200, 50)])).reviews)
+        #expect(activity.total == 5)
+        #expect(activity.activeDays == 1)
     }
 
-    @Test func aLoneCleanupDayIsTheDarkestAndTiesShareALevel() throws {
-        let lone = try #require(make(history: [cleanup(1, 10)]).activity)
+    @Test func aLoneReviewDayIsTheDarkestAndTiesShareALevel() throws {
+        let lone = try #require(make(reviews: reviewed([(1, 10)])).reviews)
         #expect(lone.days.map(\.level).max() == 4)
-        let tied = try #require(make(history: [cleanup(1, 10), cleanup(2, 10), cleanup(3, 5)]).activity)
-        let levels = Dictionary(tied.days.map { ($0.bytes, $0.level) }, uniquingKeysWith: { first, _ in first })
+        let tied = try #require(make(reviews: reviewed([(1, 10), (2, 10), (3, 5)])).reviews)
+        let levels = Dictionary(tied.days.map { ($0.count, $0.level) }, uniquingKeysWith: { first, _ in first })
         #expect(levels[10] == 4 && levels[5] == 2)
     }
 
-    /// In Beirut, DST starts at midnight: the last Sunday of March begins at 01:00. Days and weeks after it
-    /// still line up, with weeks starting on Sunday.
-    @Test func daysAndWeeksSurviveDSTStartingAtMidnight() throws {
+    /// In Beirut, DST starts at midnight: the last Sunday of March begins at 01:00. Days after it still
+    /// line up with the store's days (`startOfDay`), with weeks starting on Sunday.
+    @Test func daysSurviveDSTStartingAtMidnight() throws {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(identifier: "Asia/Beirut")!
         calendar.firstWeekday = 1
         let date = { (month: Int, day: Int) in calendar.date(from: DateComponents(year: 2025, month: month, day: day, hour: 12))! }
         #expect(calendar.component(.hour, from: calendar.startOfDay(for: date(3, 30))) == 1, "Midnight doesn't exist that day")
-        let history = [date(3, 25), date(4, 1), date(4, 8)].map { CleanupEntry(at: $0, category: .photo, count: 1, bytes: 100) }
+        let reviews = Dictionary(uniqueKeysWithValues: [date(3, 25), date(3, 30), date(4, 8)].map { (calendar.startOfDay(for: $0), 3) })
 
-        let activity = DashboardStats.activity(history, now: date(4, 9), calendar: calendar)
+        let activity = DashboardStats.activity(reviews, now: date(4, 9), calendar: calendar)
         #expect(activity.activeDays == 3)
-        #expect(activity.days.filter { $0.bytes > 0 }.count == 3)
+        #expect(activity.days.filter { $0.count > 0 }.count == 3)
         #expect(activity.days.allSatisfy { $0.date == calendar.startOfDay(for: $0.date) })
-        #expect(activity.streakWeeks == 3)
     }
 
     // MARK: Library

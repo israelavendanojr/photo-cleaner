@@ -1,46 +1,39 @@
 import SwiftUI
 
-/// When the user cleared space: a grid of the last 16 weeks, a column a week, darker for more cleared,
-/// and how many weeks in a row they've cleaned up. No pressure: a missed week just starts a new count.
-struct ActivitySection: View {
+/// Photos reviewed by day over the last 16 weeks, a column a week, darker for more. Keeping counts as
+/// much as clearing: reviewing is the habit it shows. In ink, since it isn't space cleared, and with no
+/// streak, so a missed day costs nothing.
+struct ReviewHeatmap: View {
     let activity: DashboardSnapshot.Activity
 
     @ScaledMetric(relativeTo: .caption) private var cell = DS.Chart.heatCellSize
     @ScaledMetric(relativeTo: .caption) private var gap = DS.Chart.heatCellGap
 
     var body: some View {
-        DashboardCard("Activity") {
-            VStack(alignment: .leading, spacing: DS.Spacing.s) {
-                streak
-                // At large text the cells grow past the card; then the grid scrolls inside it, latest week in view.
-                ViewThatFits(in: .horizontal) {
-                    grid
-                    ScrollView(.horizontal) {
-                        grid
-                    }
-                    .scrollIndicators(.hidden)
-                    .defaultScrollAnchor(.trailing)
-                }
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel("Cleanups over the last \(DashboardStats.activityWeeks) weeks")
-                .accessibilityValue(summary)
-                legend
-            }
-        }
-    }
-
-    private var streak: some View {
-        VStack(alignment: .leading, spacing: DS.Spacing.xxs) {
-            Text(activity.streakWeeks > 0 ? "\(Format.count(activity.streakWeeks)) \(activity.streakWeeks == 1 ? "week" : "weeks") in a row" : "Start a streak this week")
-                .font(.title3.weight(.semibold))
-                .foregroundStyle(DS.Palette.ink)
-                .contentTransition(.numericText(value: Double(activity.streakWeeks)))
-            Text("Cleaned up on \(Format.count(activity.activeDays)) \(activity.activeDays == 1 ? "day" : "days") in the last \(DashboardStats.activityWeeks) weeks")
+        VStack(alignment: .leading, spacing: DS.Spacing.xs) {
+            Text(caption)
                 .font(.footnote)
                 .foregroundStyle(DS.Palette.ink)
                 .fixedSize(horizontal: false, vertical: true)
+            // At large text the cells grow past the screen; then the grid scrolls, latest week in view.
+            ViewThatFits(in: .horizontal) {
+                grid
+                ScrollView(.horizontal) {
+                    grid
+                }
+                .scrollIndicators(.hidden)
+                .defaultScrollAnchor(.trailing)
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Photos reviewed over the last \(DashboardStats.activityWeeks) weeks")
+            .accessibilityValue(summary)
+            legend
         }
-        .accessibilityElement(children: .combine)
+    }
+
+    private var caption: String {
+        let photos = activity.total == 1 ? "photo" : "photos"
+        return "\(Format.count(activity.total)) \(photos) reviewed in the last \(DashboardStats.activityWeeks) weeks"
     }
 
     /// Columns are weeks (oldest first), rows are days of the week from the calendar's first.
@@ -116,37 +109,32 @@ struct ActivitySection: View {
     }
 
     private var summary: String {
-        let most = activity.days.max { $0.bytes < $1.bytes }
-        var text = "Cleaned up on \(Format.count(activity.activeDays)) \(activity.activeDays == 1 ? "day" : "days")"
-        if let most, most.bytes > 0 { text += ", the most on \(Format.shortDay(most.date)): \(Format.size(most.bytes))" }
+        let most = activity.days.max { $0.count < $1.count }
+        let days = activity.activeDays == 1 ? "day" : "days"
+        var text = "Reviewed on \(Format.count(activity.activeDays)) \(days)"
+        if let most, most.count > 0 { text += ", the most on \(Format.shortDay(most.date)): \(Format.count(most.count))" }
         return text
     }
 
-    /// Level 0 is an empty `line` cell; 1 is `brickTint`; 2...4 are brick at `DS.Chart.heatOpacities`.
+    /// Level 0 is an empty `line` cell; 1...4 are ink at `DS.Chart.heatOpacities`.
     static func color(level: Int) -> Color {
-        switch level {
-        case ...0: DS.Palette.line
-        case 1: DS.Palette.brickTint
-        default: DS.Palette.brick.opacity(DS.Chart.heatOpacities[min(level, DS.Chart.heatOpacities.count) - 1])
-        }
+        level <= 0 ? DS.Palette.line : DS.Palette.ink.opacity(DS.Chart.heatOpacities[min(level, DS.Chart.heatOpacities.count) - 1])
     }
 }
 
 #if DEBUG
 #Preview {
-    ScrollView {
-        ActivitySection(activity: DashboardSnapshot.preview.activity!)
-            .padding(DS.Spacing.l)
-    }
-    .background(DS.Palette.paper)
+    ReviewHeatmap(activity: DashboardSnapshot.preview.reviews!)
+        .padding(DS.Spacing.l)
+        .background(DS.Palette.paper)
 }
 
 #Preview("Large text") {
     ScrollView {
-        ActivitySection(activity: DashboardSnapshot.preview.activity!)
+        ReviewHeatmap(activity: DashboardSnapshot.preview.reviews!)
             .padding(DS.Spacing.l)
     }
     .background(DS.Palette.paper)
-    .dynamicTypeSize(.xxLarge)
+    .dynamicTypeSize(.accessibility5)
 }
 #endif

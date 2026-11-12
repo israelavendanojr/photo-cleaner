@@ -148,6 +148,7 @@ private extension FeedViewModel {
         let store = savedMockProgressStore() ?? InMemoryProgressStore()
         if UserDefaults.standard.bool(forKey: "mockHistory"), store.cleanupHistory().isEmpty {
             store.recordCleanup(MockHistory.entries(now: .now))
+            (store as? InMemoryProgressStore)?.debugReviews = MockHistory.reviews(now: .now)
         }
         return store
     }
