@@ -12,6 +12,12 @@ struct FormatTests {
         #expect(Format.size(bytes) == expected)
     }
 
+    @Test func fractionsReadAsWholePercents() {
+        #expect(Format.percent(0.21) == "21%")
+        #expect(Format.percent(0.996) == "100%")
+        #expect(Format.percent(0) == "0%")
+    }
+
     @Test func aChangeHasASign() {
         #expect(Format.signedSize(1_200_000_000) == "+1.2 GB")
         #expect(Format.signedSize(-340_000_000) == "−340 MB")

@@ -75,7 +75,7 @@ struct HeroSection: View {
     private var reviewed: some View {
         VStack(alignment: .leading, spacing: DS.Spacing.xs) {
             HStack(alignment: .firstTextBaseline, spacing: DS.Spacing.xs) {
-                Text("\(Int((vm.libraryReviewedFraction * 100).rounded()))%")
+                Text(Format.percent(vm.libraryReviewedFraction))
                     .font(.title3.weight(.semibold))
                     .monospacedDigit()
                     .contentTransition(.numericText(value: vm.libraryReviewedFraction))
@@ -98,5 +98,29 @@ struct HeroSection: View {
         .padding(DS.Spacing.l)
         .background(DS.Palette.paper)
         .environment(FeedViewModel.mock(startingAt: .batch))
+}
+
+#Preview("Large text") {
+    ScrollView {
+        HeroSection(snapshot: .preview, clearedBytes: DashboardSnapshot.preview.totalCleared)
+            .padding(DS.Spacing.l)
+    }
+    .background(DS.Palette.paper)
+    .environment(FeedViewModel.mock(startingAt: .batch))
+    .dynamicTypeSize(.xxLarge)
+}
+
+#Preview("First cleanup") {
+    HeroSection(snapshot: .preview, clearedBytes: 0)
+        .padding(DS.Spacing.l)
+        .background(DS.Palette.paper)
+        .environment(FeedViewModel.mock())
+}
+
+#Preview("Loading") {
+    HeroSection(snapshot: .placeholder(), isLoading: true, clearedBytes: 2_000_000_000)
+        .padding(DS.Spacing.l)
+        .background(DS.Palette.paper)
+        .environment(FeedViewModel.mock())
 }
 #endif

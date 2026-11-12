@@ -36,6 +36,7 @@ struct LibraryView: View {
             .refreshable {
                 await vm.refreshDashboard()
                 Haptics.refreshed()
+                AccessibilityNotification.Announcement("Dashboard updated").post()
             }
             .background(DS.Palette.paper)
             .toolbar(.hidden, for: .navigationBar)

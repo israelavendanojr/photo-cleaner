@@ -70,7 +70,7 @@ struct ClearedChartSection: View {
                 .contentTransition(.numericText(value: Double(point?.bytes ?? 0)))
             Text(caption(for: point))
                 .font(.footnote)
-                .foregroundStyle(DS.Palette.secondary)
+                .foregroundStyle(DS.Palette.ink)
         }
         .animation(reduceMotion ? nil : DS.Motion.calm, value: point)
         .accessibilityElement(children: .combine)
@@ -100,7 +100,7 @@ struct ClearedChartSection: View {
             case .weekly:
                 ForEach(points) { point in
                     BarMark(x: .value("Week", point.date, unit: .weekOfYear), y: .value("Cleared", Double(point.bytes)))
-                        .foregroundStyle(DS.Palette.brick.opacity(selected == nil || selected == point ? 1 : 0.35))
+                        .foregroundStyle(DS.Palette.brick.opacity(selected == nil || selected == point ? 1 : DS.Chart.dimmedOpacity))
                         .clipShape(UnevenRoundedRectangle(topLeadingRadius: DS.Chart.barCornerRadius,
                                                           topTrailingRadius: DS.Chart.barCornerRadius, style: .continuous))
                 }
@@ -128,10 +128,12 @@ struct ClearedChartSection: View {
             }
         }
         .chartXAxis {
-            AxisMarks(values: .automatic(desiredCount: 3)) { _ in
-                AxisValueLabel(format: .dateTime.month(.abbreviated).day(), collisionResolution: .greedy)
-                    .font(.caption2)
-                    .foregroundStyle(DS.Palette.secondary)
+            AxisMarks(values: .automatic(desiredCount: 3)) { value in
+                AxisValueLabel(collisionResolution: .greedy) {
+                    if let date = value.as(Date.self) { Text(Format.shortDay(date)) }
+                }
+                .font(.caption2)
+                .foregroundStyle(DS.Palette.secondary)
             }
         }
         .animation(reduceMotion ? nil : DS.Motion.calm, value: mode)

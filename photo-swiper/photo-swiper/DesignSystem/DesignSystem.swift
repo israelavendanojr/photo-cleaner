@@ -65,6 +65,8 @@ enum DS {
         static let ruleWidth: CGFloat = 1
         /// Area of the selected point's dot, in points squared (Swift Charts' `symbolSize`).
         static let pointSize: CGFloat = 64
+        /// Bars other than the scrubbed one, while scrubbing.
+        static let dimmedOpacity: Double = 0.35
     }
 
     /// The dashboard's health ring.

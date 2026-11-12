@@ -44,13 +44,13 @@ struct OpportunitiesSection: View {
                     .monospacedDigit()
             }
             .font(.footnote)
-            .foregroundStyle(DS.Palette.secondary)
+            .foregroundStyle(DS.Palette.ink)
         }
         .accessibilityElement(children: .combine)
     }
 
     private func statusText(now: Date) -> String {
-        if let percent = snapshot.scanPercent { return "Analyzing · \(percent)%" }
+        if let percent = snapshot.scanPercent { return "Analyzing · \(Format.percent(Double(percent) / 100))" }
         return "Updated \(Format.relative(snapshot.computedAt, now: now))"
     }
 

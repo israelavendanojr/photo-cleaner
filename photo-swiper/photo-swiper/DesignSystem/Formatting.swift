@@ -9,6 +9,11 @@ enum Format {
         return byteCount.string(fromByteCount: bytes)
     }
 
+    /// "21%", for a 0...1 fraction.
+    static func percent(_ fraction: Double) -> String {
+        "\(Int((fraction * 100).rounded()))%"
+    }
+
     /// "+1.2 GB" or "−340 MB", for a change.
     static func signedSize(_ bytes: Int64) -> String {
         bytes < 0 ? "−\(size(-bytes))" : "+\(size(bytes))"
