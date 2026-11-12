@@ -1,3 +1,4 @@
+import CoreData
 import Foundation
 import SwiftData
 import Testing
@@ -107,6 +108,64 @@ struct SchemaVersioningTests {
         let reopened = SwiftDataProgressStore(container: try SwiftDataProgressStore.makeContainer(url: url), defaults: nil)
         #expect(reopened.decisions(for: [pending.id])[pending.id]?.settlement == .deleted)
         #expect(reopened.freedBytes() == pending.bytes)
+    }
+
+    @Test(arguments: [false, true])
+    func v1StoresOpenThroughTheMigrationPlan(versioned: Bool) throws {
+        let url = try temporaryStoreURL()
+        try writeV1Store(at: url, versioned: versioned)
+
+        let store = SwiftDataProgressStore(
+            container: try SwiftDataProgressStore.makeContainer(url: url, allowsUnplannedFallback: false), defaults: nil
+        )
+        #expect(store.pile() == [pending])
+    }
+
+    @Test func aStoreFromBeforeTheIndexIsMigratedOnceThenOpensThroughThePlan() throws {
+        let url = try temporaryStoreURL()
+        do {
+            let schema = Schema([BristleSchemaV1.ItemProgress.self, SessionProgress.self])
+            let old = try ModelContainer(for: schema, configurations: ModelConfiguration(schema: schema, url: url))
+            let context = ModelContext(old)
+            context.insert(BristleSchemaV1.ItemProgress(itemID: pending.id, decisionRaw: Decision.delete.rawValue, decidedAt: decidedAt,
+                                                        sessionNumber: 1, bytes: pending.bytes, itemData: try JSONEncoder().encode(pending)))
+            try context.save()
+        }
+        #expect(SwiftDataProgressStore.isOlderThanV2(storeAt: url, schema: Schema(versionedSchema: BristleSchemaV2.self)))
+        #expect(throws: (any Error).self) {
+            try SwiftDataProgressStore.makeContainer(url: url, allowsUnplannedFallback: false)
+        }
+
+        _ = try SwiftDataProgressStore.makeContainer(url: url)
+
+        let reopened = SwiftDataProgressStore(
+            container: try SwiftDataProgressStore.makeContainer(url: url, allowsUnplannedFallback: false), defaults: nil
+        )
+        #expect(reopened.pile() == [pending], "Migrated once; the next launch opens it through the plan")
+    }
+
+    /// A store from a later version (here: the cleanup history with a field this build doesn't know) is
+    /// refused and left as it is, never migrated down.
+    @Test func aStoreFromANewerBuildIsRefusedNotMigratedDown() throws {
+        let url = try temporaryStoreURL()
+        let model = NSManagedObjectModel()
+        let event = NSEntityDescription()
+        event.name = "CleanupEvent"
+        let future = NSAttributeDescription()
+        future.name = "addedInV3"
+        future.attributeType = .stringAttributeType
+        future.isOptional = true
+        event.properties = [future]
+        model.entities = [event]
+        let coordinator = NSPersistentStoreCoordinator(managedObjectModel: model)
+        let written = try coordinator.addPersistentStore(type: .sqlite, at: url)
+        try coordinator.remove(written)
+
+        #expect(!SwiftDataProgressStore.isOlderThanV2(storeAt: url, schema: Schema(versionedSchema: BristleSchemaV2.self)))
+        #expect(throws: (any Error).self) { try SwiftDataProgressStore.makeContainer(url: url) }
+        let metadata = try NSPersistentStoreCoordinator.metadataForPersistentStore(type: .sqlite, at: url)
+        let entities = (metadata[NSStoreModelVersionHashesKey] as? [String: Any])?.keys.sorted()
+        #expect(entities == ["CleanupEvent"], "The file is left as it was")
     }
 
     @Test func theContainerUsesTheVersionedSchema() throws {

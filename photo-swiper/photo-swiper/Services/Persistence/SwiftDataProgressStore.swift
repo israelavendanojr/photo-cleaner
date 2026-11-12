@@ -1,3 +1,4 @@
+import CoreData
 import Foundation
 import OSLog
 import SwiftData
@@ -39,18 +40,34 @@ final class SwiftDataProgressStore: ProgressStoring {
     /// The migration plan only knows the versioned layouts. A store written before versioning can have
     /// another layout (from before the index, or before its duplicate fields), and staged migration
     /// refuses it as an unknown version. Such a store opens the way it always did instead: without a plan,
-    /// so Core Data infers a lightweight migration to the current models. If that fails too, the first
-    /// error is thrown.
-    nonisolated static func makeContainer(url: URL? = nil, inMemory: Bool = false) throws -> ModelContainer {
+    /// so Core Data infers a lightweight migration to the current models.
+    ///
+    /// Only a store from before V2 gets that second try (`isOlderThanV2`). A store from a newer build, or one
+    /// whose own migration failed, would otherwise be migrated down or past its custom stage and lose data;
+    /// it keeps its file and the error is thrown, as before.
+    /// - Parameter allowsUnplannedFallback: Tests turn it off to prove a store opens through the plan.
+    nonisolated static func makeContainer(url: URL? = nil, inMemory: Bool = false,
+                                          allowsUnplannedFallback: Bool = true) throws -> ModelContainer {
         let configuration = if let url { ModelConfiguration(url: url) } else { ModelConfiguration(isStoredInMemoryOnly: inMemory) }
         let schema = Schema(versionedSchema: BristleSchemaV2.self)
         do {
             return try ModelContainer(for: schema, migrationPlan: BristleMigrationPlan.self, configurations: configuration)
         } catch {
-            guard !inMemory, let container = try? ModelContainer(for: schema, configurations: configuration) else { throw error }
+            guard allowsUnplannedFallback, !inMemory, isOlderThanV2(storeAt: configuration.url, schema: schema),
+                  let container = try? ModelContainer(for: schema, configurations: configuration) else { throw error }
             Logger.app(category: "progress").notice("Opened progress without the migration plan after: \(error)")
             return container
         }
+    }
+
+    /// The store on disk was written before V2: it has no `CleanupEvent` table, which every later version
+    /// keeps, and no table this build doesn't know.
+    nonisolated static func isOlderThanV2(storeAt url: URL, schema: Schema) -> Bool {
+        guard let metadata = try? NSPersistentStoreCoordinator.metadataForPersistentStore(type: .sqlite, at: url),
+              let hashes = metadata[NSStoreModelVersionHashesKey] as? [String: Any] else { return false }
+        let stored = Set(hashes.keys)
+        let known = Set(schema.entities.map(\.name))
+        return !stored.contains(String(describing: CleanupEvent.self)) && stored.isSubset(of: known)
     }
 
     /// The app's on-disk store, or one at `url` (tests).

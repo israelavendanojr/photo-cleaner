@@ -25,7 +25,10 @@ import SwiftData
 /// 3. Append it to `BristleMigrationPlan.schemas` and add a stage, `.lightweight(fromVersion:toVersion:)`
 ///    or `.custom(…)` for data that has to be rewritten.
 /// 4. Add a test that opens a store from the previous version with the new container (see
-///    `SchemaVersioningTests`).
+///    `SchemaVersioningTests`), with `allowsUnplannedFallback: false` so it's the plan that opens it.
+/// 5. Check `SwiftDataProgressStore.makeContainer`'s fallback for stores from before versioning. It runs
+///    only for stores from before V2 (`isOlderThanV2`), so it can't skip a new version's custom stage; keep
+///    it that way.
 enum BristleSchemaV1: VersionedSchema {
     static var versionIdentifier: Schema.Version { Schema.Version(1, 0, 0) }
 
