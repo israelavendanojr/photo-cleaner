@@ -55,27 +55,13 @@ struct LibraryCard: View {
         .disabled(isLoading)
     }
 
-    // MARK: Reviewed
+    // MARK: Header
 
     private var reviewed: some View {
-        VStack(alignment: .leading, spacing: DS.Spacing.xs) {
-            HStack(alignment: .firstTextBaseline, spacing: DS.Spacing.xs) {
-                Text(Format.percent(vm.libraryReviewedFraction))
-                    .font(.title3.weight(.semibold))
-                    .monospacedDigit()
-                    .contentTransition(.numericText(value: vm.libraryReviewedFraction))
-                Text("reviewed")
-                    .font(.callout)
-            }
+        Text("Worth a look")
+            .font(.headline)
             .foregroundStyle(DS.Palette.ink)
-            ProgressLine(value: vm.libraryReviewedFraction)
-            Text("\(Format.count(vm.libraryReviewedCount)) of \(Format.count(vm.stats.totalItems)) photos and videos")
-                .font(.footnote)
-                .foregroundStyle(DS.Palette.ink)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(.isHeader)
+            .accessibilityAddTraits(.isHeader)
     }
 
     // MARK: Composition

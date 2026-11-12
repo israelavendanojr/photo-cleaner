@@ -1,7 +1,8 @@
 import SwiftUI
 
-/// The top of the dashboard: total space cleared, this week against last, and photos reviewed by day.
-/// Before anything is cleared it's an invitation to start instead.
+/// The top of the dashboard, one card: total space cleared, this week against last, how much of the
+/// library is reviewed, and photos reviewed by day. Before anything is cleared the number is an invitation
+/// to start instead.
 ///
 /// The first time the tab is seen each launch, the number counts up from zero and the change fades up
 /// under it once it lands. Later visits, and Reduce Motion, show it still.
@@ -22,16 +23,18 @@ struct HeroSection: View {
     @State private var isChangeShown = true
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        DashboardCard {
             if clearedBytes > 0 {
                 cleared
             } else {
                 firstCleanup
             }
+        } content: {
+            reviewed
             if let reviews = snapshot.reviews, reviews.total > 0 {
                 ReviewHeatmap(activity: reviews)
                     .redacted(reason: isLoading ? .placeholder : [])
-                    .padding(.top, DS.Spacing.l)
+                    .padding(.top, DS.Spacing.xs)
             }
         }
         .animation(reduceMotion ? nil : DS.Motion.calm, value: clearedBytes)
@@ -101,6 +104,29 @@ struct HeroSection: View {
         }
         withAnimation(DS.Motion.calm) { countingBytes = nil }
         withAnimation(DS.Motion.gentle) { isChangeShown = true }
+    }
+
+    /// How much of the library has been looked at, kept or not.
+    private var reviewed: some View {
+        VStack(alignment: .leading, spacing: DS.Spacing.xs) {
+            HStack(alignment: .firstTextBaseline, spacing: DS.Spacing.xs) {
+                Text(Format.percent(vm.libraryReviewedFraction))
+                    .font(.title3.weight(.semibold))
+                    .monospacedDigit()
+                    .contentTransition(.numericText(value: vm.libraryReviewedFraction))
+                Text("reviewed")
+                    .font(.callout)
+            }
+            .foregroundStyle(DS.Palette.ink)
+            ProgressLine(value: vm.libraryReviewedFraction)
+            Text("\(Format.count(vm.libraryReviewedCount)) of \(Format.count(vm.stats.totalItems)) photos reviewed")
+                .font(.footnote)
+                .foregroundStyle(DS.Palette.ink)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.top, DS.Spacing.xs)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("library.reviewed")
     }
 
     /// Nothing cleared yet: say what this screen will show, and send them to the feed.
