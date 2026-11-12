@@ -6,7 +6,11 @@ enum Format {
     /// than MB, so a small item reads "0.1 MB", and nothing reads "0 MB" rather than "Zero KB".
     static func size(_ bytes: Int64) -> String {
         guard bytes > 0 else { return "0 MB" }
-        return byteCount.string(fromByteCount: bytes)
+        // Made per call, like `relative`'s: formatters aren't Sendable, and one is cheap to make.
+        let formatter = ByteCountFormatter()
+        formatter.countStyle = .file
+        formatter.allowedUnits = [.useMB, .useGB, .useTB]
+        return formatter.string(fromByteCount: bytes)
     }
 
     /// "21%", for a 0...1 fraction.
@@ -22,7 +26,10 @@ enum Format {
     /// "5 min ago", "yesterday", "just now" under a minute.
     static func relative(_ date: Date, now: Date = .now) -> String {
         guard now.timeIntervalSince(date) >= 60 else { return "just now" }
-        return relativeFormatter.localizedString(for: date, relativeTo: now)
+        // Made per call: it isn't Sendable, and this runs about once a minute.
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .short
+        return formatter.localizedString(for: date, relativeTo: now)
     }
 
     /// "Saturday, September 14".
@@ -78,19 +85,6 @@ enum Format {
     static func count(_ n: Int) -> String {
         n.formatted(.number)
     }
-
-    private static let byteCount: ByteCountFormatter = {
-        let f = ByteCountFormatter()
-        f.countStyle = .file
-        f.allowedUnits = [.useMB, .useGB, .useTB]
-        return f
-    }()
-
-    private static let relativeFormatter: RelativeDateTimeFormatter = {
-        let f = RelativeDateTimeFormatter()
-        f.unitsStyle = .short
-        return f
-    }()
 
     private static let spellOut: NumberFormatter = {
         let f = NumberFormatter()
