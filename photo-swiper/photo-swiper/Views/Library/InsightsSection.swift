@@ -13,7 +13,7 @@ struct InsightsSection: View {
             VStack(alignment: .leading, spacing: 0) {
                 if let month = insights.busiestMonth {
                     fact("Busiest month", value: Format.month(month),
-                         detail: "\(Format.count(insights.busiestMonthCount)) photos and videos taken")
+                         detail: "\(Format.count(insights.busiestMonthCount)) \(insights.busiestMonthCount == 1 ? "photo or video" : "photos and videos") taken")
                     Divider().overlay(DS.Palette.line)
                 }
                 if let year = insights.oldestUnreviewedYear {
@@ -78,7 +78,25 @@ struct InsightsSection: View {
             .frame(height: yearsHeight)
             .accessibilityLabel("Photos and videos per year")
             .accessibilityValue(insights.perYear.map { "\($0.year): \(Format.count($0.count))" }.joined(separator: ", "))
+            .accessibilityChartDescriptor(YearsDescriptor(years: insights.perYear))
         }
+    }
+}
+
+/// Audio Graphs for the per-year bars.
+private struct YearsDescriptor: AXChartDescriptorRepresentable {
+    let years: [DashboardSnapshot.YearCount]
+
+    func makeChartDescriptor() -> AXChartDescriptor {
+        let xAxis = AXCategoricalDataAxisDescriptor(title: "Year", categoryOrder: years.map { String($0.year) })
+        let top = Double(years.map(\.count).max() ?? 1)
+        let yAxis = AXNumericDataAxisDescriptor(title: "Taken", range: 0...max(top, 1), gridlinePositions: []) {
+            Format.count(Int($0))
+        }
+        let series = AXDataSeriesDescriptor(name: "Photos and videos", isContinuous: false,
+                                            dataPoints: years.map { AXDataPoint(x: String($0.year), y: Double($0.count)) })
+        return AXChartDescriptor(title: "Photos and videos per year", summary: nil, xAxis: xAxis, yAxis: yAxis,
+                                 additionalAxes: [], series: [series])
     }
 }
 

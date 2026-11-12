@@ -6,6 +6,8 @@ import SwiftUI
 struct StorageTimelineSection: View {
     let timeline: [DashboardSnapshot.MonthPoint]
     let forecast: DashboardSnapshot.Forecast?
+    /// Analysis is still going, so the library's size is what's been looked at so far.
+    var isScanning = false
 
     @State private var selectedDate: Date?
     @ScaledMetric(relativeTo: .body) private var plotHeight = DS.Chart.height
@@ -53,12 +55,16 @@ struct StorageTimelineSection: View {
         }
     }
 
+    /// Hedged: with iCloud Photos, iOS can move originals off the device, so the pace may never fill it.
     private func forecastText(_ forecast: DashboardSnapshot.Forecast) -> String {
+        let cloud = forecast.libraryFitsOnDevice
+            ? "" : "Your library is bigger than what's used on this iPhone, so some of it is kept in iCloud. "
         guard let days = forecast.daysUntilFull else {
-            return "No new photos or videos lately, so this iPhone isn't filling up with them."
+            return cloud + "No new photos or videos lately, so this iPhone isn't filling up with them."
         }
-        return "At your recent pace of new photos and videos, about \(Format.size(Int64(forecast.bytesPerDay * Self.daysPerMonth))) a month, "
-            + "this iPhone is full in \(Format.untilFull(days: days)). Other apps count too."
+        return cloud + "If new photos and videos stay on this iPhone at your recent pace, about "
+            + "\(Format.size(Int64(forecast.bytesPerDay * Self.daysPerMonth))) a month, it would be full in "
+            + "\(Format.untilFull(days: days)). Other apps count too."
     }
 
     // MARK: Views
@@ -71,7 +77,7 @@ struct StorageTimelineSection: View {
                 .monospacedDigit()
                 .foregroundStyle(DS.Palette.ink)
                 .contentTransition(.numericText(value: Double(point?.total ?? 0)))
-            Text(selected.map { "By the end of \(Format.month($0.date))" } ?? "Photos and videos now")
+            Text(selected.map { "By the end of \(Format.month($0.date))" } ?? (isScanning ? "Photos and videos so far" : "Photos and videos now"))
                 .font(.footnote)
                 .foregroundStyle(DS.Palette.ink)
         }
@@ -129,23 +135,26 @@ struct StorageTimelineSection: View {
     }
 }
 
-/// Photos, everything else, and what's free, as one bar with a line of labels under it.
+/// Photos, everything else, and what's free, as one bar with a line of labels under it. When the library
+/// is bigger than what's used (originals in iCloud), just used and free: its share of the device isn't known.
 private struct StorageBar: View {
     let forecast: DashboardSnapshot.Forecast
     @ScaledMetric(relativeTo: .body) private var height = DS.Chart.stackedBarHeight
-
-    private var other: Int64 { max(0, forecast.total - forecast.available - forecast.libraryBytes) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: DS.Spacing.xs) {
             GeometryReader { proxy in
                 let total = Double(max(forecast.total, 1))
-                let gaps = DS.Chart.segmentGap * 2
+                let gaps = DS.Chart.segmentGap * Double(forecast.other == nil ? 1 : 2)
                 let width = max(0, proxy.size.width - gaps)
                 HStack(spacing: 0) {
-                    segment(DS.Palette.ink, width * Double(forecast.libraryBytes) / total)
-                    Spacer().frame(width: DS.Chart.segmentGap)
-                    segment(DS.Palette.ink.opacity(DS.Chart.categoryOpacities[2]), width * Double(other) / total)
+                    if let other = forecast.other {
+                        segment(DS.Palette.ink, width * Double(forecast.libraryBytes) / total)
+                        Spacer().frame(width: DS.Chart.segmentGap)
+                        segment(DS.Palette.ink.opacity(DS.Chart.categoryOpacities[2]), width * Double(other) / total)
+                    } else {
+                        segment(DS.Palette.ink.opacity(DS.Chart.categoryOpacities[2]), width * Double(forecast.used) / total)
+                    }
                     Spacer().frame(width: DS.Chart.segmentGap)
                     segment(DS.Palette.line, width * Double(forecast.available) / total)
                 }
@@ -153,7 +162,7 @@ private struct StorageBar: View {
             .frame(height: height)
             .clipShape(Capsule())
             .accessibilityHidden(true)
-            Text("\(Format.size(forecast.libraryBytes)) photos and videos · \(Format.size(other)) other · \(Format.size(forecast.available)) free")
+            Text(parts.joined(separator: " · "))
                 .font(.footnote)
                 .monospacedDigit()
                 .foregroundStyle(DS.Palette.ink)
@@ -161,7 +170,13 @@ private struct StorageBar: View {
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Storage")
-        .accessibilityValue("\(Format.size(forecast.libraryBytes)) photos and videos, \(Format.size(other)) other, \(Format.size(forecast.available)) free of \(Format.size(forecast.total))")
+        .accessibilityValue("\(parts.joined(separator: ", ")) of \(Format.size(forecast.total))")
+    }
+
+    private var parts: [String] {
+        let free = "\(Format.size(forecast.available)) free"
+        guard let other = forecast.other else { return ["\(Format.size(forecast.used)) used", free] }
+        return ["\(Format.size(forecast.libraryBytes)) photos and videos", "\(Format.size(other)) other", free]
     }
 
     private func segment(_ color: Color, _ width: Double) -> some View {

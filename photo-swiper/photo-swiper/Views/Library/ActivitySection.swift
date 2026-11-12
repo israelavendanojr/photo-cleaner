@@ -117,7 +117,7 @@ struct ActivitySection: View {
 
     private var summary: String {
         let most = activity.days.max { $0.bytes < $1.bytes }
-        var text = "Cleaned up on \(activity.activeDays) days"
+        var text = "Cleaned up on \(Format.count(activity.activeDays)) \(activity.activeDays == 1 ? "day" : "days")"
         if let most, most.bytes > 0 { text += ", the most on \(Format.shortDay(most.date)): \(Format.size(most.bytes))" }
         return text
     }

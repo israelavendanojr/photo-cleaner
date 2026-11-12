@@ -118,7 +118,7 @@ struct LibraryView: View {
             }
             Group {
                 if let timeline = shown.timeline, timeline.count > 1 {
-                    StorageTimelineSection(timeline: timeline, forecast: shown.forecast)
+                    StorageTimelineSection(timeline: timeline, forecast: shown.forecast, isScanning: shown.scanPercent != nil)
                 }
                 if let composition = shown.composition, !composition.isEmpty {
                     CompositionSection(slices: composition)
