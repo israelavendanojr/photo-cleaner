@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// What's worth a look in the library, one row per kind with something in it: biggest first, saved for
+/// "Review by type": what's in the library worth a look, one row per kind with something in it: biggest first, saved for
 /// later last. A row opens the feed on just that kind, and that's all it does.
 struct LibraryCard: View {
     @Environment(FeedViewModel.self) private var vm
@@ -42,7 +42,7 @@ struct LibraryCard: View {
             ? AnyLayout(VStackLayout(alignment: .leading, spacing: DS.Spacing.xxs))
             : AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: DS.Spacing.xs))
         return layout {
-            Text("Worth a look")
+            Text("Review by type")
                 .font(.headline)
                 .foregroundStyle(DS.Palette.ink)
                 .accessibilityAddTraits(.isHeader)

@@ -14,9 +14,10 @@ enum FocusTarget: Hashable, Codable, Sendable {
     case savedForLater
 
     /// The dashboard's library rows, in the order equal sizes keep (`DashboardStats.rows`): findings, then
-    /// kinds, then saved for later.
+    /// kinds, then saved for later. Large videos aren't a row: they're already in Videos, and two video rows
+    /// read as a repeat.
     static let listOrder: [FocusTarget] = [
-        .category(.duplicate), .category(.similar), .category(.video), .allVideos, .livePhotos,
+        .category(.duplicate), .category(.similar), .allVideos, .livePhotos,
         .category(.screenshot), .category(.burst), .category(.photo), .savedForLater,
     ]
 

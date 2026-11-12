@@ -75,14 +75,19 @@ struct DashboardStatsTests {
     @Test func rowsAreBiggestFirstWithTiesInListOrderAndEmptyOnesHidden() {
         let scan = LibraryScan(buckets: [
             .screenshot: .init(count: 9, bytes: 500),
-            .video: .init(count: 1, bytes: 900),
+            .similar: .init(count: 1, bytes: 900),
             .duplicate: .init(count: 2, bytes: 500),
             .burst: .init(count: 0, bytes: 0),
         ], focusBuckets: [.allVideos: .init(count: 4, bytes: 2_000), .livePhotos: .init()])
         let rows = DashboardStats.rows(scan)
-        #expect(rows.map(\.focus) == [.allVideos, .category(.video), .category(.duplicate), .category(.screenshot)],
+        #expect(rows.map(\.focus) == [.allVideos, .category(.similar), .category(.duplicate), .category(.screenshot)],
                 "Equal sizes keep the list's order; empty rows are left out")
         #expect(rows.map(\.bytes) == [2_000, 900, 500, 500])
+    }
+
+    @Test func largeVideosAreNotARow() {
+        let scan = LibraryScan(buckets: [.video: .init(count: 3, bytes: 900)], focusBuckets: [.allVideos: .init(count: 5, bytes: 1_000)])
+        #expect(DashboardStats.rows(scan).map(\.focus) == [.allVideos], "They're already in Videos")
     }
 
     @Test func savedForLaterIsAlwaysLast() {

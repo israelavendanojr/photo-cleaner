@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// The top of the dashboard, one card: total space cleared, this week against last, how much of the
-/// library is reviewed, and photos reviewed by day. Before anything is cleared the number is an invitation
+/// The top of the dashboard, one card: total space cleared, with this week against last and how much of
+/// the library is reviewed under it, then photos reviewed by day. Before anything is cleared the number is an invitation
 /// to start instead.
 ///
 /// The first time the tab is seen each launch, the number counts up from zero and the change fades up
@@ -25,12 +25,20 @@ struct HeroSection: View {
     var body: some View {
         DashboardCard {
             if clearedBytes > 0 {
-                cleared
+                VStack(alignment: .leading, spacing: DS.Spacing.xxs) {
+                    cleared
+                    reviewed
+                        .opacity(isChangeShown && !isEntranceDue ? 1 : 0)
+                        .offset(y: isChangeShown && !isEntranceDue ? 0 : DS.Spacing.xs)
+                }
             } else {
                 firstCleanup
             }
         } content: {
-            reviewed
+            // With nothing cleared there's no number to sit under, so it leads the content instead.
+            if clearedBytes == 0, vm.libraryReviewedCount > 0 {
+                reviewed
+            }
             if let reviews = snapshot.reviews, reviews.total > 0 {
                 ReviewHeatmap(activity: reviews)
                     .redacted(reason: isLoading ? .placeholder : [])
@@ -106,27 +114,17 @@ struct HeroSection: View {
         withAnimation(DS.Motion.gentle) { isChangeShown = true }
     }
 
-    /// How much of the library has been looked at, kept or not.
+    /// How much of the library has been looked at, kept or not: a quiet line under the number, like the
+    /// week's change, since it's context for what was cleared rather than a second headline.
     private var reviewed: some View {
-        VStack(alignment: .leading, spacing: DS.Spacing.xs) {
-            HStack(alignment: .firstTextBaseline, spacing: DS.Spacing.xs) {
-                Text(Format.percent(vm.libraryReviewedFraction))
-                    .font(.title3.weight(.semibold))
-                    .monospacedDigit()
-                    .contentTransition(.numericText(value: vm.libraryReviewedFraction))
-                Text("reviewed")
-                    .font(.callout)
-            }
+        Text("\(Format.percent(vm.libraryReviewedFraction)) · \(Format.count(vm.libraryReviewedCount)) of \(Format.count(vm.stats.totalItems)) photos reviewed")
+            .font(.subheadline)
+            .monospacedDigit()
             .foregroundStyle(DS.Palette.ink)
-            ProgressLine(value: vm.libraryReviewedFraction)
-            Text("\(Format.count(vm.libraryReviewedCount)) of \(Format.count(vm.stats.totalItems)) photos reviewed")
-                .font(.footnote)
-                .foregroundStyle(DS.Palette.ink)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .padding(.top, DS.Spacing.xs)
-        .accessibilityElement(children: .combine)
-        .accessibilityIdentifier("library.reviewed")
+            .contentTransition(.numericText(value: vm.libraryReviewedFraction))
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityIdentifier("library.reviewed")
     }
 
     /// Nothing cleared yet: say what this screen will show, and send them to the feed.
