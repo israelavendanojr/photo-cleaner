@@ -13,7 +13,12 @@ struct FeedTopBar: View {
         HStack(alignment: .center, spacing: DS.Spacing.xs) {
             undoButton
                 .frame(maxWidth: .infinity, alignment: .leading)
-            status
+            // One line when it fits; otherwise it wraps. Never wider than the bar: every tab shares
+            // RootView's ZStack, so a wider feed would widen the Library tab too.
+            ViewThatFits(in: .horizontal) {
+                status.fixedSize()
+                status.fixedSize(horizontal: false, vertical: true)
+            }
             Button(action: onOpenPile) {
                 counter
                     .animation(DS.Motion.calm, value: vm.deleteChip)
@@ -52,11 +57,9 @@ struct FeedTopBar: View {
             SwipesLeftPill(left: left) {
                 vm.presentWall()
             }
-            .fixedSize()
             .transition(.opacity)
         } else if let focus = vm.feedFocus {
             FeedFocusChip(focus: focus)
-                .fixedSize()
                 .transition(.opacity)
         } else if let percent = vm.scanningPercent {
             HStack(spacing: 6) {
@@ -67,7 +70,6 @@ struct FeedTopBar: View {
             }
             .font(.caption)
             .foregroundStyle(DS.Palette.secondary)
-            .fixedSize()
             .transition(.opacity)
         }
     }

@@ -32,7 +32,7 @@ extension CleanupCategory {
         case .similar: "square.stack.3d.up"
         case .screenshot: "iphone"
         case .video: "video"
-        case .burst: "square.stack"
+        case .burst: "photo.stack"
         case .photo: "photo"
         }
     }

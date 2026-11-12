@@ -1,8 +1,9 @@
 import SwiftUI
 import UIKit
 
-/// The Library tab: library-wide progress and what's pending. The gear opens Settings.
-/// Confetti falls the first time it's seen at 100%.
+/// The Library tab, a dashboard: space cleared and library health, what's still worth a look, cleared
+/// over time, then the pile. The numbers come from `DashboardController`'s cached snapshot, shown at once
+/// and refreshed when stale or pulled. The gear opens Settings. Confetti falls the first time it's seen at 100%.
 struct LibraryView: View {
     /// The tab is on screen. Both tabs stay mounted, so this says when the confetti can be seen.
     var isActive = true
@@ -17,7 +18,9 @@ struct LibraryView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     header
-                    stats
+                    TrustBadge()
+                        .padding(.top, DS.Spacing.xs)
+                    dashboard
                         .padding(.top, DS.Spacing.l)
                     pile
                         .padding(.top, DS.Spacing.xl)
@@ -26,6 +29,14 @@ struct LibraryView: View {
                 .padding(.bottom, DS.Spacing.xxl)
             }
             .scrollBounceBehavior(.basedOnSize)
+            // The navigation bar is hidden, so paper fills the status bar's strip as the sections scroll under it.
+            .safeAreaInset(edge: .top, spacing: 0) {
+                Color.clear.frame(height: 0).background(DS.Palette.paper)
+            }
+            .refreshable {
+                await vm.refreshDashboard()
+                Haptics.refreshed()
+            }
             .background(DS.Palette.paper)
             .toolbar(.hidden, for: .navigationBar)
             .navigationDestination(for: Destination.self) { _ in
@@ -46,6 +57,10 @@ struct LibraryView: View {
                 .presentationDragIndicator(.visible)
                 .presentationBackground(DS.Palette.paper)
                 .presentationCornerRadius(DS.Radius.card)
+        }
+        .task(id: isActive) {
+            guard isActive else { return }
+            await vm.refreshDashboardIfStale()
         }
         .onAppear(perform: celebrateIfDue)
         .onChange(of: isActive) { celebrateIfDue() }
@@ -84,37 +99,23 @@ struct LibraryView: View {
         .padding(.top, DS.Spacing.l)
     }
 
-    private var stats: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .bottom) {
-                HStack(alignment: .firstTextBaseline, spacing: DS.Spacing.xs) {
-                    Text("\(Int((vm.libraryReviewedFraction * 100).rounded()))%")
-                        .dsSerif(64, relativeTo: .largeTitle)
-                        .foregroundStyle(DS.Palette.ink)
-                    Text("reviewed")
-                        .font(.callout)
-                        .foregroundStyle(DS.Palette.secondary)
-                }
-                Spacer(minLength: DS.Spacing.xs)
-                VStack(alignment: .trailing, spacing: 2) {
-                    Text(Format.size(vm.freedBytes))
-                        .dsSerif(24, relativeTo: .title2)
-                        .foregroundStyle(DS.Palette.brick)
-                    Text("freed so far")
-                        .font(.footnote)
-                        .foregroundStyle(DS.Palette.secondary)
-                }
+    /// Before the first numbers on a new install, the sections show stand-in shapes, redacted and still.
+    private var dashboard: some View {
+        let snapshot = vm.dashboardSnapshot
+        let shown = snapshot ?? .placeholder()
+        let isLoading = snapshot == nil
+        let cleared = max(vm.freedBytes, snapshot?.totalCleared ?? 0)
+        return VStack(alignment: .leading, spacing: DS.Spacing.xl) {
+            HeroSection(snapshot: shown, isLoading: isLoading, clearedBytes: cleared)
+            OpportunitiesSection(snapshot: shown)
+                .redacted(reason: isLoading ? .placeholder : [])
+                .disabled(isLoading)
+            if cleared > 0, shown.cumulative.count > 1 {
+                ClearedChartSection(snapshot: shown)
+                    .redacted(reason: isLoading ? .placeholder : [])
+                    .disabled(isLoading)
             }
-            .lineLimit(1)
-            .minimumScaleFactor(0.7)
-            ProgressLine(value: vm.libraryReviewedFraction, height: 4)
-                .padding(.top, DS.Spacing.s)
-            Text("\(Format.count(vm.libraryReviewedCount)) of \(Format.count(vm.stats.totalItems)) photos reviewed")
-                .font(.footnote)
-                .foregroundStyle(DS.Palette.secondary)
-                .padding(.top, DS.Spacing.xs)
         }
-        .accessibilityElement(children: .combine)
     }
 
     private var pile: some View {
@@ -171,19 +172,27 @@ private struct OverviewRow: View {
     var isAccent = false
     var showsChevron = false
 
+    @Environment(\.dynamicTypeSize) private var typeSize
+
     var body: some View {
         HStack(spacing: DS.Spacing.m) {
             Image(systemName: icon)
                 .font(.body)
                 .foregroundStyle(isAccent ? DS.Palette.brick : DS.Palette.ink)
                 .frame(width: 24)
-            Text(title)
-                .foregroundStyle(DS.Palette.ink)
-            Spacer(minLength: DS.Spacing.xs)
-            Text(value)
-                .font(.subheadline.weight(isAccent ? .semibold : .regular))
-                .foregroundStyle(isAccent ? DS.Palette.brick : DS.Palette.secondary)
-                .multilineTextAlignment(.trailing)
+            // Title over value at accessibility sizes, so neither breaks mid-word.
+            if typeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: DS.Spacing.xxs) {
+                    titleText
+                    if !value.isEmpty { valueText }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                titleText
+                Spacer(minLength: DS.Spacing.xs)
+                valueText
+                    .multilineTextAlignment(.trailing)
+            }
             if showsChevron {
                 Image(systemName: "chevron.right")
                     .font(.footnote.weight(.semibold))
@@ -194,11 +203,28 @@ private struct OverviewRow: View {
         .padding(.vertical, 18)
         .accessibilityElement(children: .combine)
     }
+
+    private var titleText: some View {
+        Text(title)
+            .foregroundStyle(DS.Palette.ink)
+    }
+
+    private var valueText: some View {
+        Text(value)
+            .font(.subheadline.weight(isAccent ? .semibold : .regular))
+            .foregroundStyle(isAccent ? DS.Palette.brick : DS.Palette.secondary)
+    }
 }
 
 #if DEBUG
 #Preview {
     LibraryView()
         .environment(FeedViewModel.mock(startingAt: .batch))
+}
+
+#Preview("Large text") {
+    LibraryView()
+        .environment(FeedViewModel.mock(startingAt: .batch))
+        .dynamicTypeSize(.accessibility2)
 }
 #endif

@@ -144,8 +144,11 @@ private struct Factory {
     /// One photo saved three times, months apart; the newest copy is the largest, so it's the keeper.
     private mutating func duplicates(cardIndex: Int, image: String) -> DuplicateGroup {
         let saved = nextDate()
-        let dates = [saved, Calendar.current.date(byAdding: .day, value: -47, to: saved)!,
-                     Calendar.current.date(byAdding: .day, value: -212, to: saved)!]
+        let dates = [
+            saved,
+            Calendar.current.date(byAdding: .day, value: -47, to: saved)!,
+            Calendar.current.date(byAdding: .day, value: -212, to: saved)!,
+        ]
         let sizes = [4.2, 1.6, 1.4]
         let items = zip(dates, sizes).map { date, mb in
             LibraryItem(id: nextID(), kind: .photo, date: date, location: "Malibu", bytes: megabytes(mb), image: .bundled(image))

@@ -665,6 +665,10 @@ final class FeedViewModel {
 
     // MARK: Dashboard
 
+    /// The Library tab's last numbers, possibly from the cache. Nil before the first refresh on a new install.
+    var dashboardSnapshot: DashboardSnapshot? { dashboard.snapshot }
+    var isDashboardRefreshing: Bool { dashboard.isRefreshing }
+
     /// Works the Library tab's numbers out again: pull to refresh, and after a delete.
     func refreshDashboard() async {
         await dashboard.refresh(reviewedFraction: libraryReviewedFraction)
