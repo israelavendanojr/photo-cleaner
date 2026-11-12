@@ -671,7 +671,10 @@ final class FeedViewModel {
 
     /// Works the Library tab's numbers out again: pull to refresh, and after a delete.
     func refreshDashboard() async {
-        await dashboard.refresh(reviewedFraction: libraryReviewedFraction)
+        // What's decided or dealt, from memory. The builder adds its last page's exclusions, so this never
+        // reads every saved decision on the main actor.
+        let excluding = Set(decisions.keys).union(cards.flatMap(\.items).map(\.id)).union(pendingItems.map(\.id))
+        await dashboard.refresh(reviewedFraction: libraryReviewedFraction, excluding: excluding)
     }
 
     /// Refreshes the Library tab's numbers if they're missing or old, when the tab is shown.

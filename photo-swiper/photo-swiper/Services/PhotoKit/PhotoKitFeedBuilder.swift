@@ -50,6 +50,8 @@ actor PhotoKitFeedBuilder: FeedBuilding {
     private var lastGroups: (duplicates: [PlannedGroup], similar: [PlannedGroup]) = ([], [])
     /// How far the index had got when the last page was built. Nil once complete.
     private var lastScanPercent: Int?
+    /// What the last page was told to leave out (every decided item, and the deck), for the dashboard's scan.
+    private var lastExcluding: Set<LibraryItem.ID> = []
 
     init(index: (any FeatureIndexReading)? = nil, catalog: any AssetCatalog = PhotoKitAssetCatalog(),
          geocoder: any Geocoding = CLGeocoding()) {
@@ -67,11 +69,12 @@ actor PhotoKitFeedBuilder: FeedBuilding {
     }
 
     /// The index's features plus the last page's groups. Before the first page there are no groups yet,
-    /// so duplicates and similar shots show up once the feed has been built.
+    /// so duplicates and similar shots show up once the feed has been built. `excluding` adds to what the
+    /// last page left out (decided items), so callers only pass what they hold in memory.
     func libraryScan(excluding: Set<LibraryItem.ID>) async -> LibraryScan? {
         guard let index else { return nil }
         let features = await index.indexed().mapValues(\.features)
-        return LibraryScan.make(features: features, excluding: excluding, duplicates: lastGroups.duplicates,
+        return LibraryScan.make(features: features, excluding: excluding.union(lastExcluding), duplicates: lastGroups.duplicates,
                                 similar: lastGroups.similar, scanPercent: lastScanPercent)
     }
 
@@ -93,6 +96,7 @@ actor PhotoKitFeedBuilder: FeedBuilding {
         similarGroupsLeft = groups.similar.count - slots.filter(\.isSimilar).count
         lastGroups = (groups.duplicates, groups.similar)
         lastScanPercent = pool.scanPercent
+        lastExcluding = options.excluding
         #if DEBUG
         if UserDefaults.standard.bool(forKey: "logSimilarity") { logSimilarity(groups, session: number) }
         #endif

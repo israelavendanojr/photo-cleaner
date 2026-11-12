@@ -128,9 +128,74 @@ struct LibraryScanTests {
     }
 }
 
+/// The mock builder, but the first scan waits for `release()`. `@unchecked` is safe: every access holds `lock`.
+private final class SlowScanBuilder: FeedBuilding, @unchecked Sendable {
+    private let lock = NSLock()
+    private var scans = 0
+    private var waiting: CheckedContinuation<Void, Never>?
+
+    var isWaiting: Bool { lock.withLock { waiting != nil } }
+
+    func makeSession(number: Int, options: FeedOptions) async -> Session { Session(number: number, cards: []) }
+
+    func libraryScan(excluding: Set<LibraryItem.ID>) async -> LibraryScan? {
+        let first = lock.withLock { scans += 1; return scans == 1 }
+        if first { await withCheckedContinuation { continuation in lock.withLock { waiting = continuation } } }
+        return MockFeedBuilder.scan
+    }
+
+    func release() {
+        let continuation = lock.withLock { defer { waiting = nil }; return waiting }
+        continuation?.resume()
+    }
+}
+
 /// The dashboard's cache and refresh.
 @MainActor
 struct DashboardControllerTests {
+    private func until(_ condition: () -> Bool) async {
+        for _ in 0..<200 where !condition() {
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+    }
+
+    /// A delete lands while a refresh is still scanning. The refresh it asks for runs again rather than
+    /// handing back numbers read before the delete.
+    @Test func aRefreshAskedForMidRunIncludesWhatChangedSince() async throws {
+        let store = InMemoryProgressStore()
+        let builder = SlowScanBuilder()
+        let controller = DashboardController(builder: builder, store: store, cacheURL: nil, now: { now })
+        let first = Task { await controller.refresh(reviewedFraction: 0) }
+        await until { builder.isWaiting }
+
+        store.recordCleanup([CleanupEntry(at: now, category: .photo, count: 2, bytes: 700)])
+        let second = Task { await controller.refresh(reviewedFraction: 0) }
+        builder.release()
+        await first.value
+        await second.value
+
+        #expect(controller.snapshot?.totalCleared == 700)
+        #expect(!controller.isRefreshing)
+    }
+
+    @Test func aResetDropsTheNumbersOfARefreshAlreadyGoing() async throws {
+        let url = cacheURL()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let store = InMemoryProgressStore()
+        store.recordCleanup([CleanupEntry(at: now, category: .photo, count: 1, bytes: 500)])
+        let builder = SlowScanBuilder()
+        let controller = DashboardController(builder: builder, store: store, cacheURL: url, now: { now })
+        let running = Task { await controller.refresh(reviewedFraction: 0) }
+        await until { builder.isWaiting }
+
+        controller.clear()
+        builder.release()
+        await running.value
+
+        #expect(controller.snapshot == nil)
+        #expect(!FileManager.default.fileExists(atPath: url.path()))
+    }
+
     private let now = Date(timeIntervalSince1970: 1_800_000_000)
 
     private func cacheURL() -> URL {
