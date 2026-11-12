@@ -2,7 +2,8 @@ import Foundation
 import Testing
 @testable import photo_swiper
 
-/// The mock builder, recording the focus each page was asked for.
+/// The mock builder, recording the focus each page was asked for. `@unchecked` is safe here: the
+/// view model calls it one page at a time and the test reads it after `waitForPage()`, never concurrently.
 private final class RecordingBuilder: FeedBuilding, @unchecked Sendable {
     private let base = MockFeedBuilder()
     private(set) var focuses: [CleanupCategory?] = []
