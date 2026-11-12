@@ -14,7 +14,12 @@ extension DashboardSnapshot {
                 Opportunity(category: .screenshot, count: 100, bytes: 500_000_000),
             ],
             health: 0.5,
-            computedAt: now
+            computedAt: now,
+            timeline: (0...5).compactMap { Calendar.current.date(byAdding: .month, value: $0 - 5, to: now) }
+                .enumerated().map { MonthPoint(date: $1, total: Int64($0 + 4) * 5_000_000_000) },
+            composition: LibraryProfile.Kind.allCases.map { Slice(kind: $0, count: 1_000, bytes: 10_000_000_000, share: 0.25) },
+            insights: Insights(busiestMonth: now, busiestMonthCount: 1_000,
+                               perYear: (0..<4).map { YearCount(year: 2022 + $0, count: 2_000) }, oldestUnreviewedYear: 2020)
         )
     }
 }

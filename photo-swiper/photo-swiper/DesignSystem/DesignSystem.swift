@@ -58,6 +58,8 @@ enum DS {
     enum Chart {
         /// Plot height at the default text size; scale it with `@ScaledMetric`.
         static let height: CGFloat = 168
+        /// A small supporting chart inside a section (photos per year).
+        static let compactHeight: CGFloat = 100
         static let lineWidth: CGFloat = 2
         /// Rounded data end of a bar; the baseline end stays square.
         static let barCornerRadius: CGFloat = 4
@@ -67,6 +69,22 @@ enum DS {
         static let pointSize: CGFloat = 64
         /// Bars other than the scrubbed one, while scrubbing.
         static let dimmedOpacity: Double = 0.35
+        /// A categorical breakdown in ink, biggest first. Labels carry identity; the shades only separate.
+        static let categoryOpacities: [Double] = [1, 0.62, 0.36, 0.18]
+        /// The gap between segments of a stacked bar, in the card's color.
+        static let segmentGap: CGFloat = 2
+        /// A one-line stacked bar (composition, storage) at the default text size; scale it with `@ScaledMetric`.
+        static let stackedBarHeight: CGFloat = 12
+        /// Heatmap levels 1...4 as brick strengths (level 0 is `line`). Level 1 uses `brickTint`, not this.
+        static let heatOpacities: [Double] = [0, 0.45, 0.7, 1]
+        /// A heatmap cell at the default text size; scale it with `@ScaledMetric`.
+        static let heatCellSize: CGFloat = 14
+        static let heatCellGap: CGFloat = 3
+        static let heatCellRadius: CGFloat = 3
+        /// The color key beside a legend row, at the default text size; scale it with `@ScaledMetric`.
+        static let swatchSize: CGFloat = 14
+        /// A projection's dashes, so it never reads as measured.
+        static let projectionDash: [CGFloat] = [4, 4]
     }
 
     /// The dashboard's health ring.

@@ -56,7 +56,8 @@ extension FeedViewModel {
             allowanceTunables: allowanceTunables,
             freeTier: freeTier,
             features: features,
-            notifier: notifier
+            notifier: notifier,
+            deviceStorage: MockDeviceStorage()
         )
         switch start {
         case .first:

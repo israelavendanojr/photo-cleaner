@@ -22,7 +22,7 @@ struct MockFeedBuilder: FeedBuilding {
     }
 
     /// A plausible mid-sized library, mostly analyzed.
-    func libraryScan(excluding: Set<LibraryItem.ID>) async -> LibraryScan? {
+    func libraryScan(excluding: Set<LibraryItem.ID>, removed: Set<LibraryItem.ID>) async -> LibraryScan? {
         Self.scan
     }
 
@@ -34,8 +34,38 @@ struct MockFeedBuilder: FeedBuilding {
             .screenshot: .init(count: 312, bytes: 540_000_000),
             .burst: .init(count: 92, bytes: 260_000_000),
         ],
-        indexedCount: 17_820, indexedBytes: 64_000_000_000, scanPercent: 86
+        indexedCount: 17_820, indexedBytes: 64_000_000_000, scanPercent: 86, profile: profile
     )
+
+    /// Six years of a typical camera roll: busier summers, more video lately, about 64 GB in all.
+    static var profile: LibraryProfile {
+        var rng = SeededGenerator(seed: 21)
+        let calendar = Calendar.current
+        let thisMonth = calendar.dateInterval(of: .month, for: .now)?.start ?? .now
+        var monthly: [Date: LibraryScan.Bucket] = [:]
+        var recent: Int64 = 0
+        for back in 0..<72 {
+            guard let month = calendar.date(byAdding: .month, value: -back, to: thisMonth) else { continue }
+            let summer = [6, 7, 8].contains(calendar.component(.month, from: month)) ? 1.8 : 1.0
+            let count = Int((150 + rng.unit() * 160) * summer)
+            let bytes = Int64(Double(count) * (2_600_000 + Double(72 - back) * 40_000) * (0.8 + rng.unit() * 0.4))
+            monthly[month] = .init(count: count, bytes: bytes)
+            if back < 3 { recent += bytes }
+        }
+        // The breakdown splits the same total the months add up to, so every section agrees.
+        let total = Double(monthly.values.reduce(0) { $0 + $1.bytes })
+        let count = Double(monthly.values.reduce(0) { $0 + $1.count })
+        let split: [(LibraryProfile.Kind, bytes: Double, count: Double)] = [
+            (.video, 0.38, 0.08), (.photo, 0.35, 0.51), (.livePhoto, 0.24, 0.29), (.screenshot, 0.03, 0.12),
+        ]
+        return LibraryProfile(
+            composition: Dictionary(uniqueKeysWithValues: split.map { kind, bytes, items in
+                (kind, LibraryScan.Bucket(count: Int(count * items), bytes: Int64(total * bytes)))
+            }),
+            monthly: monthly, addedRecently: recent,
+            oldestUnreviewed: calendar.date(byAdding: .year, value: -6, to: thisMonth)
+        )
+    }
 
     /// Synchronous variant for previews and launch-time setup.
     func makeSessionNow(number: Int, options: FeedOptions = FeedOptions()) -> Session {

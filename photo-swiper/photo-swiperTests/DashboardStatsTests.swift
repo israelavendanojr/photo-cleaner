@@ -87,6 +87,169 @@ struct DashboardStatsTests {
     }
 }
 
+/// The library profile's sections: timeline, forecast, composition, activity and insights.
+struct DashboardInsightsTests {
+    private static let calendar: Calendar = {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+        calendar.firstWeekday = 2
+        return calendar
+    }()
+
+    /// Wednesday 12 Nov 2025, noon UTC. This week starts Monday 10 Nov.
+    private let now = Date(timeIntervalSince1970: 1_762_948_800)
+    private let day: TimeInterval = 86_400
+
+    private func cleanup(_ daysAgo: Double, _ bytes: Int64 = 100) -> CleanupEntry {
+        CleanupEntry(at: now.addingTimeInterval(-daysAgo * day), category: .photo, count: 1, bytes: bytes)
+    }
+
+    private func month(_ year: Int, _ month: Int) -> Date {
+        Self.calendar.date(from: DateComponents(year: year, month: month, day: 1))!
+    }
+
+    private func profile(_ monthly: [Date: LibraryScan.Bucket], recent: Int64 = 0, oldest: Date? = nil) -> LibraryProfile {
+        let all = LibraryScan.Bucket(count: monthly.values.reduce(0) { $0 + $1.count }, bytes: monthly.values.reduce(0) { $0 + $1.bytes })
+        return LibraryProfile(composition: [.photo: all], monthly: monthly, addedRecently: recent, oldestUnreviewed: oldest)
+    }
+
+    private func make(history: [CleanupEntry] = [], profile: LibraryProfile? = nil, storage: DeviceStorage? = nil) -> DashboardSnapshot {
+        DashboardStats.make(history: history, scan: LibraryScan(profile: profile), reviewedFraction: 0, storage: storage,
+                            now: now, calendar: Self.calendar)
+    }
+
+    // MARK: Activity
+
+    @Test func theHeatmapRunsSixteenWholeWeeksToToday() throws {
+        let activity = try #require(make().activity)
+        #expect(activity.days.count == 15 * 7 + 3, "Fifteen whole weeks, then Monday to Wednesday")
+        #expect(Self.calendar.component(.weekday, from: try #require(activity.days.first).date) == 2)
+        #expect(activity.days.last?.date == Self.calendar.startOfDay(for: now))
+        #expect(activity.days.allSatisfy { $0.level == 0 })
+        #expect(activity.streakWeeks == 0)
+    }
+
+    @Test func levelsAreQuartilesOfTheDaysWithCleanups() throws {
+        let activity = try #require(make(history: [cleanup(1, 10), cleanup(2, 20), cleanup(3, 30), cleanup(4, 40)]).activity)
+        let levels = Dictionary(activity.days.map { ($0.bytes, $0.level) }, uniquingKeysWith: { first, _ in first })
+        #expect(levels[10] == 1 && levels[20] == 2 && levels[30] == 3 && levels[40] == 4)
+        #expect(levels[0] == 0)
+        #expect(activity.activeDays == 4)
+    }
+
+    @Test(arguments: [
+        ([Double](), 0),
+        ([0.0, 7, 14], 3), // this week and the two before
+        ([7.0, 14], 2), // none yet this week: last week's run still counts
+        ([0.0, 14], 1), // a missed week breaks it
+        ([0.0, 0.5, 1], 1), // several days in one week count once
+    ])
+    func theStreakCountsWeeksInARow(daysAgo: [Double], weeks: Int) throws {
+        let activity = try #require(make(history: daysAgo.map { cleanup($0) }).activity)
+        #expect(activity.streakWeeks == weeks)
+    }
+
+    @Test func aLoneCleanupDayIsTheDarkestAndTiesShareALevel() throws {
+        let lone = try #require(make(history: [cleanup(1, 10)]).activity)
+        #expect(lone.days.map(\.level).max() == 4)
+        let tied = try #require(make(history: [cleanup(1, 10), cleanup(2, 10), cleanup(3, 5)]).activity)
+        let levels = Dictionary(tied.days.map { ($0.bytes, $0.level) }, uniquingKeysWith: { first, _ in first })
+        #expect(levels[10] == 4 && levels[5] == 2)
+    }
+
+    /// In Beirut, DST starts at midnight: the last Sunday of March begins at 01:00. Days and weeks after it
+    /// still line up, with weeks starting on Sunday.
+    @Test func daysAndWeeksSurviveDSTStartingAtMidnight() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "Asia/Beirut")!
+        calendar.firstWeekday = 1
+        let date = { (month: Int, day: Int) in calendar.date(from: DateComponents(year: 2025, month: month, day: day, hour: 12))! }
+        #expect(calendar.component(.hour, from: calendar.startOfDay(for: date(3, 30))) == 1, "Midnight doesn't exist that day")
+        let history = [date(3, 25), date(4, 1), date(4, 8)].map { CleanupEntry(at: $0, category: .photo, count: 1, bytes: 100) }
+
+        let activity = DashboardStats.activity(history, now: date(4, 9), calendar: calendar)
+        #expect(activity.activeDays == 3)
+        #expect(activity.days.filter { $0.bytes > 0 }.count == 3)
+        #expect(activity.days.allSatisfy { $0.date == calendar.startOfDay(for: $0.date) })
+        #expect(activity.streakWeeks == 3)
+    }
+
+    // MARK: Library
+
+    @Test func theForecastDividesWhatsFreeByTheRecentPace() throws {
+        let storage = DeviceStorage(total: 10_000, available: 900)
+        let paced = try #require(make(profile: profile([month(2025, 11): .init(count: 1, bytes: 900)], recent: 900), storage: storage).forecast)
+        #expect(paced.bytesPerDay == 10)
+        #expect(paced.daysUntilFull == 90)
+        #expect(paced.libraryBytes == 900)
+
+        let still = try #require(make(profile: profile([month(2025, 1): .init(count: 1, bytes: 5)]), storage: storage).forecast)
+        #expect(still.daysUntilFull == nil, "Nothing new lately: no date")
+        #expect(make(profile: profile([month(2025, 1): .init(count: 1, bytes: 5)])).forecast == nil, "No device storage: no forecast")
+    }
+
+    /// With Optimize iPhone Storage the library's originals can be bigger than the phone.
+    @Test func aLibraryBiggerThanWhatsUsedIsntSplitOutOfTheDevice() {
+        let fits = DashboardSnapshot.Forecast(total: 128, available: 18, libraryBytes: 64, bytesPerDay: 1)
+        #expect(fits.libraryFitsOnDevice && fits.other == 46)
+        let inCloud = DashboardSnapshot.Forecast(total: 128, available: 18, libraryBytes: 300, bytesPerDay: 1)
+        #expect(!inCloud.libraryFitsOnDevice && inCloud.other == nil && inCloud.used == 110)
+    }
+
+    @Test func theTimelineKeepsTheLastSixtyMonthsAndStartsFromWhatCameBefore() throws {
+        var monthly: [Date: LibraryScan.Bucket] = [:]
+        for back in 0..<70 { monthly[Self.calendar.date(byAdding: .month, value: -back, to: month(2025, 11))!] = .init(count: 1, bytes: 10) }
+        let timeline = try #require(make(profile: profile(monthly)).timeline)
+        #expect(timeline.count == DashboardStats.timelineMonths)
+        #expect(timeline.first?.total == 110, "Ten earlier months fold into the first point")
+        #expect(timeline.last?.total == 700)
+        #expect(zip(timeline, timeline.dropFirst()).allSatisfy { $0.total <= $1.total })
+    }
+
+    @Test func compositionIsBiggestFirstWithTiesInKindOrder() throws {
+        let library = LibraryProfile(composition: [
+            .photo: .init(count: 3, bytes: 500), .screenshot: .init(count: 9, bytes: 500), .video: .init(count: 1, bytes: 1_000),
+        ], monthly: [month(2025, 1): .init(count: 13, bytes: 2_000)])
+        let slices = try #require(make(profile: library).composition)
+        #expect(slices.map(\.kind) == [.video, .screenshot, .photo])
+        #expect(slices.map(\.share) == [0.5, 0.25, 0.25])
+    }
+
+    @Test func insightsPickTheBusiestMonthAndRecentYears() throws {
+        var monthly: [Date: LibraryScan.Bucket] = [month(2024, 3): .init(count: 50, bytes: 1), month(2025, 3): .init(count: 50, bytes: 1)]
+        for year in 2014...2023 { monthly[month(year, 6)] = .init(count: 5, bytes: 1) }
+        let insights = try #require(make(profile: profile(monthly, oldest: month(2014, 6))).insights)
+        #expect(insights.busiestMonth == month(2025, 3), "A tie goes to the more recent month")
+        #expect(insights.busiestMonthCount == 50)
+        #expect(insights.perYear.map(\.year) == Array(2018...2025))
+        #expect(insights.oldestUnreviewedYear == 2014)
+    }
+
+    @Test func theTimelineSpansCalendarMonthsNotMonthsWithPhotos() throws {
+        let timeline = try #require(make(profile: profile([
+            month(1985, 6): .init(count: 1, bytes: 7), month(2024, 2): .init(count: 1, bytes: 10), month(2025, 11): .init(count: 1, bytes: 20),
+        ])).timeline)
+        #expect(timeline.map(\.date) == [month(2024, 2), month(2025, 11)], "1985 is before the window")
+        #expect(timeline.map(\.total) == [17, 37])
+    }
+
+    @Test func monthsAfterNowArentInsights() throws {
+        let insights = try #require(make(profile: profile([
+            month(2025, 3): .init(count: 5, bytes: 1), month(2031, 1): .init(count: 90, bytes: 1),
+        ])).insights)
+        #expect(insights.busiestMonth == month(2025, 3))
+        #expect(insights.perYear.map(\.year) == [2025])
+    }
+
+    @Test func aSnapshotCachedBeforeTheseSectionsStillDecodes() throws {
+        let older = DashboardSnapshot(totalCleared: 5, computedAt: now)
+        let json = try JSONEncoder().encode(older)
+        let keys = try #require(JSONSerialization.jsonObject(with: json) as? [String: Any]).keys
+        #expect(!keys.contains("timeline") && !keys.contains("activity"))
+        #expect(try JSONDecoder().decode(DashboardSnapshot.self, from: json) == older)
+    }
+}
+
 /// What's left to clear, sorted from cached features and groups.
 struct LibraryScanTests {
     private let date = Date(timeIntervalSince1970: 1_800_000_000)
@@ -138,7 +301,7 @@ private final class SlowScanBuilder: FeedBuilding, @unchecked Sendable {
 
     func makeSession(number: Int, options: FeedOptions) async -> Session { Session(number: number, cards: []) }
 
-    func libraryScan(excluding: Set<LibraryItem.ID>) async -> LibraryScan? {
+    func libraryScan(excluding: Set<LibraryItem.ID>, removed: Set<LibraryItem.ID>) async -> LibraryScan? {
         let first = lock.withLock { scans += 1; return scans == 1 }
         if first { await withCheckedContinuation { continuation in lock.withLock { waiting = continuation } } }
         return MockFeedBuilder.scan
@@ -194,6 +357,18 @@ struct DashboardControllerTests {
 
         #expect(controller.snapshot == nil)
         #expect(!FileManager.default.fileExists(atPath: url.path()))
+    }
+
+    private struct FixedStorage: DeviceStorageReading {
+        func current() -> DeviceStorage? { DeviceStorage(total: 128_000_000_000, available: 18_000_000_000) }
+    }
+
+    @Test func theDevicesStorageReachesTheForecast() async throws {
+        let controller = DashboardController(builder: MockFeedBuilder(), store: InMemoryProgressStore(), storage: FixedStorage(),
+                                             cacheURL: nil, now: { now })
+        await controller.refresh(reviewedFraction: 0)
+        let forecast = try #require(controller.snapshot?.forecast)
+        #expect(forecast.available == 18_000_000_000)
     }
 
     private let now = Date(timeIntervalSince1970: 1_800_000_000)

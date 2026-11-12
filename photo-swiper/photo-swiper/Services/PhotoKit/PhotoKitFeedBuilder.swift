@@ -37,6 +37,8 @@ actor PhotoKitFeedBuilder: FeedBuilding {
     private let cache: GroupingCache
     /// The index's records at a generation, until it changes.
     private var indexed: (generation: Int, records: [LibraryItem.ID: IndexedFeatures])?
+    /// Live Photo IDs at an index generation, for the dashboard.
+    private var livePhotos: (generation: Int, ids: Set<LibraryItem.ID>)?
     private let planner = SessionPlanner(
         limit: PhotoKitFeedBuilder.photosPerSession,
         minBatch: PhotoKitFeedBuilder.minBatch,
@@ -71,11 +73,25 @@ actor PhotoKitFeedBuilder: FeedBuilding {
     /// The index's features plus the last page's groups. Before the first page there are no groups yet,
     /// so duplicates and similar shots show up once the feed has been built. `excluding` adds to what the
     /// last page left out (decided items), so callers only pass what they hold in memory.
-    func libraryScan(excluding: Set<LibraryItem.ID>) async -> LibraryScan? {
-        guard let index else { return nil }
-        let features = await index.indexed().mapValues(\.features)
-        return LibraryScan.make(features: features, excluding: excluding.union(lastExcluding), duplicates: lastGroups.duplicates,
-                                similar: lastGroups.similar, scanPercent: lastScanPercent)
+    func libraryScan(excluding: Set<LibraryItem.ID>, removed: Set<LibraryItem.ID>) async -> LibraryScan? {
+        guard index != nil else { return nil }
+        let (generation, records) = await indexedRecords()
+        let features = records.mapValues(\.features)
+        let decided = excluding.union(lastExcluding)
+        var scan = LibraryScan.make(features: features, excluding: decided, duplicates: lastGroups.duplicates,
+                                    similar: lastGroups.similar, scanPercent: lastScanPercent)
+        scan.profile = LibraryProfile.make(features: features, livePhotos: livePhotoIDs(at: generation), decided: decided,
+                                           removed: removed, now: .now)
+        return scan
+    }
+
+    /// Live Photo IDs, fetched again only when the index has changed: a new Live Photo isn't counted
+    /// until it's indexed anyway, and the fetch walks every Live Photo in the library.
+    private func livePhotoIDs(at generation: Int) -> Set<LibraryItem.ID> {
+        if let livePhotos, livePhotos.generation == generation { return livePhotos.ids }
+        let ids = catalog.livePhotoIDs()
+        livePhotos = (generation, ids)
+        return ids
     }
 
     func makeSession(number: Int, options: FeedOptions) async -> Session {
