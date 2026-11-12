@@ -128,7 +128,6 @@ private struct LibraryRow: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(row.focus.title)
         .accessibilityValue("\(row.focus.count(row.count)), \(Format.size(row.bytes))")
-        .accessibilityAddTraits(.isButton)
     }
 
     private var title: some View {
