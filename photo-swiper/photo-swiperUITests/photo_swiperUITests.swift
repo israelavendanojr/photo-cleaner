@@ -911,7 +911,7 @@ final class photo_swiperUITests: XCTestCase {
         let confetti = app.descendants(matching: .any)["library.confetti"]
         XCTAssertTrue(confetti.waitForExistence(timeout: 2), "Confetti falls at 100%")
         XCTAssertTrue(element(app, containing: "100%").exists)
-        XCTAssertTrue(element(app, containing: "17,820 of 17,820 photos reviewed").exists)
+        XCTAssertTrue(element(app, containing: "17,820 of 17,820 photos and videos").exists)
         XCTAssertTrue(confetti.waitForNonExistence(timeout: 6), "Gone after a moment")
 
         app.buttons["Feed"].tap()
