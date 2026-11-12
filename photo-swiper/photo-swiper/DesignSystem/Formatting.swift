@@ -13,6 +13,27 @@ enum Format {
         return formatter.string(fromByteCount: bytes)
     }
 
+    /// "March 2024".
+    static func month(_ date: Date) -> String {
+        date.formatted(.dateTime.month(.wide).year())
+    }
+
+    /// "Mar", for a month over a chart column.
+    static func shortMonth(_ date: Date) -> String {
+        date.formatted(.dateTime.month(.abbreviated))
+    }
+
+    /// "2024".
+    static func year(_ date: Date) -> String {
+        date.formatted(.dateTime.year())
+    }
+
+    /// How long until something runs out, for the storage forecast: "about 8 months", or "more than two
+    /// years" past that, since a guess further out isn't worth a number.
+    static func untilFull(days: Double) -> String {
+        days > 730 ? "more than two years" : roughDays(days)
+    }
+
     /// "21%", for a 0...1 fraction.
     static func percent(_ fraction: Double) -> String {
         "\(Int((fraction * 100).rounded()))%"
