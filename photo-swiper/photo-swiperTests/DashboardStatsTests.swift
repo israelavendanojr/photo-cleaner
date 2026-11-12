@@ -26,7 +26,7 @@ struct DashboardStatsTests {
     @Test func nothingClearedIsAllZero() {
         let snapshot = make([])
         #expect(snapshot.totalCleared == 0)
-        #expect(snapshot.chips == nil)
+        #expect(snapshot.rows == nil)
         #expect(snapshot.computedAt == now)
     }
 
@@ -70,45 +70,38 @@ struct DashboardStatsTests {
         #expect(change.percent == 0.5)
     }
 
-    // MARK: Chips
+    // MARK: Rows
 
-    @Test func chipsKeepTheirOrderAndHideTheEmptyOnes() {
+    @Test func rowsAreBiggestFirstWithTiesInListOrderAndEmptyOnesHidden() {
         let scan = LibraryScan(buckets: [
             .screenshot: .init(count: 9, bytes: 500),
             .video: .init(count: 1, bytes: 900),
             .duplicate: .init(count: 2, bytes: 500),
             .burst: .init(count: 0, bytes: 0),
-        ], focusBuckets: [.savedForLater: .init(count: 3, bytes: 30), .livePhotos: .init()])
-        let chips = DashboardStats.chips(scan)
-        #expect(chips.map(\.focus) == [.category(.duplicate), .category(.video), .category(.screenshot), .savedForLater])
-        #expect(chips.map(\.bytes) == [500, 900, 500, 30])
+        ], focusBuckets: [.allVideos: .init(count: 4, bytes: 2_000), .livePhotos: .init()])
+        let rows = DashboardStats.rows(scan)
+        #expect(rows.map(\.focus) == [.allVideos, .category(.video), .category(.duplicate), .category(.screenshot)],
+                "Equal sizes keep the list's order; empty rows are left out")
+        #expect(rows.map(\.bytes) == [2_000, 900, 500, 500])
     }
 
-    @Test func theDefaultChipIsTheMostToRecoverWithTiesToTheEarlierOne() {
-        func chip(_ focus: FocusTarget, _ bytes: Int64) -> DashboardSnapshot.Chip {
-            DashboardSnapshot.Chip(focus: focus, count: 1, bytes: bytes, thumbnails: [])
-        }
-        let chips = [
-            chip(.category(.duplicate), 500), chip(.category(.video), 900), chip(.allVideos, 5_000),
-            chip(.category(.screenshot), 900), chip(.savedForLater, 9_000),
-        ]
-        #expect(DashboardStats.defaultChip(chips) == .category(.video),
-                "All videos and saved for later are the library's own sizes, not space to recover; a tie goes to the earlier chip")
-        #expect(DashboardStats.defaultChip([chip(.livePhotos, 10), chip(.savedForLater, 20)]) == .livePhotos,
-                "With nothing to recover, the first chip")
-        #expect(DashboardStats.defaultChip([]) == nil)
+    @Test func savedForLaterIsAlwaysLast() {
+        let scan = LibraryScan(buckets: [.screenshot: .init(count: 1, bytes: 10), .photo: .init(count: 3, bytes: 300)],
+                               focusBuckets: [.savedForLater: .init(count: 3, bytes: 9_000)])
+        #expect(DashboardStats.rows(scan).map(\.focus) == [.category(.photo), .category(.screenshot), .savedForLater],
+                "Even when it's the biggest")
     }
 
-    @Test func theSnapshotCarriesTheChipsAndTheirDefault() throws {
+    @Test func theSnapshotCarriesEveryRowWithSomethingInIt() throws {
         let snapshot = make([], scan: MockFeedBuilder.scan)
-        let chips = try #require(snapshot.chips)
-        #expect(chips.count == FocusTarget.chipOrder.count)
-        #expect(snapshot.defaultChip == .category(.video))
-        #expect(chips.allSatisfy { !$0.thumbnails.isEmpty })
+        let rows = try #require(snapshot.rows)
+        #expect(rows.count == FocusTarget.listOrder.count)
+        #expect(rows.last?.focus == .savedForLater)
+        #expect(rows.dropLast().map(\.bytes) == rows.dropLast().map(\.bytes).sorted(by: >))
     }
 }
 
-/// The library's composition and the activity heatmap.
+/// The activity heatmap, and decoding older caches.
 struct DashboardInsightsTests {
     private static let calendar: Calendar = {
         var calendar = Calendar(identifier: .gregorian)
@@ -126,8 +119,8 @@ struct DashboardInsightsTests {
         Dictionary(entries.map { (Self.calendar.startOfDay(for: now.addingTimeInterval(-$0.daysAgo * day)), $0.count) }, uniquingKeysWith: +)
     }
 
-    private func make(reviews: [Date: Int] = [:], profile: LibraryProfile? = nil) -> DashboardSnapshot {
-        DashboardStats.make(history: [], scan: LibraryScan(profile: profile), reviews: reviews, now: now, calendar: Self.calendar)
+    private func make(reviews: [Date: Int] = [:]) -> DashboardSnapshot {
+        DashboardStats.make(history: [], scan: LibraryScan(), reviews: reviews, now: now, calendar: Self.calendar)
     }
 
     // MARK: Reviews
@@ -181,22 +174,13 @@ struct DashboardInsightsTests {
         #expect(activity.days.allSatisfy { $0.date == calendar.startOfDay(for: $0.date) })
     }
 
-    // MARK: Library
-
-    @Test func compositionIsBiggestFirstWithTiesInKindOrder() throws {
-        let library = LibraryProfile(composition: [
-            .photo: .init(count: 3, bytes: 500), .screenshot: .init(count: 9, bytes: 500), .video: .init(count: 1, bytes: 1_000),
-        ])
-        let slices = try #require(make(profile: library).composition)
-        #expect(slices.map(\.kind) == [.video, .screenshot, .photo])
-        #expect(slices.map(\.share) == [0.5, 0.25, 0.25])
-    }
+    // MARK: Caches
 
     @Test func aSnapshotCachedBeforeTheseSectionsStillDecodes() throws {
         let older = DashboardSnapshot(totalCleared: 5, computedAt: now)
         let json = try JSONEncoder().encode(older)
         let keys = try #require(JSONSerialization.jsonObject(with: json) as? [String: Any]).keys
-        #expect(!keys.contains("composition") && !keys.contains("activity"))
+        #expect(!keys.contains("rows") && !keys.contains("reviews"))
         #expect(try JSONDecoder().decode(DashboardSnapshot.self, from: json) == older)
     }
 
@@ -219,7 +203,24 @@ struct DashboardInsightsTests {
         #expect(snapshot.totalCleared == 8_120_000_000)
         #expect(snapshot.clearedThisWeek == 2_820_000_000)
         #expect(snapshot.scanPercent == 86)
-        #expect(snapshot.composition?.first?.kind == .video)
+        #expect(snapshot.rows == nil)
+    }
+
+    /// A snapshot cached by an earlier build of this dashboard, with the library card's chips, their thumbnails, the chip
+    /// picked first and the composition bar. It still decodes, with no rows until the next refresh.
+    @Test func aSnapshotCachedWithChipsStillDecodes() throws {
+        let json = """
+        {"totalCleared":8120000000,"clearedThisWeek":2820000000,"clearedLastWeek":60000000,"scanPercent":86,
+         "computedAt":784100000,
+         "composition":[{"kind":"video","count":1430,"bytes":24300000000,"share":0.38}],
+         "reviews":{"days":[{"date":784000000,"count":12,"level":4}],"activeDays":1,"total":12},
+         "chips":[{"focus":{"category":{"_0":"video"}},"count":38,"bytes":6120000000,"thumbnails":[{"bundled":{"_0":"v1"}}]}],
+         "defaultChip":{"category":{"_0":"video"}}}
+        """
+        let snapshot = try JSONDecoder().decode(DashboardSnapshot.self, from: Data(json.utf8))
+        #expect(snapshot.totalCleared == 8_120_000_000)
+        #expect(snapshot.reviews?.total == 12)
+        #expect(snapshot.rows == nil)
     }
 }
 
@@ -294,14 +295,23 @@ struct LibraryScanTests {
         #expect(scan.indexedCount == 0)
     }
 
-    @Test func samplesAreTheBiggestFewWithTiesByID() {
-        var library: [LibraryItem.ID: AssetFeatures] = [:]
-        for (id, bytes) in [("a", 10), ("b", 50), ("c", 50), ("d", 5), ("e", 40), ("f", 30), ("g", 1)] {
-            library[id] = features(bytes: Int64(bytes), screenshot: true)
-        }
-        let scan = LibraryScan.make(features: library, excluding: [], duplicates: [], similar: [], scanPercent: nil,
-                                    reference: { .bundled($0) })
-        #expect(scan.samples[.category(.screenshot)] == ["b", "c", "e", "f", "a"].map(ImageReference.bundled))
+    @Test func photosCountEveryUndecidedPlainPhotoInFull() {
+        let library: [LibraryItem.ID: AssetFeatures] = [
+            "photo": features(bytes: 6_000),
+            "copy": features(bytes: 5_000),
+            "original": features(bytes: 5_000),
+            "favorite": features(bytes: 8_000, favorite: true),
+            "decided": features(bytes: 9_000),
+            "video": features(bytes: 2_000_000, video: true),
+            "shot": features(bytes: 1_000, screenshot: true),
+            "burst": features(bytes: 3_000, burst: true),
+        ]
+        let scan = LibraryScan.make(features: library, excluding: ["decided"],
+                                    duplicates: [PlannedGroup(ids: ["original", "copy"], bestID: "original", reason: "")],
+                                    similar: [], scanPercent: nil)
+        #expect(scan.bucket(for: .category(.photo)) == .init(count: 3, bytes: 16_000),
+                "Duplicates count too, as a photo focus shows them; favorites, decided items and other kinds don't")
+        #expect(scan.bucket(for: .category(.duplicate)) == .init(count: 1, bytes: 5_000))
     }
 }
 
@@ -392,7 +402,7 @@ struct DashboardControllerTests {
 
         let snapshot = try #require(controller.snapshot)
         #expect(snapshot.totalCleared == 900)
-        #expect(snapshot.defaultChip == .category(.video))
+        #expect(snapshot.rows?.first?.focus == .allVideos)
         #expect(!controller.isStale)
         #expect(!controller.isRefreshing)
 

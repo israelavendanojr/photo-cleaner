@@ -104,16 +104,15 @@ struct FeedBuilderTests {
         #expect(excluded.count == library.candidates.filter { !$0.features.isFavorite }.count, "Every item is dealt once")
     }
 
-    /// The dashboard's breakdown counts Live Photos from the catalog, and every indexed item once.
+    /// The dashboard's Live Photos row counts them from the catalog, and every indexed item once.
     @Test func theLibraryScanCountsLivePhotosFromTheCatalog() async throws {
         let stills = library.candidates.filter { !$0.features.isVideo }.prefix(5).map(\.id)
         let catalog = FakeCatalog(candidates: library.candidates, live: Set(stills))
         let scan = try #require(await builder(FakeIndex(library), catalog: catalog).libraryScan(excluding: [], removed: [], later: []))
-        let profile = try #require(scan.profile)
+        let live = library.candidates.filter { stills.contains($0.id) && !$0.features.isFavorite }
 
-        #expect(profile.composition[.livePhoto]?.count == stills.count)
-        #expect(profile.composition.values.reduce(0) { $0 + $1.count } == library.candidates.count)
-        #expect(profile.totalBytes == library.candidates.reduce(0) { $0 + $1.features.bytes })
+        #expect(scan.bucket(for: .livePhotos) == .init(count: live.count, bytes: live.reduce(0) { $0 + $1.features.bytes }))
+        #expect(scan.indexedCount == library.candidates.count)
     }
 
     @Test func excludedItemsNeverAppear() async {

@@ -1,9 +1,9 @@
 import Foundation
 
-/// How each focus is named on screen: the dashboard's chips, the feed's focus chip, and sentences.
+/// How each focus is named on screen: the dashboard's rows, the feed's focus chip, and sentences.
 extension FocusTarget {
-    /// "Large videos", a chip on the dashboard.
-    var chipTitle: String {
+    /// "Large videos", a row on the dashboard.
+    var title: String {
         switch self {
         case .category(.similar): "Similar"
         case .category(.burst): "Bursts"
@@ -35,7 +35,22 @@ extension FocusTarget {
         }
     }
 
-    /// "214 extra copies", "1 Live Photo": what a chip counts.
+    /// The row's icon on the dashboard.
+    var systemImage: String {
+        switch self {
+        case .category(.duplicate): "square.on.square"
+        case .category(.similar): "square.stack.3d.down.right"
+        case .category(.video): "video.badge.ellipsis"
+        case .category(.screenshot): "camera.viewfinder"
+        case .category(.burst): "square.stack.3d.forward.dottedline"
+        case .category(.photo): "photo"
+        case .allVideos: "video"
+        case .livePhotos: "livephoto"
+        case .savedForLater: "clock.arrow.circlepath"
+        }
+    }
+
+    /// "214 extra copies", "1 Live Photo": what a row counts.
     func count(_ count: Int) -> String {
         let one = count == 1
         let noun = switch self {
@@ -52,21 +67,6 @@ extension FocusTarget {
         return "\(Format.count(count)) \(noun)"
     }
 
-    /// What a chip's number means, in a sentence under it.
-    var detail: String {
-        switch self {
-        case .category(.duplicate): "Only the extra copies count: what removing them would free."
-        case .category(.similar): "Only the shots other than the best count: what removing them would free."
-        case .category(.video): "Videos over \(Format.size(LibraryScan.largeVideoBytes)) you haven't reviewed."
-        case .category(.screenshot): "Screenshots you haven't reviewed."
-        case .category(.burst): "Burst shots neither you nor the camera picked."
-        case .category(.photo): "Photos you haven't reviewed."
-        case .allVideos: "Every video you haven't reviewed, at full size."
-        case .livePhotos: "Every Live Photo you haven't reviewed, at full size."
-        case .savedForLater: "They come back on their own after a day. Look at them now instead."
-        }
-    }
-
     /// "allVideos", for UI test identifiers.
     var identifier: String {
         switch self {
@@ -74,16 +74,6 @@ extension FocusTarget {
         case .allVideos: "allVideos"
         case .livePhotos: "livePhotos"
         case .savedForLater: "savedForLater"
-        }
-    }
-
-    /// The part of the library's composition bar this focus is a slice of, if any.
-    var kind: LibraryProfile.Kind? {
-        switch self {
-        case .category(.video), .allVideos: .video
-        case .livePhotos: .livePhoto
-        case .category(.screenshot): .screenshot
-        default: nil
         }
     }
 }

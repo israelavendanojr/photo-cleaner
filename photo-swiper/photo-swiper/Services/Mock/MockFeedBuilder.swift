@@ -33,33 +33,15 @@ struct MockFeedBuilder: FeedBuilding {
             .similar: .init(count: 486, bytes: 1_310_000_000),
             .screenshot: .init(count: 312, bytes: 540_000_000),
             .burst: .init(count: 92, bytes: 260_000_000),
+            .photo: .init(count: 7_260, bytes: 17_900_000_000),
         ],
         focusBuckets: [
             .allVideos: .init(count: 1_120, bytes: 18_700_000_000),
             .livePhotos: .init(count: 4_010, bytes: 11_900_000_000),
             .savedForLater: .init(count: 27, bytes: 96_000_000),
         ],
-        samples: [
-            .category(.duplicate): [MockImages.photos[5], MockImages.photos[5], MockImages.photos[1], MockImages.photos[1]],
-            .category(.similar): (1...5).map { "similar-a-\($0)" },
-            .category(.video): MockImages.videos,
-            .allVideos: MockImages.videos,
-            .livePhotos: Array(MockImages.photos.prefix(5)),
-            .category(.screenshot): MockImages.screenshots,
-            .category(.burst): (1...5).map { "similar-b-\($0)" },
-            .savedForLater: Array(MockImages.photos.suffix(4)),
-        ].mapValues { $0.map(ImageReference.bundled) },
-        indexedCount: 17_820, indexedBytes: 64_000_000_000, scanPercent: 86, profile: profile
+        indexedCount: 17_820, indexedBytes: 64_000_000_000, scanPercent: 86
     )
-
-    /// About 64 GB, mostly video and photos by size, mostly photos by count.
-    static var profile: LibraryProfile {
-        let split: [(LibraryProfile.Kind, count: Int, bytes: Int64)] = [
-            (.video, 1_430, 24_300_000_000), (.photo, 9_090, 22_400_000_000),
-            (.livePhoto, 5_160, 15_400_000_000), (.screenshot, 2_140, 1_900_000_000),
-        ]
-        return LibraryProfile(composition: Dictionary(uniqueKeysWithValues: split.map { ($0.0, LibraryScan.Bucket(count: $0.count, bytes: $0.bytes)) }))
-    }
 
     /// Synchronous variant for previews and launch-time setup.
     func makeSessionNow(number: Int, options: FeedOptions = FeedOptions()) -> Session {

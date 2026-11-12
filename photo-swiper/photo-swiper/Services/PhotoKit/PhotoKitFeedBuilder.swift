@@ -79,11 +79,9 @@ actor PhotoKitFeedBuilder: FeedBuilding {
         let features = records.mapValues(\.features)
         let decided = excluding.union(lastExcluding)
         let livePhotos = livePhotoIDs(at: generation)
-        var scan = LibraryScan.make(features: features, excluding: decided.union(removed), duplicates: lastGroups.duplicates,
-                                    similar: lastGroups.similar, scanPercent: lastScanPercent, livePhotos: livePhotos,
-                                    later: later.subtracting(removed))
-        scan.profile = LibraryProfile.make(features: features, livePhotos: livePhotos, removed: removed)
-        return scan
+        return LibraryScan.make(features: features, excluding: decided.union(removed), duplicates: lastGroups.duplicates,
+                                similar: lastGroups.similar, scanPercent: lastScanPercent, livePhotos: livePhotos,
+                                later: later.subtracting(removed))
     }
 
     /// Live Photo IDs, fetched again only when the index has changed: a new Live Photo isn't counted

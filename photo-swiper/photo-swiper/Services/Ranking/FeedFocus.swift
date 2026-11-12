@@ -13,10 +13,11 @@ enum FocusTarget: Hashable, Codable, Sendable {
     /// see them now. Only shown, never decided by the focus.
     case savedForLater
 
-    /// The dashboard's chips, in the order they're shown: findings, then kinds, then saved for later.
-    static let chipOrder: [FocusTarget] = [
+    /// The dashboard's library rows, in the order equal sizes keep (`DashboardStats.rows`): findings, then
+    /// kinds, then saved for later.
+    static let listOrder: [FocusTarget] = [
         .category(.duplicate), .category(.similar), .category(.video), .allVideos, .livePhotos,
-        .category(.screenshot), .category(.burst), .savedForLater,
+        .category(.screenshot), .category(.burst), .category(.photo), .savedForLater,
     ]
 
     /// Whether the focus is a set of IDs the feed builder can't tell from features alone, so a page is
@@ -55,7 +56,7 @@ enum FeedFocus {
         case .allVideos:
             return singles(input.candidates.filter(\.features.isVideo))
         case .livePhotos:
-            // A Live Photo's video is part of it; a video is never a Live Photo, as the composition counts it.
+            // A Live Photo's video is part of it; a video is never a Live Photo, as the dashboard counts it.
             return singles(input.candidates.filter { only?.contains($0.id) == true && !$0.features.isVideo })
         case .savedForLater:
             return singles(input.candidates.filter { only?.contains($0.id) == true })

@@ -3,24 +3,13 @@ import Foundation
 /// Everything the dashboard shows that takes work to compute, worked out off the main thread and cached
 /// between launches so the Library tab opens at once.
 struct DashboardSnapshot: Equatable, Codable, Sendable {
-    /// One of the library card's chips: what it counts, how big that is, and its biggest few items.
-    struct Chip: Equatable, Codable, Sendable, Identifiable {
+    /// One row of the library card: what it counts and how big that is.
+    struct Row: Equatable, Codable, Sendable, Identifiable {
         var focus: FocusTarget
         var count: Int
         /// Duplicates and similar shots count only the extras; everything else counts in full.
         var bytes: Int64
-        var thumbnails: [ImageReference]
         var id: FocusTarget { focus }
-    }
-
-    /// One kind's share of the library.
-    struct Slice: Equatable, Codable, Sendable, Identifiable {
-        var kind: LibraryProfile.Kind
-        var count: Int
-        var bytes: Int64
-        /// 0...1 of the library's bytes.
-        var share: Double
-        var id: LibraryProfile.Kind { kind }
     }
 
     /// Photos reviewed by day over the last `DashboardStats.activityWeeks` weeks, for the hero's heatmap.
@@ -57,14 +46,11 @@ struct DashboardSnapshot: Equatable, Codable, Sendable {
     var scanPercent: Int?
     var computedAt: Date
     // Optional, so a snapshot cached before them still decodes. Fields cached by older builds that are
-    // gone now (health, cumulative, weekly, timeline, forecast, insights, and `activity`, which measured
-    // bytes cleared) are ignored when decoding.
-    var composition: [Slice]?
+    // gone now (health, cumulative, weekly, timeline, forecast, insights, composition, chips, and
+    // `activity`, which measured bytes cleared) are ignored when decoding.
     var reviews: Activity?
-    /// In `FocusTarget.chipOrder`, only those with something in them.
-    var chips: [Chip]?
-    /// The chip selected at first: the most space to recover.
-    var defaultChip: FocusTarget?
+    /// Biggest first, saved for later last, only those with something in them (`DashboardStats.rows`).
+    var rows: [Row]?
 
     var weeklyChange: WeeklyChange? { DashboardStats.weeklyChange(this: clearedThisWeek, last: clearedLastWeek) }
 }
@@ -83,30 +69,11 @@ enum DashboardStats {
         snapshot.clearedThisWeek = history.filter { $0.at > weekAgo && $0.at <= now }.reduce(0) { $0 + $1.bytes }
         snapshot.clearedLastWeek = history.filter { $0.at > twoWeeksAgo && $0.at <= weekAgo }.reduce(0) { $0 + $1.bytes }
         if let scan {
-            let chips = chips(scan)
-            snapshot.chips = chips
-            snapshot.defaultChip = defaultChip(chips)
+            snapshot.rows = rows(scan)
             snapshot.scanPercent = scan.scanPercent
         }
         snapshot.reviews = activity(reviews, now: now, calendar: calendar)
-        if let profile = scan?.profile, profile.totalBytes > 0 {
-            snapshot.composition = composition(profile)
-        }
         return snapshot
-    }
-
-    /// Biggest first; equal sizes keep `LibraryProfile.Kind`'s order.
-    static func composition(_ profile: LibraryProfile) -> [DashboardSnapshot.Slice] {
-        let total = Double(profile.totalBytes)
-        guard total > 0 else { return [] }
-        let order: [LibraryProfile.Kind: Int] = Dictionary(uniqueKeysWithValues: LibraryProfile.Kind.allCases.enumerated().map { ($1, $0) })
-        let slices: [DashboardSnapshot.Slice] = profile.composition.compactMap { kind, bucket in
-            bucket.count > 0 ? DashboardSnapshot.Slice(kind: kind, count: bucket.count, bytes: bucket.bytes, share: Double(bucket.bytes) / total) : nil
-        }
-        return slices.sorted { first, second in
-            if first.bytes != second.bytes { return first.bytes > second.bytes }
-            return order[first.kind, default: 0] < order[second.kind, default: 0]
-        }
     }
 
     /// The first day the heatmap shows: the start of the week `activityWeeks - 1` weeks before this one.
@@ -148,24 +115,19 @@ enum DashboardStats {
         return DashboardSnapshot.WeeklyChange(delta: this - last, percent: last > 0 ? Double(this - last) / Double(last) : nil)
     }
 
-    /// The library card's chips, in `FocusTarget.chipOrder`, leaving out any with nothing in them.
-    static func chips(_ scan: LibraryScan) -> [DashboardSnapshot.Chip] {
-        FocusTarget.chipOrder.compactMap { focus in
+    /// The library card's rows, biggest first, leaving out any with nothing in them. Equal sizes keep
+    /// `FocusTarget.listOrder`. Saved for later always goes last: it's what the user put off, not what the
+    /// library holds, so it shouldn't push what's worth a look down.
+    static func rows(_ scan: LibraryScan) -> [DashboardSnapshot.Row] {
+        let rows = FocusTarget.listOrder.enumerated().compactMap { offset, focus -> (offset: Int, row: DashboardSnapshot.Row)? in
             guard let bucket = scan.bucket(for: focus), bucket.count > 0 else { return nil }
-            return DashboardSnapshot.Chip(focus: focus, count: bucket.count, bytes: bucket.bytes, thumbnails: scan.samples[focus] ?? [])
+            return (offset, DashboardSnapshot.Row(focus: focus, count: bucket.count, bytes: bucket.bytes))
         }
-    }
-
-    /// The chip with the most space to recover: the biggest of what's left to clear (duplicates, similar
-    /// shots, large videos, screenshots, bursts), ties to the earlier chip. All videos, Live Photos and
-    /// saved for later describe the library, not what clearing would free, so they're picked only when
-    /// nothing else is there.
-    static func defaultChip(_ chips: [DashboardSnapshot.Chip]) -> FocusTarget? {
-        let recoverable = chips.filter { if case .category = $0.focus { true } else { false } }
-        // `max` keeps the last of equals, so ties are broken by order explicitly.
-        let biggest = recoverable.enumerated().max { first, second in
-            first.element.bytes != second.element.bytes ? first.element.bytes < second.element.bytes : first.offset > second.offset
-        }
-        return biggest?.element.focus ?? chips.first?.focus
+        return rows.sorted { first, second in
+            let firstLast = first.row.focus == .savedForLater, secondLast = second.row.focus == .savedForLater
+            if firstLast != secondLast { return secondLast }
+            if first.row.bytes != second.row.bytes { return first.row.bytes > second.row.bytes }
+            return first.offset < second.offset
+        }.map(\.row)
     }
 }

@@ -57,7 +57,7 @@ private final class OnlyBuilder: FeedBuilding, @unchecked Sendable {
     }
 }
 
-/// A dashboard chip focuses the feed on one kind of clutter. The card on top never changes, and
+/// A dashboard row focuses the feed on one kind of clutter. The card on top never changes, and
 /// decisions still land on the card the user acted on (CLAUDE.md → Rules).
 @MainActor
 struct FeedFocusTests {

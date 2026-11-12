@@ -109,7 +109,7 @@ struct LibraryView: View {
         return VStack(alignment: .leading, spacing: DS.Spacing.xl) {
             HeroSection(snapshot: shown, isLoading: isLoading, clearedBytes: cleared, isActive: isActive)
             bin
-            LibraryCard(snapshot: shown, isLoading: isLoading, isPrimary: cleared > 0)
+            LibraryCard(snapshot: shown, isLoading: isLoading)
         }
     }
 
