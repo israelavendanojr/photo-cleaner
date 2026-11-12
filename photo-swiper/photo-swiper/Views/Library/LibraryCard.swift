@@ -68,7 +68,7 @@ struct LibraryCard: View {
                     .font(.callout)
             }
             .foregroundStyle(DS.Palette.ink)
-            ProgressLine(value: vm.libraryReviewedFraction, height: 4)
+            ProgressLine(value: vm.libraryReviewedFraction)
             Text("\(Format.count(vm.libraryReviewedCount)) of \(Format.count(vm.stats.totalItems)) photos and videos")
                 .font(.footnote)
                 .foregroundStyle(DS.Palette.ink)

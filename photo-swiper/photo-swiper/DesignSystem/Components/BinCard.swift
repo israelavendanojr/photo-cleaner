@@ -82,7 +82,7 @@ struct BinCard: View {
 
     private var accessibilityText: String {
         guard !isEmpty else { return "Bin, empty" }
-        var parts = ["Bin", "\(count) \(count == 1 ? "photo" : "photos") to clear", Format.size(bytes)]
+        var parts = ["Bin", "\(Format.count(count)) \(count == 1 ? "photo" : "photos") to clear", Format.size(bytes)]
         if let limit { parts.append(isFull ? "full" : "\(Format.percent(fill)) of \(Format.limit(limit.bytes))") }
         return parts.joined(separator: ", ")
     }
@@ -129,9 +129,9 @@ private struct BinGlyph: View {
                 let side = offset == 0 ? 0 : (offset.isMultiple(of: 2) ? 1.0 : -1.0)
                 ItemImage(reference)
                     .frame(width: thumb, height: thumb)
-                    .clipShape(RoundedRectangle(cornerRadius: DS.Radius.thumb / 2, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: DS.Bin.thumbRadius, style: .continuous))
                     .overlay {
-                        RoundedRectangle(cornerRadius: DS.Radius.thumb / 2, style: .continuous)
+                        RoundedRectangle(cornerRadius: DS.Bin.thumbRadius, style: .continuous)
                             .stroke(DS.Palette.card, lineWidth: DS.Bin.lineWidth)
                     }
                     .rotationEffect(.degrees(side * DS.Bin.fanAngle))

@@ -84,6 +84,7 @@ enum DS {
         /// upright, how far apart they fan (a share of their size), and how much of them rises over the rim.
         static let stackCount = 3
         static let thumbSize: CGFloat = 40
+        static let thumbRadius: CGFloat = 6
         static let fanAngle: Double = 10
         static let fanSpread: CGFloat = 0.28
         static let stackRise: CGFloat = 0.8

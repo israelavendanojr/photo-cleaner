@@ -54,11 +54,12 @@ struct HeroSection: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.6)
             if let change = snapshot.weeklyChange {
-                // Brick only when more was cleared: brick means space freed, and a drop isn't that.
+                // Brick only when more was cleared: brick means space freed, and a drop isn't that. Ink, not
+                // secondary, for a drop: it's essential small text, and secondary is below AA at this size.
                 Text(Format.weeklyChange(change))
                     .font(.subheadline.weight(.semibold))
                     .monospacedDigit()
-                    .foregroundStyle(change.isDown ? DS.Palette.secondary : DS.Palette.brick)
+                    .foregroundStyle(change.isDown ? DS.Palette.ink : DS.Palette.brick)
                     .fixedSize(horizontal: false, vertical: true)
                     .redacted(reason: isLoading ? .placeholder : [])
                     .opacity(isChangeShown && !isEntranceDue ? 1 : 0)

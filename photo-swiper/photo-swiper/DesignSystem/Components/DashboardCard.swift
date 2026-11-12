@@ -38,3 +38,17 @@ struct DashboardCard<Header: View, Content: View>: View {
     .padding(DS.Spacing.l)
     .background(DS.Palette.paper)
 }
+
+#Preview("Large text") {
+    DashboardCard {
+        Text("21% reviewed")
+            .font(.headline)
+            .accessibilityAddTraits(.isHeader)
+    } content: {
+        Text("Content that wraps at large sizes rather than clipping.")
+            .fixedSize(horizontal: false, vertical: true)
+    }
+    .padding(DS.Spacing.l)
+    .background(DS.Palette.paper)
+    .dynamicTypeSize(.xxLarge)
+}
