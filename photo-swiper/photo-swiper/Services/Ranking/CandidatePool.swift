@@ -36,6 +36,7 @@ enum CandidatePool {
         excluding: Set<LibraryItem.ID>,
         indexed: [LibraryItem.ID: IndexedFeatures],
         poolSize: Int,
+        only: Set<LibraryItem.ID>? = nil,
         version: Int = IndexFreshness.rankableVersion
     ) -> Result {
         var result = Result(totalCount: library.count)
@@ -44,7 +45,8 @@ enum CandidatePool {
                 IndexFreshness.isCurrent(record.stamp, assetModifiedAt: entry.modifiedAt, version: version) ? record : nil
             }
             if record != nil { result.indexedCount += 1 }
-            guard !excluding.contains(entry.id) else { continue }
+            // `only` narrows what's offered, after counting, so the scan's progress is the library's.
+            guard !excluding.contains(entry.id), only?.contains(entry.id) ?? true else { continue }
             if var features = record?.features {
                 features.isFavorite = entry.isFavorite
                 result.cached.append(RankCandidate(id: entry.id, features: features))

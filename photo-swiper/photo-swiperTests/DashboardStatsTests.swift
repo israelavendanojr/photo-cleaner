@@ -26,7 +26,7 @@ struct DashboardStatsTests {
     @Test func nothingClearedIsAllZero() {
         let snapshot = make([])
         #expect(snapshot.totalCleared == 0)
-        #expect(snapshot.opportunities.isEmpty)
+        #expect(snapshot.chips == nil)
         #expect(snapshot.computedAt == now)
     }
 
@@ -70,16 +70,41 @@ struct DashboardStatsTests {
         #expect(change.percent == 0.5)
     }
 
-    @Test func opportunitiesAreBiggestFirstAndTiesKeepCategoryOrder() {
+    // MARK: Chips
+
+    @Test func chipsKeepTheirOrderAndHideTheEmptyOnes() {
         let scan = LibraryScan(buckets: [
             .screenshot: .init(count: 9, bytes: 500),
             .video: .init(count: 1, bytes: 900),
             .duplicate: .init(count: 2, bytes: 500),
             .burst: .init(count: 0, bytes: 0),
-        ], indexedCount: 20, indexedBytes: 10_000)
-        let snapshot = make([], scan: scan)
-        #expect(snapshot.opportunities.map(\.category) == [.video, .duplicate, .screenshot])
-        #expect(snapshot.recoverableBytes == 1_900)
+        ], focusBuckets: [.savedForLater: .init(count: 3, bytes: 30), .livePhotos: .init()])
+        let chips = DashboardStats.chips(scan)
+        #expect(chips.map(\.focus) == [.category(.duplicate), .category(.video), .category(.screenshot), .savedForLater])
+        #expect(chips.map(\.bytes) == [500, 900, 500, 30])
+    }
+
+    @Test func theDefaultChipIsTheMostToRecoverWithTiesToTheEarlierOne() {
+        func chip(_ focus: FocusTarget, _ bytes: Int64) -> DashboardSnapshot.Chip {
+            DashboardSnapshot.Chip(focus: focus, count: 1, bytes: bytes, thumbnails: [])
+        }
+        let chips = [
+            chip(.category(.duplicate), 500), chip(.category(.video), 900), chip(.allVideos, 5_000),
+            chip(.category(.screenshot), 900), chip(.savedForLater, 9_000),
+        ]
+        #expect(DashboardStats.defaultChip(chips) == .category(.video),
+                "All videos and saved for later are the library's own sizes, not space to recover; a tie goes to the earlier chip")
+        #expect(DashboardStats.defaultChip([chip(.livePhotos, 10), chip(.savedForLater, 20)]) == .livePhotos,
+                "With nothing to recover, the first chip")
+        #expect(DashboardStats.defaultChip([]) == nil)
+    }
+
+    @Test func theSnapshotCarriesTheChipsAndTheirDefault() throws {
+        let snapshot = make([], scan: MockFeedBuilder.scan)
+        let chips = try #require(snapshot.chips)
+        #expect(chips.count == FocusTarget.chipOrder.count)
+        #expect(snapshot.defaultChip == .category(.video))
+        #expect(chips.allSatisfy { !$0.thumbnails.isEmpty })
     }
 }
 
@@ -237,6 +262,47 @@ struct LibraryScanTests {
         #expect(scan.indexedCount == library.count - 1)
         #expect(scan.scanPercent == 40)
     }
+
+    @Test func kindsCountInFullAndOverlapTheSuggestions() {
+        let library: [LibraryItem.ID: AssetFeatures] = [
+            "big-video": features(bytes: 80_000_000, video: true),
+            "small-video": features(bytes: 2_000_000, video: true),
+            "favorite-video": features(bytes: 9_000_000, video: true, favorite: true),
+            "live-best": features(bytes: 4_000),
+            "live-other": features(bytes: 3_000),
+            "live-video": features(bytes: 7_000, video: true),
+            "decided-live": features(bytes: 1_000),
+            "photo": features(bytes: 6_000),
+        ]
+        let scan = LibraryScan.make(
+            features: library, excluding: ["decided-live"], duplicates: [],
+            similar: [PlannedGroup(ids: ["live-best", "live-other"], bestID: "live-best", reason: "")], scanPercent: nil,
+            livePhotos: ["live-best", "live-other", "live-video", "decided-live"]
+        )
+
+        #expect(scan.bucket(for: .allVideos) == .init(count: 3, bytes: 82_007_000), "Every undecided video but favorites, any size")
+        #expect(scan.bucket(for: .category(.video)) == .init(count: 1, bytes: 80_000_000), "Large videos are a subset")
+        #expect(scan.bucket(for: .livePhotos) == .init(count: 2, bytes: 7_000), "Stills only, undecided, at full size")
+        #expect(scan.bucket(for: .category(.similar)) == .init(count: 1, bytes: 3_000), "A Live Photo can be a similar extra too")
+    }
+
+    @Test func savedForLaterCountsThoughDecidedAndOnlyWhatsIndexed() {
+        let library: [LibraryItem.ID: AssetFeatures] = ["later-a": features(bytes: 300), "later-b": features(bytes: 200), "kept": features(bytes: 9)]
+        let scan = LibraryScan.make(features: library, excluding: ["later-a", "later-b", "kept"], duplicates: [], similar: [],
+                                    scanPercent: nil, later: ["later-a", "later-b", "not-indexed"])
+        #expect(scan.bucket(for: .savedForLater) == .init(count: 2, bytes: 500))
+        #expect(scan.indexedCount == 0)
+    }
+
+    @Test func samplesAreTheBiggestFewWithTiesByID() {
+        var library: [LibraryItem.ID: AssetFeatures] = [:]
+        for (id, bytes) in [("a", 10), ("b", 50), ("c", 50), ("d", 5), ("e", 40), ("f", 30), ("g", 1)] {
+            library[id] = features(bytes: Int64(bytes), screenshot: true)
+        }
+        let scan = LibraryScan.make(features: library, excluding: [], duplicates: [], similar: [], scanPercent: nil,
+                                    reference: { .bundled($0) })
+        #expect(scan.samples[.category(.screenshot)] == ["b", "c", "e", "f", "a"].map(ImageReference.bundled))
+    }
 }
 
 /// The mock builder, but the first scan waits for `release()`. `@unchecked` is safe: every access holds `lock`.
@@ -249,7 +315,7 @@ private final class SlowScanBuilder: FeedBuilding, @unchecked Sendable {
 
     func makeSession(number: Int, options: FeedOptions) async -> Session { Session(number: number, cards: []) }
 
-    func libraryScan(excluding: Set<LibraryItem.ID>, removed: Set<LibraryItem.ID>) async -> LibraryScan? {
+    func libraryScan(excluding: Set<LibraryItem.ID>, removed: Set<LibraryItem.ID>, later: Set<LibraryItem.ID>) async -> LibraryScan? {
         let first = lock.withLock { scans += 1; return scans == 1 }
         if first { await withCheckedContinuation { continuation in lock.withLock { waiting = continuation } } }
         return MockFeedBuilder.scan
@@ -326,7 +392,7 @@ struct DashboardControllerTests {
 
         let snapshot = try #require(controller.snapshot)
         #expect(snapshot.totalCleared == 900)
-        #expect(snapshot.opportunities.first?.category == .video)
+        #expect(snapshot.defaultChip == .category(.video))
         #expect(!controller.isStale)
         #expect(!controller.isRefreshing)
 

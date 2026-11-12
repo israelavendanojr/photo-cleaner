@@ -57,7 +57,7 @@ struct BinCard: View {
                 .font(.headline)
                 .foregroundStyle(DS.Palette.ink)
             if isEmpty {
-                Text("Nothing waiting to be cleared. What you swipe away collects here.")
+                Text("Empty. What you swipe away collects here.")
                     .font(.callout)
                     .foregroundStyle(DS.Palette.ink)
                     .fixedSize(horizontal: false, vertical: true)
@@ -69,7 +69,7 @@ struct BinCard: View {
                     .contentTransition(.numericText(value: Double(bytes)))
                     .fixedSize(horizontal: false, vertical: true)
             }
-            if let limit {
+            if let limit, !isEmpty {
                 Text(isFull ? "Full at \(Format.limit(limit.bytes)). Delete these to keep clearing."
                     : "\(Format.size(bytes)) of \(Format.limit(limit.bytes))")
                     .font(.footnote)

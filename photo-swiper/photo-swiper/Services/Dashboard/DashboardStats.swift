@@ -3,12 +3,14 @@ import Foundation
 /// Everything the dashboard shows that takes work to compute, worked out off the main thread and cached
 /// between launches so the Library tab opens at once.
 struct DashboardSnapshot: Equatable, Codable, Sendable {
-    /// One kind of clutter still in the library.
-    struct Opportunity: Equatable, Codable, Sendable, Identifiable {
-        var category: CleanupCategory
+    /// One of the library card's chips: what it counts, how big that is, and its biggest few items.
+    struct Chip: Equatable, Codable, Sendable, Identifiable {
+        var focus: FocusTarget
         var count: Int
+        /// Duplicates and similar shots count only the extras; everything else counts in full.
         var bytes: Int64
-        var id: CleanupCategory { category }
+        var thumbnails: [ImageReference]
+        var id: FocusTarget { focus }
     }
 
     /// One kind's share of the library.
@@ -51,8 +53,6 @@ struct DashboardSnapshot: Equatable, Codable, Sendable {
     /// The last 7 days, and the 7 before them.
     var clearedThisWeek: Int64 = 0
     var clearedLastWeek: Int64 = 0
-    /// Biggest first.
-    var opportunities: [Opportunity] = []
     /// How far library analysis has got, 0...100. Nil once it's complete.
     var scanPercent: Int?
     var computedAt: Date
@@ -61,8 +61,11 @@ struct DashboardSnapshot: Equatable, Codable, Sendable {
     // bytes cleared) are ignored when decoding.
     var composition: [Slice]?
     var reviews: Activity?
+    /// In `FocusTarget.chipOrder`, only those with something in them.
+    var chips: [Chip]?
+    /// The chip selected at first: the most space to recover.
+    var defaultChip: FocusTarget?
 
-    var recoverableBytes: Int64 { opportunities.reduce(0) { $0 + $1.bytes } }
     var weeklyChange: WeeklyChange? { DashboardStats.weeklyChange(this: clearedThisWeek, last: clearedLastWeek) }
 }
 
@@ -80,7 +83,9 @@ enum DashboardStats {
         snapshot.clearedThisWeek = history.filter { $0.at > weekAgo && $0.at <= now }.reduce(0) { $0 + $1.bytes }
         snapshot.clearedLastWeek = history.filter { $0.at > twoWeeksAgo && $0.at <= weekAgo }.reduce(0) { $0 + $1.bytes }
         if let scan {
-            snapshot.opportunities = opportunities(scan)
+            let chips = chips(scan)
+            snapshot.chips = chips
+            snapshot.defaultChip = defaultChip(chips)
             snapshot.scanPercent = scan.scanPercent
         }
         snapshot.reviews = activity(reviews, now: now, calendar: calendar)
@@ -143,15 +148,24 @@ enum DashboardStats {
         return DashboardSnapshot.WeeklyChange(delta: this - last, percent: last > 0 ? Double(this - last) / Double(last) : nil)
     }
 
-    /// Kinds with something to clear, biggest first; equal sizes keep `CleanupCategory`'s order.
-    static func opportunities(_ scan: LibraryScan) -> [DashboardSnapshot.Opportunity] {
-        let order: [CleanupCategory: Int] = Dictionary(uniqueKeysWithValues: CleanupCategory.allCases.enumerated().map { ($1, $0) })
-        let found: [DashboardSnapshot.Opportunity] = scan.buckets.compactMap { category, bucket in
-            bucket.count > 0 ? DashboardSnapshot.Opportunity(category: category, count: bucket.count, bytes: bucket.bytes) : nil
+    /// The library card's chips, in `FocusTarget.chipOrder`, leaving out any with nothing in them.
+    static func chips(_ scan: LibraryScan) -> [DashboardSnapshot.Chip] {
+        FocusTarget.chipOrder.compactMap { focus in
+            guard let bucket = scan.bucket(for: focus), bucket.count > 0 else { return nil }
+            return DashboardSnapshot.Chip(focus: focus, count: bucket.count, bytes: bucket.bytes, thumbnails: scan.samples[focus] ?? [])
         }
-        return found.sorted { first, second in
-            if first.bytes != second.bytes { return first.bytes > second.bytes }
-            return order[first.category, default: 0] < order[second.category, default: 0]
+    }
+
+    /// The chip with the most space to recover: the biggest of what's left to clear (duplicates, similar
+    /// shots, large videos, screenshots, bursts), ties to the earlier chip. All videos, Live Photos and
+    /// saved for later describe the library, not what clearing would free, so they're picked only when
+    /// nothing else is there.
+    static func defaultChip(_ chips: [DashboardSnapshot.Chip]) -> FocusTarget? {
+        let recoverable = chips.filter { if case .category = $0.focus { true } else { false } }
+        // `max` keeps the last of equals, so ties are broken by order explicitly.
+        let biggest = recoverable.enumerated().max { first, second in
+            first.element.bytes != second.element.bytes ? first.element.bytes < second.element.bytes : first.offset > second.offset
         }
+        return biggest?.element.focus ?? chips.first?.focus
     }
 }

@@ -73,14 +73,16 @@ actor PhotoKitFeedBuilder: FeedBuilding {
     /// The index's features plus the last page's groups. Before the first page there are no groups yet,
     /// so duplicates and similar shots show up once the feed has been built. `excluding` adds to what the
     /// last page left out (decided items), so callers only pass what they hold in memory.
-    func libraryScan(excluding: Set<LibraryItem.ID>, removed: Set<LibraryItem.ID>) async -> LibraryScan? {
+    func libraryScan(excluding: Set<LibraryItem.ID>, removed: Set<LibraryItem.ID>, later: Set<LibraryItem.ID>) async -> LibraryScan? {
         guard index != nil else { return nil }
         let (generation, records) = await indexedRecords()
         let features = records.mapValues(\.features)
         let decided = excluding.union(lastExcluding)
-        var scan = LibraryScan.make(features: features, excluding: decided, duplicates: lastGroups.duplicates,
-                                    similar: lastGroups.similar, scanPercent: lastScanPercent)
-        scan.profile = LibraryProfile.make(features: features, livePhotos: livePhotoIDs(at: generation), removed: removed)
+        let livePhotos = livePhotoIDs(at: generation)
+        var scan = LibraryScan.make(features: features, excluding: decided.union(removed), duplicates: lastGroups.duplicates,
+                                    similar: lastGroups.similar, scanPercent: lastScanPercent, livePhotos: livePhotos,
+                                    later: later.subtracting(removed))
+        scan.profile = LibraryProfile.make(features: features, livePhotos: livePhotos, removed: removed)
         return scan
     }
 
@@ -105,7 +107,7 @@ actor PhotoKitFeedBuilder: FeedBuilding {
         signposts.endInterval("grouping", grouping, "\(groups.duplicatePrintCount + groups.similarPrintCount) prints")
         let planning = signposts.beginInterval("plan")
         let focused = FeedFocus.apply(.init(candidates: pool.candidates, duplicates: groups.duplicates, similar: groups.similar),
-                                      focus: options.focus)
+                                      focus: options.focus, only: pool.only)
         let slots = planner.plan(focused.candidates, groups: focused.similar, duplicates: focused.duplicates, now: .now)
         signposts.endInterval("plan", planning)
         similarGroupsLeft = groups.similar.count - slots.filter(\.isSimilar).count
@@ -170,6 +172,8 @@ actor PhotoKitFeedBuilder: FeedBuilding {
         var scanPercent: Int?
         /// The index's generation the cached features were read at.
         var generation = 0
+        /// What a focus by ID limited the pool to (`FeedOptions.only`, or the library's Live Photos).
+        var only: Set<LibraryItem.ID>?
     }
 
     /// Lists the library once for membership, favorites, and edit dates, then reads live metadata
@@ -182,7 +186,10 @@ actor PhotoKitFeedBuilder: FeedBuilding {
         let reading = signposts.beginInterval("indexed")
         let (generation, indexed) = await indexedRecords()
         signposts.endInterval("indexed", reading, "\(indexed.count) records")
-        let chosen = CandidatePool.build(library: library, excluding: options.excluding, indexed: indexed, poolSize: Self.poolSize)
+        // A Live Photo focus is by ID: the index doesn't record which items are Live Photos.
+        let only = options.focus == .livePhotos ? livePhotoIDs(at: generation) : options.only
+        let chosen = CandidatePool.build(library: library, excluding: options.excluding, indexed: indexed, poolSize: Self.poolSize,
+                                         only: only)
 
         var candidates = chosen.cached
         let readingLive = signposts.beginInterval("live")
@@ -192,7 +199,7 @@ actor PhotoKitFeedBuilder: FeedBuilding {
         candidates += chosen.live.compactMap { id in live[id].map { RankCandidate(id: id, features: $0) } }
         let features = Dictionary(candidates.map { ($0.id, $0.features) }, uniquingKeysWith: { first, _ in first })
         return Pool(candidates: candidates, cached: chosen.cached, features: features, cachedCount: chosen.cached.count,
-                    liveCount: live.count, scanPercent: index == nil ? nil : chosen.scanPercent, generation: generation)
+                    liveCount: live.count, scanPercent: index == nil ? nil : chosen.scanPercent, generation: generation, only: only)
     }
 
     /// Every index record, read again only when the index has changed since the last read.

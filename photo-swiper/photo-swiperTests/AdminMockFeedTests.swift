@@ -431,6 +431,7 @@ final class SpyProgressStore: ProgressStoring {
     func pile() -> [LibraryItem] { base.pile() }
     func excludedFromNewSession(asOf now: Date) -> Set<LibraryItem.ID> { base.excludedFromNewSession(asOf: now) }
     func reviewedCount() -> Int { base.reviewedCount() }
+    func laterIDs() -> Set<LibraryItem.ID> { base.laterIDs() }
     func reviewsByDay(since: Date, calendar: Calendar) -> [Date: Int] { base.reviewsByDay(since: since, calendar: calendar) }
     func freedBytes() -> Int64 { base.freedBytes() }
     func lastSessionNumber() -> Int { base.lastSessionNumber() }

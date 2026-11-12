@@ -38,7 +38,9 @@ private extension FeedViewModel {
     /// (display only, nothing saved) and forgets that the confetti played, so it plays on the Library tab.
     /// `-resetDevMode YES` turns Developer mode back on, its debug default, whatever an earlier run saved,
     /// so UI tests always find the Admin tab. `-mockHistory YES` fills the mock cleanup history with about ten
-    /// weeks of made-up deletes, for the Library dashboard's chart; `-showLibrary YES` opens on that tab.
+    /// weeks of made-up deletes and review days, for the Library dashboard; `-showLibrary YES` opens on that tab, and
+    /// `-libraryScrollToBottom YES` scrolls it to the library card. `-limitedAccess YES` makes the mock library
+    /// act as if only some photos were shared.
     /// Release builds always run on the real library.
     static func launch() -> FeedViewModel {
         let vm = launchServices()
@@ -85,7 +87,8 @@ private extension FeedViewModel {
                              freeTier: .shared, features: .shared, notifier: notifier)
             }
             return FeedViewModel(
-                library: MockPhotoLibrary(), builder: MockFeedBuilder(), store: mockProgressStore(), entitlements: entitlements,
+                library: MockPhotoLibrary(grantedAccess: UserDefaults.standard.bool(forKey: "limitedAccess") ? .limited : .full),
+                builder: MockFeedBuilder(), store: mockProgressStore(), entitlements: entitlements,
                 allowanceStore: SwipeAllowanceStore(initial: allowance), freeTier: .shared, features: .shared, notifier: notifier
             )
         }

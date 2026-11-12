@@ -57,6 +57,17 @@ enum DS {
         static let countUpSteps = 16
     }
 
+    /// The smallest tap target, from the HIG. Small visual marks reach it with a frame or content shape.
+    enum Tap {
+        static let minimum: CGFloat = 44
+    }
+
+    /// The dashboard's library card. The strip's thumbnails share its width, at most this big each,
+    /// at the default text size; scale it with `@ScaledMetric`.
+    enum LibraryCard {
+        static let thumbSize: CGFloat = 60
+    }
+
     /// The dashboard's bin (`BinCard`). Sizes are at the default text size; scale them with `@ScaledMetric`.
     enum Bin {
         static let width: CGFloat = 52

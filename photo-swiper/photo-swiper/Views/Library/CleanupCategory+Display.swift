@@ -2,7 +2,7 @@ import Foundation
 
 /// How each kind of clutter is named and drawn on screen.
 extension CleanupCategory {
-    /// "Large videos", as a dashboard row.
+    /// "Large videos", as a dashboard chip.
     var title: String {
         switch self {
         case .duplicate: "Duplicates"
@@ -23,17 +23,6 @@ extension CleanupCategory {
         case .video: "Only videos"
         case .burst: "Only bursts"
         case .photo: "Only photos"
-        }
-    }
-
-    var systemImage: String {
-        switch self {
-        case .duplicate: "plus.square.on.square"
-        case .similar: "square.stack.3d.up"
-        case .screenshot: "iphone"
-        case .video: "video"
-        case .burst: "photo.stack"
-        case .photo: "photo"
         }
     }
 }

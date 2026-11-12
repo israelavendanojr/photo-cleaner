@@ -74,6 +74,24 @@ struct ProgressStoreTests {
         #expect(store.freedBytes() == items[0].bytes)
     }
 
+    /// Saved for later, any age; deciding the item again takes it out.
+    @Test(arguments: Kind.allCases)
+    func laterIDsAreWhatsSavedForLaterUntilDecidedAgain(_ kind: Kind) throws {
+        let store = try makeStore(kind)
+        let items = session.items
+        store.save([
+            items[0].id: record(items[0], .later, at: now.addingTimeInterval(-3 * 86_400)),
+            items[1].id: record(items[1], .later),
+            items[2].id: record(items[2], .keep),
+        ])
+        #expect(store.laterIDs() == [items[0].id, items[1].id])
+
+        store.save([items[1].id: record(items[1], .keep)])
+        #expect(store.laterIDs() == [items[0].id])
+        _ = store.excludedFromNewSession(asOf: now)
+        #expect(store.laterIDs() == [items[0].id], "The same once the store has its decisions in memory")
+    }
+
     /// The heatmap's counts come from the decisions: keeps and deletes by the day they were made, deleted
     /// ones included, later and anything before `since` left out, and an undone decision gone.
     @Test(arguments: Kind.allCases)

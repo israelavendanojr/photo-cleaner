@@ -189,6 +189,16 @@ final class SwiftDataProgressStore: ProgressStoring {
         }
     }
 
+    /// From the mirror once it's loaded; before that a narrow fetch, so the dashboard's first refresh
+    /// doesn't load every decision on the main actor to find a few.
+    func laterIDs() -> Set<LibraryItem.ID> {
+        if let mirror { return mirror.laterIDs }
+        let later = Decision.later.rawValue
+        var descriptor = FetchDescriptor<ItemProgress>(predicate: #Predicate { $0.decisionRaw == later })
+        descriptor.propertiesToFetch = [\.itemID]
+        return Set(fetch(descriptor).map(\.itemID))
+    }
+
     func reviewsByDay(since: Date, calendar: Calendar) -> [Date: Int] {
         let later = Decision.later.rawValue
         var descriptor = FetchDescriptor<ItemProgress>(predicate: #Predicate { $0.decidedAt >= since && $0.decisionRaw != later })
@@ -429,6 +439,10 @@ private struct Mirror {
 
     init(_ rows: [(LibraryItem.ID, Entry)]) {
         for (id, entry) in rows { set(id, entry) }
+    }
+
+    var laterIDs: Set<LibraryItem.ID> {
+        Set(entries.filter { $0.value.decisionRaw == Decision.later.rawValue }.keys)
     }
 
     /// See `StoredDecision.blocksNewSession(asOf:)`: "later" sits out for `laterCooldown`.

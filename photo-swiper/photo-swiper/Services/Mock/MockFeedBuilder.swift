@@ -22,7 +22,7 @@ struct MockFeedBuilder: FeedBuilding {
     }
 
     /// A plausible mid-sized library, mostly analyzed.
-    func libraryScan(excluding: Set<LibraryItem.ID>, removed: Set<LibraryItem.ID>) async -> LibraryScan? {
+    func libraryScan(excluding: Set<LibraryItem.ID>, removed: Set<LibraryItem.ID>, later: Set<LibraryItem.ID>) async -> LibraryScan? {
         Self.scan
     }
 
@@ -34,6 +34,21 @@ struct MockFeedBuilder: FeedBuilding {
             .screenshot: .init(count: 312, bytes: 540_000_000),
             .burst: .init(count: 92, bytes: 260_000_000),
         ],
+        focusBuckets: [
+            .allVideos: .init(count: 1_120, bytes: 18_700_000_000),
+            .livePhotos: .init(count: 4_010, bytes: 11_900_000_000),
+            .savedForLater: .init(count: 27, bytes: 96_000_000),
+        ],
+        samples: [
+            .category(.duplicate): [MockImages.photos[5], MockImages.photos[5], MockImages.photos[1], MockImages.photos[1]],
+            .category(.similar): (1...5).map { "similar-a-\($0)" },
+            .category(.video): MockImages.videos,
+            .allVideos: MockImages.videos,
+            .livePhotos: Array(MockImages.photos.prefix(5)),
+            .category(.screenshot): MockImages.screenshots,
+            .category(.burst): (1...5).map { "similar-b-\($0)" },
+            .savedForLater: Array(MockImages.photos.suffix(4)),
+        ].mapValues { $0.map(ImageReference.bundled) },
         indexedCount: 17_820, indexedBytes: 64_000_000_000, scanPercent: 86, profile: profile
     )
 
@@ -50,7 +65,12 @@ struct MockFeedBuilder: FeedBuilding {
     func makeSessionNow(number: Int, options: FeedOptions = FeedOptions()) -> Session {
         guard number <= Self.pageCount else { return Session(number: number, cards: []) }
         var factory = Factory(session: number, options: options)
-        let cards = (0..<Self.cardsPerSession).map { factory.card(at: $0) }.filter { card in options.focus.map(card.matches) ?? true }
+        let cards = (0..<Self.cardsPerSession).map { factory.card(at: $0) }.enumerated().filter { offset, card in
+            guard let focus = options.focus else { return true }
+            // The mock has no Live Photos of its own: single photos at even positions stand in for them.
+            if focus == .livePhotos, case .photo = card { return offset.isMultiple(of: 2) }
+            return card.matches(focus, only: options.only)
+        }.map(\.element)
         return Session(number: number, cards: cards, scanPercentAtStart: number == 1 ? 38 : nil)
     }
 }

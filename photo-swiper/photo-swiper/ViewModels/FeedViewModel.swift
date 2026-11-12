@@ -47,9 +47,12 @@ final class FeedViewModel {
     private(set) var returningCard: ReturningCard?
     private(set) var stats = LibraryStats(totalItems: 0, reviewedItems: 0, freedBytes: 0)
     private(set) var access = LibraryAccess.full
-    /// The one kind of clutter the feed offers, picked from the dashboard. Nil offers everything.
+    /// What the feed offers, picked from the dashboard. Nil offers everything.
     /// Not saved: a relaunch is back to the full feed.
-    private(set) var feedFocus: CleanupCategory?
+    private(set) var feedFocus: FocusTarget?
+    /// Items dealt since the feed was last focused. Focused on saved for later, the cooldown doesn't keep
+    /// items out, so this does: each comes up once per focus, even if saved for later again.
+    private var dealtWhileFocused: Set<LibraryItem.ID> = []
     /// Goes up each time something asks for the Feed tab. RootView switches tabs when it changes.
     private(set) var feedRequests = 0
     /// The system access prompt is up.
@@ -700,17 +703,21 @@ final class FeedViewModel {
 
     // MARK: Focus
 
-    /// Shows only one kind of clutter in the feed, or everything again with nil, and asks for the Feed tab.
+    /// Shows only what `focus` picks in the feed (one kind of clutter, all videos, Live Photos, or what was
+    /// saved for later), or everything again with nil, and asks for the Feed tab.
     ///
     /// The current card never changes, whatever its kind: the user may be partway through it, and a decision
     /// must land on the card they acted on. Only the cards after it that don't fit are dropped, and a page
     /// being built without the focus is thrown away. New pages bring the rest. Nothing is decided.
-    func focusFeed(on category: CleanupCategory?) {
+    func focusFeed(on focus: FocusTarget?) {
         defer { showFeed() }
-        guard category != feedFocus else { return }
-        feedFocus = category
-        if let category, var current = session, current.cards.count > index + 1 {
-            current.cards = Array(current.cards.prefix(index + 1)) + current.cards.dropFirst(index + 1).filter { $0.matches(category) }
+        guard focus != feedFocus else { return }
+        feedFocus = focus
+        dealtWhileFocused = Set(session?.items.map(\.id) ?? [])
+        if let focus, var current = session, current.cards.count > index + 1 {
+            let only = focus == .savedForLater ? store.laterIDs() : nil
+            current.cards = Array(current.cards.prefix(index + 1))
+                + current.cards.dropFirst(index + 1).filter { $0.matches(focus, only: only) }
             session = current
             // Partial reviews of dropped cards go with them. Undo only reaches cards up to the current one.
             let kept = Set(current.cards.map(\.id))
@@ -734,7 +741,7 @@ final class FeedViewModel {
     /// single photos, so in a feed focused on those, a single photo is still one of them.
     private func category(of item: LibraryItem, on card: FeedCard) -> CleanupCategory {
         let category = CleanupCategory.of(item, on: card)
-        if category == .photo, let focus = feedFocus, focus == .duplicate || focus == .similar { return focus }
+        if category == .photo, case .category(let focus) = feedFocus, focus == .duplicate || focus == .similar { return focus }
         return category
     }
 
@@ -1017,7 +1024,7 @@ final class FeedViewModel {
     private func appendPage() async {
         let generation = deckGeneration
         let inDeck = Set(session?.items.map(\.id) ?? [])
-        var options = FeedOptions(skipFavorites: skipFavorites, excluding: store.excludedFromNewSession(asOf: now()), focus: feedFocus)
+        var options = pageOptions()
         options.excluding.formUnion(inDeck)
         options.excluding.formUnion(decisions.keys)
         let page = gated(await builder.makeSession(number: nextPageNumber, options: options))
@@ -1034,6 +1041,7 @@ final class FeedViewModel {
         isLibraryExhausted = false
         current.number = page.number
         current.cards += fresh
+        if feedFocus != nil { dealtWhileFocused.formUnion(fresh.flatMap(\.items).map(\.id)) }
         if refilledSinceDeal {
             current.cards = FrontLoad.reordered(current.cards, from: frontLoadStart)
             refilledSinceDeal = false
@@ -1191,9 +1199,22 @@ final class FeedViewModel {
 
     /// - Parameter placeBudget: Overrides how long to wait on place names; nil keeps the default.
     private func makeSession(number: Int, placeBudget: Duration? = nil) async -> Session {
-        var options = FeedOptions(skipFavorites: skipFavorites, excluding: store.excludedFromNewSession(asOf: now()), focus: feedFocus)
+        var options = pageOptions()
         if let placeBudget { options.placeBudget = placeBudget }
         return gated(await builder.makeSession(number: number, options: options))
+    }
+
+    /// What a new page may offer. Focused on saved for later, those items are offered though their cooldown
+    /// isn't over (the user asked for them), but each only once per focus.
+    private func pageOptions() -> FeedOptions {
+        var options = FeedOptions(skipFavorites: skipFavorites, excluding: store.excludedFromNewSession(asOf: now()), focus: feedFocus)
+        if feedFocus == .savedForLater {
+            let later = store.laterIDs()
+            options.only = later
+            options.excluding.subtract(later)
+        }
+        if feedFocus != nil { options.excluding.formUnion(dealtWhileFocused) }
+        return options
     }
 
     /// Splits bundles this user doesn't get into single cards. See `FeatureAvailabilityTunables`.
@@ -1221,6 +1242,7 @@ final class FeedViewModel {
         drafts = [:]
         history = []
         let ids = Set(next.items.map(\.id))
+        if feedFocus != nil { dealtWhileFocused.formUnion(ids) }
         carriedPending = store.pile().filter { !ids.contains($0.id) }
         returningCard = nil
         dismissChip()

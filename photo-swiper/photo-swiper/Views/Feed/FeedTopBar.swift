@@ -94,7 +94,7 @@ private struct SwipesLeftPill: View {
 /// "Only videos ×": the feed is focused from the dashboard. Tapping shows everything again.
 struct FeedFocusChip: View {
     @Environment(FeedViewModel.self) private var vm
-    let focus: CleanupCategory
+    let focus: FocusTarget
 
     var body: some View {
         Button {
@@ -106,7 +106,7 @@ struct FeedFocusChip: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(PressScaleStyle())
-        .accessibilityLabel("Showing \(focus.title.lowercased())")
+        .accessibilityLabel("Showing \(focus.phrase)")
         .accessibilityHint("Shows everything again")
         .accessibilityIdentifier("feed.focus")
     }

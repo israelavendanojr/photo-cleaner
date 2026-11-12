@@ -46,6 +46,19 @@ enum CleanupCategory: String, CaseIterable, Codable, Hashable, Sendable {
 }
 
 extension FeedCard {
+    /// The card belongs in a feed with this focus. A focus by ID matches single cards whose item is in
+    /// `only`; with no `only` (the view model can't tell a Live Photo), nothing matches, and new pages
+    /// bring the right cards.
+    func matches(_ focus: FocusTarget, only: Set<LibraryItem.ID>?) -> Bool {
+        switch (focus, self) {
+        case (.category(let category), _): matches(category)
+        case (.allVideos, .video): true
+        case (.livePhotos, .photo(let item)), (.savedForLater, .photo(let item)), (.savedForLater, .video(let item)):
+            only?.contains(item.id) == true
+        default: false
+        }
+    }
+
     /// The card belongs in a feed focused on `category`. Group cards are their group's kind; a single
     /// card is what its item is, so a free user's unbundled duplicate reads as a photo. Videos count only
     /// when large, as the dashboard counts them (`LibraryScan.largeVideoBytes`).

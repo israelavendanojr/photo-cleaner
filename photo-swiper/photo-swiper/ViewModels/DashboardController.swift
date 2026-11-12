@@ -100,7 +100,8 @@ final class DashboardController {
         let now = now(), calendar = calendar
         let history = store.cleanupHistory()
         let reviews = store.reviewsByDay(since: DashboardStats.activityStart(now: now, calendar: calendar), calendar: calendar)
-        let scan = await builder.libraryScan(excluding: inputs.excluding, removed: inputs.removed)
+        let later = store.laterIDs()
+        let scan = await builder.libraryScan(excluding: inputs.excluding, removed: inputs.removed, later: later)
         let next = await Task.detached(priority: .utility) {
             DashboardStats.make(history: history, scan: scan, reviews: reviews, now: now, calendar: calendar)
         }.value

@@ -52,6 +52,10 @@ final class InMemoryProgressStore: ProgressStoring {
         records.values.filter { $0.decision != .later && $0.isInLibrary }.count
     }
 
+    func laterIDs() -> Set<LibraryItem.ID> {
+        Set(records.filter { $0.value.decision == .later }.keys)
+    }
+
     func reviewsByDay(since: Date, calendar: Calendar) -> [Date: Int] {
         let reviewed = records.values.filter { $0.decision != .later && $0.decidedAt >= since }
         var days = Dictionary(grouping: reviewed) { calendar.startOfDay(for: $0.decidedAt) }.mapValues(\.count)

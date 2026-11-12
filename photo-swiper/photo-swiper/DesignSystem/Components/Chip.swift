@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// Rounded label: the "Best pick" and "Keep" markers, a video's length, swipes left, the feed's focus.
-/// A trailing symbol (`xmark` on the focus chip) takes the text color, never brick.
+/// Rounded label: the "Best pick" and "Keep" markers, a video's length, swipes left, the feed's focus,
+/// and the library card's choices. A trailing symbol (`xmark` on the focus chip) takes the text color, never brick.
 struct Chip: View {
     enum Style {
         /// Brick text on tint, e.g. swipes left.
@@ -10,6 +10,10 @@ struct Chip: View {
         case plain
         /// White text on frosted dark. Video duration.
         case frosted
+        /// One of a row of single-select choices, not chosen: ink text on card inside a `line` outline.
+        case option
+        /// The chosen one of a row of choices: white text on ink.
+        case selected
     }
 
     let text: String
@@ -39,6 +43,8 @@ struct Chip: View {
         .background {
             if style == .frosted {
                 Capsule().fill(.ultraThinMaterial).environment(\.colorScheme, .dark)
+            } else if style == .option {
+                Capsule().fill(background).overlay(Capsule().strokeBorder(DS.Palette.line, lineWidth: 1))
             } else {
                 Capsule().fill(background)
             }
@@ -48,8 +54,8 @@ struct Chip: View {
     private var foreground: Color {
         switch style {
         case .brick: DS.Palette.brick
-        case .plain: DS.Palette.ink
-        case .frosted: .white
+        case .plain, .option: DS.Palette.ink
+        case .frosted, .selected: .white
         }
     }
 
@@ -58,7 +64,11 @@ struct Chip: View {
     }
 
     private var background: Color {
-        style == .brick ? DS.Palette.brickTint : DS.Palette.card
+        switch style {
+        case .brick: DS.Palette.brickTint
+        case .selected: DS.Palette.ink
+        default: DS.Palette.card
+        }
     }
 }
 
@@ -67,6 +77,10 @@ struct Chip: View {
         Chip(text: "3 left", size: .caption)
         Chip(text: "Best pick", systemImage: "star.fill", style: .plain)
         Chip(text: "Only videos", trailingSystemImage: "xmark", style: .plain, size: .caption)
+        HStack {
+            Chip(text: "Duplicates", style: .selected)
+            Chip(text: "Videos", style: .option)
+        }
         Chip(text: "4:12", style: .frosted)
             .padding()
             .background(DS.Palette.ink.opacity(0.6))
