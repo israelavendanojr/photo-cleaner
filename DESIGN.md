@@ -39,14 +39,12 @@ Defined in `DS.Palette` ([`DesignSystem.swift`](photo-swiper/photo-swiper/Design
 
 | Size | `relativeTo` | Weight | Where |
 |---|---|---|---|
-| 64 | `.largeTitle` | regular | Library hero stat (percent reviewed) |
-| 48 | `.largeTitle` | regular | Big numbers: pile total, a video card's file size |
+| 48 | `.largeTitle` | regular | Big numbers: pile total, a video card's file size, the dashboard's space cleared (brick) |
 | 46 | `.largeTitle` | medium | Welcome headline |
 | 40 | `.largeTitle` | medium | Onboarding page titles |
-| 34 | `.largeTitle` | medium | Screen titles (Library, pile, Admin, `UpsellLayout`); regular on empty states |
-| 28 | `.title2` | regular | `ToClearCounter` |
+| 34 | `.largeTitle` | medium | Screen titles (Library, pile, Admin, `UpsellLayout`); regular on empty states ("Nothing cleared yet") |
+| 28 | `.title2` | regular | `ToClearCounter`, `RingGauge`'s score |
 | 26 | `.title` | regular | Photo card date |
-| 24 | `.title2` | regular | Library's freed-bytes stat (brick) |
 | 22 | `.title3` | regular, *italic* for group cards | Similar and duplicate card titles, the unlock offer's "One-time purchase." |
 | 20 | `.title3` | regular | Video card date |
 | 19 | `.headline` | medium | Navigation-bar title (Settings) |
@@ -58,7 +56,7 @@ Defined in `DS.Palette` ([`DesignSystem.swift`](photo-swiper/photo-swiper/Design
 - `.subheadline` for eyebrows, chips and tab labels (`.semibold` where it's a control)
 - `.footnote` / `.caption` / `.caption2` for metadata, captions and badges
 
-Numbers that change use `.monospacedDigit()` and `.contentTransition(.numericText(value:))`. Format every size, date, duration and count with `Format` ([`Formatting.swift`](photo-swiper/photo-swiper/DesignSystem/Formatting.swift)), never inline.
+Numbers that change use `.monospacedDigit()` and `.contentTransition(.numericText(value:))`. Format every size, date, duration, count and percentage with `Format` ([`Formatting.swift`](photo-swiper/photo-swiper/DesignSystem/Formatting.swift)), never inline. That includes chart axis labels.
 
 ## Spacing and layout
 
@@ -122,7 +120,7 @@ Put the shadow on the background shape, not on the view that holds text, so the 
 
 **Reduce Motion:** read `@Environment(\.accessibilityReduceMotion)` and show the end state at once, or swap movement for a fade. Examples: `OnboardingEntrance`, `DealIn`, `SwipeableCard` (no nudges), `ConfettiView` (a fading note instead of confetti), `StackedPhotosIllustration`.
 
-**Haptics** come from `Haptics` ([`Haptics.swift`](photo-swiper/photo-swiper/DesignSystem/Haptics.swift)), with one function per moment: `threshold`, `advance`, `accessGranted`, `delete`, `refused`, `confirm`, `unlocked`, `tabChange`. A new moment gets a new function there. Views don't create `UI*FeedbackGenerator`s or use `.sensoryFeedback` directly.
+**Haptics** come from `Haptics` ([`Haptics.swift`](photo-swiper/photo-swiper/DesignSystem/Haptics.swift)), with one function per moment: `threshold`, `advance` (also a dashboard suggestion tapped), `accessGranted`, `delete`, `refused`, `confirm`, `unlocked`, `tabChange`, `scrub` (a chart's selection lands on another point), `refreshed` (pull to refresh finished). A new moment gets a new function there. Views don't create `UI*FeedbackGenerator`s or use `.sensoryFeedback` directly.
 
 ## Components
 
@@ -134,7 +132,7 @@ All of these are in [`DesignSystem/Components/`](photo-swiper/photo-swiper/Desig
 | `CircleActionButton` | The feed's round action-bar buttons with a caption. `.destructive` for Delete, `.neutral` for Keep and Later. |
 | `CircleIconButton` | The outlined 44pt icon button in top bars (Undo, Close). Requires `accessibilityLabel`. |
 | `PressScaleStyle` | The press-down scale for custom icon buttons. It also dims the button when disabled. |
-| `Chip` | Small rounded labels. `.brick` for counts tied to clearing (swipes left), `.plain` for neutral markers over imagery (Best pick, Keep), `.frosted` for text over video. |
+| `Chip` | Small rounded labels. `.brick` for counts tied to clearing (swipes left), `.plain` for neutral markers over imagery (Best pick, Keep) and the feed's focus ("Only videos ×", with `trailingSystemImage: "xmark"`, which takes the text color), `.frosted` for text over video. |
 | `PillTabBar` | The floating tab bar. Its selection animates with `DS.Motion.tab` and fires `Haptics.tabChange`. |
 | `ProgressLine` | A thin progress track. Ink by default, brick for amounts to clear. It reads its percentage to VoiceOver. |
 | `ToClearCounter` | The brick serif running total, with a "+3.4 MB" chip that pops above it. |
@@ -142,8 +140,24 @@ All of these are in [`DesignSystem/Components/`](photo-swiper/photo-swiper/Desig
 | `ConfettiView` | The celebration after freeing space. It never takes touches, announces `message`, and falls back to a note under Reduce Motion. |
 | `OpenSettingsButton` | Any link to the app's page in iOS Settings (permissions). |
 | `SwipeStamp` (in `Views/Feed/`) | The Delete, Keep and Later wash over a card. It's also used in onboarding's demo. |
+| `DashboardCard` | A dashboard section: a `.headline` ink title (`.isHeader`) with an optional trailing accessory (a status, a picker) that drops under the title when it doesn't fit, then content, on a `card` panel at `Radius.inner` with `softShadow()` on the shape. Use it for every Library section. |
+| `RingGauge` | A 0...1 score as a ring with a serif number and a caption (library health). Ink, never brick: a score isn't an amount to clear. Nil shows "—". Diameter from `DS.Ring` through `@ScaledMetric`. |
+| `StatDelta` | This period against the last under a big number ("+860 MB vs last week"), ink with an arrow, one VoiceOver sentence. Never brick or green. |
+| `TrustBadge` | "Processed on device": ink on `muted`, `lock.shield`. Only where the claim is true, which is everywhere in this app. |
 
-Formatting goes through `Format` (`size`, `day`, `shortDay`, `range`, `duration`, `countdown`, `roughDays`, `spelled`, `count`).
+Formatting goes through `Format` (`size`, `signedSize`, `percent`, `relative`, `day`, `shortDay`, `range`, `duration`, `countdown`, `roughDays`, `spelled`, `count`). `size` uses `ByteCountFormatter` in decimal units from MB up, as Photos and Settings do ("1.2 GB", "0.1 MB"), and reads "0 MB" for nothing. `relative` reads "5 min. ago", or "just now" under a minute.
+
+### Charts
+
+Swift Charts only, styled from `DS.Chart` (in `DesignSystem.swift`) so every chart reads as one family. The first is `ClearedChartSection` on the Library tab.
+
+- **One series, no legend.** The card's title names it. Space cleared is brick (it's freed space): a `DS.Chart.lineWidth` (2pt) line over a `brickTint` area, or brick bars whose data end is rounded by `DS.Chart.barCornerRadius` (4pt) and whose baseline end stays square.
+- **A running total is stepped** (`.interpolationMethod(.stepEnd)`). It only changes on the days something was cleared, and a smoothed line would show it rising before that.
+- **Recessive axes.** Gridlines in `line`, labels in `.caption2` `secondary`, at most 3 or 4 of them, and formatted with `Format`. Values never take the series color; the readout above the plot is ink.
+- **Scrubbing.** `chartXSelection` picks the nearest point. Show a `secondary` `RuleMark` (`DS.Chart.ruleWidth`) and a brick point (`DS.Chart.pointSize`); while scrubbing, other bars dim to `DS.Chart.dimmedOpacity`. The readout above the plot switches to the selected point, and each new point fires `Haptics.scrub()`.
+- **Height** comes from `DS.Chart.height` through `@ScaledMetric`, so the plot grows with text.
+- **VoiceOver.** Give the chart an `accessibilityLabel` and an `accessibilityChartDescriptor` (Audio Graphs) with a one-sentence summary.
+- **Reduce Motion:** switching modes or data animates with `DS.Motion.calm`, and doesn't animate at all under Reduce Motion.
 
 ## Accessibility
 
@@ -208,4 +222,6 @@ These are known gaps in the code as of this file's first version. They're docume
 - **Duplicated toast:** `SettingsView` builds the same ink capsule toast twice, and there's no shared component.
 - **Press styles differ:** `PressScaleStyle` dims to 0.4 when disabled, and the tab bar's private `TabPressStyle` doesn't.
 - **Two screen gutters:** 20 (`l`) in most screens and 28 (`xl`) in onboarding. The reason isn't written down.
+- **Literal 44pt tap targets:** `.frame(minHeight: 44)` in `FeedFocusChip` and the dashboard's suggestion rows. There's no tap-target token yet.
+- **`Chip` has no XXL preview.**
 - **Debug-only exceptions:** `RankDebugBadge` uses a fixed font, black, and a radius of 6. It's Debug-only and can stay.
