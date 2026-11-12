@@ -101,9 +101,10 @@ final class DashboardController {
         // The history is a small read on the main actor; the scan and the sums aren't on it.
         let history = store.cleanupHistory()
         let scan = await builder.libraryScan(excluding: inputs.excluding)
-        let now = now(), calendar = calendar, reviewed = inputs.reviewedFraction
+        let now = now(), calendar = calendar, reviewed = inputs.reviewedFraction, storage = storage
         let next = await Task.detached(priority: .utility) {
-            DashboardStats.make(history: history, scan: scan, reviewedFraction: reviewed, now: now, calendar: calendar)
+            DashboardStats.make(history: history, scan: scan, reviewedFraction: reviewed, storage: storage?.current(),
+                                now: now, calendar: calendar)
         }.value
         guard target > clearedAt else { return }
         snapshot = next
