@@ -145,7 +145,7 @@ All of these are in [`DesignSystem/Components/`](photo-swiper/photo-swiper/Desig
 | `StatDelta` | This period against the last under a big number ("+860 MB vs last week"), ink with an arrow, one VoiceOver sentence. Never brick or green. |
 | `TrustBadge` | "Processed on device": ink on `muted`, `lock.shield`. Only where the claim is true, which is everywhere in this app. |
 
-Formatting goes through `Format` (`size`, `signedSize`, `percent`, `relative`, `day`, `shortDay`, `range`, `duration`, `countdown`, `roughDays`, `spelled`, `count`). `size` uses `ByteCountFormatter` in decimal units from MB up, as Photos and Settings do ("1.2 GB", "0.1 MB"), and reads "0 MB" for nothing. `relative` reads "5 min. ago", or "just now" under a minute.
+Formatting goes through `Format` (`size`, `signedSize`, `percent`, `relative`, `day`, `shortDay`, `month`, `shortMonth`, `year`, `range`, `duration`, `countdown`, `roughDays`, `untilFull`, `spelled`, `count`). `size` uses `ByteCountFormatter` in decimal units from MB up, as Photos and Settings do ("1.2 GB", "0.1 MB"), and reads "0 MB" for nothing. `relative` reads "5 min. ago", or "just now" under a minute.
 
 ### Charts
 
@@ -158,6 +158,11 @@ Swift Charts only, styled from `DS.Chart` (in `DesignSystem.swift`) so every cha
 - **Height** comes from `DS.Chart.height` through `@ScaledMetric`, so the plot grows with text.
 - **VoiceOver.** Give the chart an `accessibilityLabel` and an `accessibilityChartDescriptor` (Audio Graphs) with a one-sentence summary.
 - **Reduce Motion:** switching modes or data animates with `DS.Motion.calm`, and doesn't animate at all under Reduce Motion.
+- **Something that isn't space cleared is ink,** not brick: the library's size over time (an ink line over a `muted` area), the per-year bars.
+- **A projection is dashed** (`DS.Chart.projectionDash`), in its own series so it never joins the measured line, and the copy says what it assumes ("at your recent pace", "Other apps count too").
+- **A breakdown by category** (`CompositionSection`) is one stacked bar in ink shades (`DS.Chart.categoryOpacities`, biggest first) with `DS.Chart.segmentGap` between segments, and a labeled row per category with a `DS.Chart.swatchSize` swatch. There are no category colors: the photos are the color in this app, and brick means deletion. The labels carry identity; the lightest shades are decoration only, so never let a shade alone say what something is.
+- **A heatmap** (`ActivitySection`) is a grid of `DS.Chart.heatCellSize` cells with `heatCellGap` and `heatCellRadius`, a column per week. Level 0 is `line`, level 1 `brickTint`, then brick at `DS.Chart.heatOpacities` (it's space cleared). It has a "Less … More" key and one VoiceOver summary. When the cells, scaled with text, don't fit, the grid scrolls sideways inside its card (`ViewThatFits`) with the latest week in view; it never widens the page.
+- **Size bars** (storage, composition) are `DS.Chart.stackedBarHeight` tall, scaled with `@ScaledMetric`, in a `Capsule()`, hidden from VoiceOver with the numbers given in a sentence beside them. A small supporting chart uses `DS.Chart.compactHeight`.
 
 ## Accessibility
 

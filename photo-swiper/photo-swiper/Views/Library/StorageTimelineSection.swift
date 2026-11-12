@@ -153,7 +153,7 @@ private struct StorageBar: View {
             .frame(height: height)
             .clipShape(Capsule())
             .accessibilityHidden(true)
-            Text("\(Format.size(forecast.libraryBytes)) photos · \(Format.size(other)) other · \(Format.size(forecast.available)) free")
+            Text("\(Format.size(forecast.libraryBytes)) photos and videos · \(Format.size(other)) other · \(Format.size(forecast.available)) free")
                 .font(.footnote)
                 .monospacedDigit()
                 .foregroundStyle(DS.Palette.ink)
