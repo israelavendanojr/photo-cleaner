@@ -57,6 +57,27 @@ enum DS {
         static let countUpSteps = 16
     }
 
+    /// The dashboard's bin (`BinCard`). Sizes are at the default text size; scale them with `@ScaledMetric`.
+    enum Bin {
+        static let width: CGFloat = 52
+        static let height: CGFloat = 58
+        /// How far each side of the body tapers in toward the bottom, as a share of its width.
+        static let taper: CGFloat = 0.1
+        /// The bottom corners' radius, as a share of the body's smaller side.
+        static let cornerFraction: CGFloat = 0.16
+        static let lineWidth: CGFloat = 2
+        static let rimHeight: CGFloat = 6
+        /// How far the rim sticks out past the body on each side.
+        static let rimOverhang: CGFloat = 4
+        /// The photos peeking out of an unlocked bin: how many, their size, their tilt either side of
+        /// upright, how far apart they fan (a share of their size), and how much of them rises over the rim.
+        static let stackCount = 3
+        static let thumbSize: CGFloat = 40
+        static let fanAngle: Double = 10
+        static let fanSpread: CGFloat = 0.28
+        static let stackRise: CGFloat = 0.8
+    }
+
     /// The dashboard's small charts: the composition bar and the review heatmap.
     enum Chart {
         /// A categorical breakdown in ink, biggest first. Labels carry identity; the shades only separate.
