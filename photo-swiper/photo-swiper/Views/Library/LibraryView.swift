@@ -116,6 +116,23 @@ struct LibraryView: View {
                     .redacted(reason: isLoading ? .placeholder : [])
                     .disabled(isLoading)
             }
+            Group {
+                if let timeline = shown.timeline, timeline.count > 1 {
+                    StorageTimelineSection(timeline: timeline, forecast: shown.forecast)
+                }
+                if let composition = shown.composition, !composition.isEmpty {
+                    CompositionSection(slices: composition)
+                }
+                // Only once there's something to show; before the first cleanup the hero says what to do.
+                if cleared > 0, let activity = shown.activity {
+                    ActivitySection(activity: activity)
+                }
+                if let insights = shown.insights, insights.busiestMonth != nil {
+                    InsightsSection(insights: insights)
+                }
+            }
+            .redacted(reason: isLoading ? .placeholder : [])
+            .disabled(isLoading)
         }
     }
 

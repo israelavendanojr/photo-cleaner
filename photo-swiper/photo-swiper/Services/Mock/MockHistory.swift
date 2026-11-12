@@ -21,7 +21,8 @@ enum MockHistory {
 extension DashboardSnapshot {
     /// A populated dashboard for previews.
     static var preview: DashboardSnapshot {
-        DashboardStats.make(history: MockHistory.entries(now: .now), scan: MockFeedBuilder.scan, reviewedFraction: 0.21, now: .now)
+        DashboardStats.make(history: MockHistory.entries(now: .now), scan: MockFeedBuilder.scan, reviewedFraction: 0.21,
+                            storage: MockDeviceStorage().storage, now: .now)
     }
 }
 #endif

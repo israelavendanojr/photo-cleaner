@@ -52,13 +52,16 @@ struct MockFeedBuilder: FeedBuilding {
             monthly[month] = .init(count: count, bytes: bytes)
             if back < 3 { recent += bytes }
         }
+        // The breakdown splits the same total the months add up to, so every section agrees.
+        let total = Double(monthly.values.reduce(0) { $0 + $1.bytes })
+        let count = Double(monthly.values.reduce(0) { $0 + $1.count })
+        let split: [(LibraryProfile.Kind, bytes: Double, count: Double)] = [
+            (.video, 0.38, 0.08), (.photo, 0.35, 0.51), (.livePhoto, 0.24, 0.29), (.screenshot, 0.03, 0.12),
+        ]
         return LibraryProfile(
-            composition: [
-                .video: .init(count: 1_420, bytes: 24_100_000_000),
-                .livePhoto: .init(count: 5_210, bytes: 15_300_000_000),
-                .screenshot: .init(count: 2_180, bytes: 2_000_000_000),
-                .photo: .init(count: 9_010, bytes: 22_600_000_000),
-            ],
+            composition: Dictionary(uniqueKeysWithValues: split.map { kind, bytes, items in
+                (kind, LibraryScan.Bucket(count: Int(count * items), bytes: Int64(total * bytes)))
+            }),
             monthly: monthly, addedRecently: recent,
             oldestUnreviewed: calendar.date(byAdding: .year, value: -6, to: thisMonth)
         )
