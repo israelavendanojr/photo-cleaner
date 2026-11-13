@@ -55,6 +55,9 @@ extension FeedCard {
         case (.allVideos, .video): true
         case (.livePhotos, .photo(let item)), (.savedForLater, .photo(let item)), (.savedForLater, .video(let item)):
             only?.contains(item.id) == true
+        case (.accidental, .photo(let item)): item.reviewFlag == .accidental
+        case (.blurry, .photo(let item)): item.reviewFlag == .blurry
+        case (.documents, .photo(let item)): item.features?.isUtility == true
         default: false
         }
     }

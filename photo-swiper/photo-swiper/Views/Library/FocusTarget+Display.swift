@@ -10,6 +10,9 @@ extension FocusTarget {
         case .category(let category): category.title
         case .allVideos: "Videos"
         case .livePhotos: "Live Photos"
+        case .accidental: "Accidental shots"
+        case .blurry: "Blurry"
+        case .documents: "Documents"
         case .savedForLater: "Saved for later"
         }
     }
@@ -21,6 +24,9 @@ extension FocusTarget {
         case .category(let category): category.focusTitle
         case .allVideos: "Only videos"
         case .livePhotos: "Only Live Photos"
+        case .accidental: "Only accidental shots"
+        case .blurry: "Only blurry photos"
+        case .documents: "Only documents"
         case .savedForLater: "Saved for later"
         }
     }
@@ -31,6 +37,9 @@ extension FocusTarget {
         case .category(let category): category.title.lowercased()
         case .allVideos: "videos"
         case .livePhotos: "Live Photos"
+        case .accidental: "accidental shots"
+        case .blurry: "blurry photos"
+        case .documents: "documents"
         case .savedForLater: "photos saved for later"
         }
     }
@@ -46,6 +55,9 @@ extension FocusTarget {
         case .category(.photo): "photo"
         case .allVideos: "video"
         case .livePhotos: "livephoto"
+        case .accidental: "hand.raised.slash"
+        case .blurry: "camera.metering.unknown"
+        case .documents: "doc.text"
         case .savedForLater: "clock.arrow.circlepath"
         }
     }
@@ -62,6 +74,9 @@ extension FocusTarget {
         case .category(.photo): one ? "photo" : "photos"
         case .allVideos: one ? "video" : "videos"
         case .livePhotos: one ? "Live Photo" : "Live Photos"
+        case .accidental: one ? "accidental shot" : "accidental shots"
+        case .blurry: one ? "blurry photo" : "blurry photos"
+        case .documents: one ? "document" : "documents"
         case .savedForLater: "saved for later"
         }
         return "\(Format.count(count)) \(noun)"
@@ -73,6 +88,9 @@ extension FocusTarget {
         case .category(let category): category.rawValue
         case .allVideos: "allVideos"
         case .livePhotos: "livePhotos"
+        case .accidental: "accidental"
+        case .blurry: "blurry"
+        case .documents: "documents"
         case .savedForLater: "savedForLater"
         }
     }

@@ -239,6 +239,27 @@ struct LibraryScanTests {
                       isInBurst: burst, isBurstPick: pick)
     }
 
+    @Test func analysisFindingsAreRowsAtFullSize() {
+        var pocket = features(bytes: 10)
+        pocket.sharpness = 5
+        pocket.exposure = ExposureStats(mean: 3, darkFraction: 0.97, brightFraction: 0)
+        var soft = features(bytes: 20)
+        soft.sharpness = 12
+        var receipt = features(bytes: 40)
+        receipt.sharpness = 300
+        receipt.isUtility = true
+        var shot = features(bytes: 80, screenshot: true)
+        shot.isUtility = true
+        var favorite = features(bytes: 160, favorite: true)
+        favorite.sharpness = 12
+        let scan = LibraryScan.make(features: ["pocket": pocket, "soft": soft, "receipt": receipt, "shot": shot, "fav": favorite],
+                                    excluding: [], duplicates: [], similar: [], scanPercent: nil)
+        #expect(scan.bucket(for: .accidental) == .init(count: 1, bytes: 10), "Accidental, so not also blurry")
+        #expect(scan.bucket(for: .blurry) == .init(count: 1, bytes: 20), "Favorites left out")
+        #expect(scan.bucket(for: .documents) == .init(count: 1, bytes: 40), "A screenshot isn't a document")
+        #expect(DashboardStats.rows(scan).map(\.focus).contains(.blurry))
+    }
+
     @Test func eachItemCountsOnceInTheFirstBucketItFits() {
         let library: [LibraryItem.ID: AssetFeatures] = [
             "big-video": features(bytes: 80_000_000, video: true),

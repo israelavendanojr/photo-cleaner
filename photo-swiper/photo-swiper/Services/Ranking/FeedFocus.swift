@@ -9,6 +9,14 @@ enum FocusTarget: Hashable, Codable, Sendable {
     /// Every video, whatever its size.
     case allVideos
     case livePhotos
+    /// Photos the analysis reads as taken by accident: a pocket or lens-cap shot, a blown-out frame, or
+    /// soft junk (`ImageFlags.isAccidental`).
+    case accidental
+    /// Photos the analysis reads as blurry and not intentionally soft (`ImageFlags.isBlurry`). Never also
+    /// accidental, as the cards flag them.
+    case blurry
+    /// Photos Vision reads as a utility shot: a receipt, a document, code.
+    case documents
     /// Items the user swiped "later", including ones still sitting out their cooldown: the user asked to
     /// see them now. Only shown, never decided by the focus.
     case savedForLater
@@ -17,8 +25,8 @@ enum FocusTarget: Hashable, Codable, Sendable {
     /// kinds, then saved for later. Large videos aren't a row: they're already in Videos, and two video rows
     /// read as a repeat.
     static let listOrder: [FocusTarget] = [
-        .category(.duplicate), .category(.similar), .allVideos, .livePhotos,
-        .category(.screenshot), .category(.burst), .category(.photo), .savedForLater,
+        .category(.duplicate), .category(.similar), .accidental, .blurry, .allVideos, .livePhotos,
+        .category(.screenshot), .category(.burst), .documents, .category(.photo), .savedForLater,
     ]
 
     /// Whether the focus is a set of IDs the feed builder can't tell from features alone, so a page is
@@ -42,7 +50,8 @@ enum FeedFocus {
     /// Duplicate and similar focus keep their groups and only the candidates in them. A large-video,
     /// screenshot or burst focus keeps the candidates the dashboard counts as that kind
     /// (`LibraryScan.suggested`) and no groups, so they show as single cards. All videos keeps every video;
-    /// Live Photos and saved for later keep the candidates in `only`, also as single cards. Nil changes nothing.
+    /// Live Photos and saved for later keep the candidates in `only`, also as single cards. Accidental,
+    /// blurry and documents keep what the analysis flags (`LibraryScan.findings`), as single cards. Nil changes nothing.
     static func apply(_ input: Input, focus: FocusTarget?, only: Set<LibraryItem.ID>? = nil) -> Input {
         guard let focus else { return input }
         switch focus {
@@ -61,6 +70,8 @@ enum FeedFocus {
             return singles(input.candidates.filter { only?.contains($0.id) == true && !$0.features.isVideo })
         case .savedForLater:
             return singles(input.candidates.filter { only?.contains($0.id) == true })
+        case .accidental, .blurry, .documents:
+            return singles(input.candidates.filter { LibraryScan.findings($0.features).contains(focus) })
         }
     }
 

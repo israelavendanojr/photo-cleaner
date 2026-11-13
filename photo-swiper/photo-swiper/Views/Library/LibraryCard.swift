@@ -85,7 +85,7 @@ struct LibraryCard: View {
 }
 
 /// Icon, title, "count · size", chevron. The size is brick for what clearing would free (the cleanup
-/// categories) and ink for the library's own kinds and what's saved for later, which aren't amounts to clear.
+/// categories, accidental and blurry shots) and ink for the library's own kinds and what's saved for later, which aren't amounts to clear.
 private struct LibraryRow: View {
     let row: DashboardSnapshot.Row
 
@@ -93,7 +93,11 @@ private struct LibraryRow: View {
     @Environment(\.dynamicTypeSize) private var typeSize
 
     private var isToClear: Bool {
-        if case .category(let category) = row.focus { category != .photo } else { false }
+        switch row.focus {
+        case .category(let category): category != .photo
+        case .accidental, .blurry: true
+        default: false
+        }
     }
 
     var body: some View {

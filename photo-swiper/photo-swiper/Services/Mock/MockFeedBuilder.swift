@@ -38,6 +38,9 @@ struct MockFeedBuilder: FeedBuilding {
         focusBuckets: [
             .allVideos: .init(count: 1_120, bytes: 18_700_000_000),
             .livePhotos: .init(count: 4_010, bytes: 11_900_000_000),
+            .accidental: .init(count: 140, bytes: 410_000_000),
+            .blurry: .init(count: 380, bytes: 1_120_000_000),
+            .documents: .init(count: 260, bytes: 520_000_000),
             .savedForLater: .init(count: 27, bytes: 96_000_000),
         ],
         indexedCount: 17_820, indexedBytes: 64_000_000_000, scanPercent: 86
