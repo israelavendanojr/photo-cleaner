@@ -25,15 +25,4 @@ extension CleanupCategory {
         case .photo: "Only photos"
         }
     }
-
-    var systemImage: String {
-        switch self {
-        case .duplicate: "plus.square.on.square"
-        case .similar: "square.stack.3d.up"
-        case .screenshot: "iphone"
-        case .video: "video"
-        case .burst: "photo.stack"
-        case .photo: "photo"
-        }
-    }
 }

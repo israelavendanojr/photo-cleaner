@@ -31,6 +31,9 @@ struct FeedOptions: Sendable {
     var excluding: Set<LibraryItem.ID> = []
     /// How long to wait on place names for captions. Zero skips the lookup.
     var placeBudget: Duration = .milliseconds(1500)
-    /// Only this kind of clutter, when the user focused the feed from the dashboard. Nil offers everything.
-    var focus: CleanupCategory?
+    /// Only this, when the user focused the feed from the dashboard. Nil offers everything.
+    var focus: FocusTarget?
+    /// For a focus by ID (`FocusTarget.isByID`), the items a page may offer: Live Photos, or what was saved
+    /// for later. The builder fills in Live Photos itself; the view model passes what was saved for later.
+    var only: Set<LibraryItem.ID>?
 }

@@ -22,7 +22,7 @@ struct MockFeedBuilder: FeedBuilding {
     }
 
     /// A plausible mid-sized library, mostly analyzed.
-    func libraryScan(excluding: Set<LibraryItem.ID>, removed: Set<LibraryItem.ID>) async -> LibraryScan? {
+    func libraryScan(excluding: Set<LibraryItem.ID>, removed: Set<LibraryItem.ID>, later: Set<LibraryItem.ID>) async -> LibraryScan? {
         Self.scan
     }
 
@@ -33,45 +33,29 @@ struct MockFeedBuilder: FeedBuilding {
             .similar: .init(count: 486, bytes: 1_310_000_000),
             .screenshot: .init(count: 312, bytes: 540_000_000),
             .burst: .init(count: 92, bytes: 260_000_000),
+            .photo: .init(count: 7_260, bytes: 17_900_000_000),
         ],
-        indexedCount: 17_820, indexedBytes: 64_000_000_000, scanPercent: 86, profile: profile
+        focusBuckets: [
+            .allVideos: .init(count: 1_120, bytes: 18_700_000_000),
+            .livePhotos: .init(count: 4_010, bytes: 11_900_000_000),
+            .accidental: .init(count: 140, bytes: 410_000_000),
+            .blurry: .init(count: 380, bytes: 1_120_000_000),
+            .documents: .init(count: 260, bytes: 520_000_000),
+            .savedForLater: .init(count: 27, bytes: 96_000_000),
+        ],
+        indexedCount: 17_820, indexedBytes: 64_000_000_000, scanPercent: 86
     )
-
-    /// Six years of a typical camera roll: busier summers, more video lately, about 64 GB in all.
-    static var profile: LibraryProfile {
-        var rng = SeededGenerator(seed: 21)
-        let calendar = Calendar.current
-        let thisMonth = calendar.dateInterval(of: .month, for: .now)?.start ?? .now
-        var monthly: [Date: LibraryScan.Bucket] = [:]
-        var recent: Int64 = 0
-        for back in 0..<72 {
-            guard let month = calendar.date(byAdding: .month, value: -back, to: thisMonth) else { continue }
-            let summer = [6, 7, 8].contains(calendar.component(.month, from: month)) ? 1.8 : 1.0
-            let count = Int((150 + rng.unit() * 160) * summer)
-            let bytes = Int64(Double(count) * (2_600_000 + Double(72 - back) * 40_000) * (0.8 + rng.unit() * 0.4))
-            monthly[month] = .init(count: count, bytes: bytes)
-            if back < 3 { recent += bytes }
-        }
-        // The breakdown splits the same total the months add up to, so every section agrees.
-        let total = Double(monthly.values.reduce(0) { $0 + $1.bytes })
-        let count = Double(monthly.values.reduce(0) { $0 + $1.count })
-        let split: [(LibraryProfile.Kind, bytes: Double, count: Double)] = [
-            (.video, 0.38, 0.08), (.photo, 0.35, 0.51), (.livePhoto, 0.24, 0.29), (.screenshot, 0.03, 0.12),
-        ]
-        return LibraryProfile(
-            composition: Dictionary(uniqueKeysWithValues: split.map { kind, bytes, items in
-                (kind, LibraryScan.Bucket(count: Int(count * items), bytes: Int64(total * bytes)))
-            }),
-            monthly: monthly, addedRecently: recent,
-            oldestUnreviewed: calendar.date(byAdding: .year, value: -6, to: thisMonth)
-        )
-    }
 
     /// Synchronous variant for previews and launch-time setup.
     func makeSessionNow(number: Int, options: FeedOptions = FeedOptions()) -> Session {
         guard number <= Self.pageCount else { return Session(number: number, cards: []) }
         var factory = Factory(session: number, options: options)
-        let cards = (0..<Self.cardsPerSession).map { factory.card(at: $0) }.filter { card in options.focus.map(card.matches) ?? true }
+        let cards = (0..<Self.cardsPerSession).map { factory.card(at: $0) }.enumerated().filter { offset, card in
+            guard let focus = options.focus else { return true }
+            // The mock has no Live Photos of its own: single photos at even positions stand in for them.
+            if focus == .livePhotos, case .photo = card { return offset.isMultiple(of: 2) }
+            return card.matches(focus, only: options.only)
+        }.map(\.element)
         return Session(number: number, cards: cards, scanPercentAtStart: number == 1 ? 38 : nil)
     }
 }

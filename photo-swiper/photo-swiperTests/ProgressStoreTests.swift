@@ -74,6 +74,47 @@ struct ProgressStoreTests {
         #expect(store.freedBytes() == items[0].bytes)
     }
 
+    /// Saved for later, any age; deciding the item again takes it out.
+    @Test(arguments: Kind.allCases)
+    func laterIDsAreWhatsSavedForLaterUntilDecidedAgain(_ kind: Kind) throws {
+        let store = try makeStore(kind)
+        let items = session.items
+        store.save([
+            items[0].id: record(items[0], .later, at: now.addingTimeInterval(-3 * 86_400)),
+            items[1].id: record(items[1], .later),
+            items[2].id: record(items[2], .keep),
+        ])
+        #expect(store.laterIDs() == [items[0].id, items[1].id])
+
+        store.save([items[1].id: record(items[1], .keep)])
+        #expect(store.laterIDs() == [items[0].id])
+        _ = store.excludedFromNewSession(asOf: now)
+        #expect(store.laterIDs() == [items[0].id], "The same once the store has its decisions in memory")
+    }
+
+    /// The heatmap's counts come from the decisions: keeps and deletes by the day they were made, deleted
+    /// ones included, later and anything before `since` left out, and an undone decision gone.
+    @Test(arguments: Kind.allCases)
+    func reviewsAreCountedByTheDayTheyWereMade(_ kind: Kind) throws {
+        let store = try makeStore(kind)
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+        let today = calendar.startOfDay(for: now), yesterday = today.addingTimeInterval(-86_400)
+        let items = session.items
+        store.save([
+            items[0].id: record(items[0], .keep, at: today.addingTimeInterval(60)),
+            items[1].id: record(items[1], .delete, at: today.addingTimeInterval(7_200)),
+            items[2].id: record(items[2], .keep, at: yesterday.addingTimeInterval(3_600)),
+            items[3].id: record(items[3], .later, at: today.addingTimeInterval(60)),
+            items[4].id: record(items[4], .keep, at: yesterday.addingTimeInterval(-86_400)),
+            items[5].id: record(items[5], .keep, at: today),
+        ])
+        store.settle([items[1].id], as: .deleted)
+        store.save([items[5].id: nil])
+
+        #expect(store.reviewsByDay(since: yesterday, calendar: calendar) == [today: 2, yesterday: 1])
+    }
+
     @Test(arguments: Kind.allCases)
     func laterItemsSitOutForADay(_ kind: Kind) throws {
         let store = try makeStore(kind)

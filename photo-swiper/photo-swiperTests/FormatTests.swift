@@ -18,19 +18,25 @@ struct FormatTests {
         #expect(Format.percent(0) == "0%")
     }
 
-    @Test func aForecastPastTwoYearsIsntANumber() {
-        #expect(Format.untilFull(days: 240) == Format.roughDays(240))
-        #expect(Format.untilFull(days: 731) == "more than two years")
+    @Test func aPercentChangeHasASignAndOneDecimal() {
+        #expect(Format.signedPercent(0.345) == "+34.5%")
+        #expect(Format.signedPercent(-0.25) == "−25.0%")
+        #expect(Format.signedPercent(0) == "+0.0%")
+        #expect(Format.signedPercent(0.12345) == "+12.3%")
+        #expect(Format.signedPercent(-1) == "−100.0%")
+    }
+
+    @Test func theWeeklyChangeReadsAgainstLastWeekOrOnItsOwn() {
+        let up = DashboardSnapshot.WeeklyChange(delta: 1_200_000_000, percent: 0.345)
+        #expect(Format.weeklyChange(up) == "+1.2 GB (+34.5%) vs last week")
+        let down = DashboardSnapshot.WeeklyChange(delta: -400_000_000, percent: -0.25)
+        #expect(Format.weeklyChange(down) == "−400 MB (−25.0%) vs last week")
+        let fresh = DashboardSnapshot.WeeklyChange(delta: 1_200_000_000, percent: nil)
+        #expect(Format.weeklyChange(fresh) == "+1.2 GB this week")
     }
 
     @Test func aChangeHasASign() {
         #expect(Format.signedSize(1_200_000_000) == "+1.2 GB")
         #expect(Format.signedSize(-340_000_000) == "−340 MB")
-    }
-
-    @Test func underAMinuteIsJustNow() {
-        let now = Date(timeIntervalSince1970: 1_800_000_000)
-        #expect(Format.relative(now.addingTimeInterval(-20), now: now) == "just now")
-        #expect(Format.relative(now.addingTimeInterval(-600), now: now) != "just now")
     }
 }

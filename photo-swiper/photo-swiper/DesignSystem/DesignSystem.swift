@@ -51,47 +51,37 @@ enum DS {
         static let page = Animation.spring(duration: 0.45, bounce: 0)
         /// The tab bar's selection capsule sliding between tabs. A little bounce so it lands.
         static let tab = Animation.spring(duration: 0.4, bounce: 0.22)
+        /// The dashboard's space cleared counting up from zero, once per launch: how long it takes, in how
+        /// many steps (each a `calm` numeric-text change), easing out so it slows as it lands.
+        static let countUpDuration: Duration = .milliseconds(900)
+        static let countUpSteps = 16
     }
 
-    /// Swift Charts, so every chart reads as one family. Colors come from `Palette`: a brick series
-    /// (it's space cleared) over a `brickTint` area, `line` gridlines, `secondary` axis labels.
+    /// The smallest tap target, from the HIG. Small visual marks reach it with a frame or content shape.
+    enum Tap {
+        static let minimum: CGFloat = 44
+    }
+
+    /// The dashboard's library list: the icon column, wide enough for a badged symbol, at the default text
+    /// size; scale it with `@ScaledMetric`.
+    enum LibraryList {
+        static let iconWidth: CGFloat = 28
+    }
+
+    /// The dashboard's bin (`BinCard`): its trash circle, the same size as the pile screen's, at the default
+    /// text size; scale it with `@ScaledMetric`.
+    enum Bin {
+        static let iconDiameter: CGFloat = 52
+    }
+
+    /// The dashboard's small chart: the review heatmap.
     enum Chart {
-        /// Plot height at the default text size; scale it with `@ScaledMetric`.
-        static let height: CGFloat = 168
-        /// A small supporting chart inside a section (photos per year).
-        static let compactHeight: CGFloat = 100
-        static let lineWidth: CGFloat = 2
-        /// Rounded data end of a bar; the baseline end stays square.
-        static let barCornerRadius: CGFloat = 4
-        /// The scrubbing rule.
-        static let ruleWidth: CGFloat = 1
-        /// Area of the selected point's dot, in points squared (Swift Charts' `symbolSize`).
-        static let pointSize: CGFloat = 64
-        /// Bars other than the scrubbed one, while scrubbing.
-        static let dimmedOpacity: Double = 0.35
-        /// A categorical breakdown in ink, biggest first. Labels carry identity; the shades only separate.
-        static let categoryOpacities: [Double] = [1, 0.62, 0.36, 0.18]
-        /// The gap between segments of a stacked bar, in the card's color.
-        static let segmentGap: CGFloat = 2
-        /// A one-line stacked bar (composition, storage) at the default text size; scale it with `@ScaledMetric`.
-        static let stackedBarHeight: CGFloat = 12
-        /// Heatmap levels 1...4 as brick strengths (level 0 is `line`). Level 1 uses `brickTint`, not this.
-        static let heatOpacities: [Double] = [0, 0.45, 0.7, 1]
+        /// Heatmap levels 1...4 as ink strengths (level 0 is `line`). Reviews aren't space cleared, so not brick.
+        static let heatOpacities: [Double] = [0.16, 0.36, 0.62, 1]
         /// A heatmap cell at the default text size; scale it with `@ScaledMetric`.
         static let heatCellSize: CGFloat = 14
         static let heatCellGap: CGFloat = 3
         static let heatCellRadius: CGFloat = 3
-        /// The color key beside a legend row, at the default text size; scale it with `@ScaledMetric`.
-        static let swatchSize: CGFloat = 14
-        /// A projection's dashes, so it never reads as measured.
-        static let projectionDash: [CGFloat] = [4, 4]
-    }
-
-    /// The dashboard's health ring.
-    enum Ring {
-        /// Diameter at the default text size; scale it with `@ScaledMetric`.
-        static let diameter: CGFloat = 92
-        static let lineWidth: CGFloat = 8
     }
 }
 

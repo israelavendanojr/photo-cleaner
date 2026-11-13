@@ -1,8 +1,8 @@
 import SwiftUI
 import UIKit
 
-/// The Library tab, a dashboard: space cleared and library health, what's still worth a look, cleared
-/// over time, then the pile. The numbers come from `DashboardController`'s cached snapshot, shown at once
+/// The Library tab, a dashboard in three parts: space cleared and photos reviewed (the hero), the bin, and
+/// the library card with what's worth a look. The numbers come from `DashboardController`'s cached snapshot, shown at once
 /// and refreshed when stale or pulled. The gear opens Settings. Confetti falls the first time it's seen at 100%.
 struct LibraryView: View {
     /// The tab is on screen. Both tabs stay mounted, so this says when the confetti can be seen.
@@ -18,17 +18,17 @@ struct LibraryView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     header
-                    TrustBadge()
-                        .padding(.top, DS.Spacing.xs)
                     dashboard
                         .padding(.top, DS.Spacing.l)
-                    pile
-                        .padding(.top, DS.Spacing.xl)
                 }
                 .padding(.horizontal, DS.Spacing.l)
                 .padding(.bottom, DS.Spacing.xxl)
             }
             .scrollBounceBehavior(.basedOnSize)
+            #if DEBUG
+            // `-libraryScrollToBottom YES` opens scrolled to the library card, for screenshots.
+            .defaultScrollAnchor(UserDefaults.standard.bool(forKey: "libraryScrollToBottom") ? .bottom : .top)
+            #endif
             // The navigation bar is hidden, so paper fills the status bar's strip as the sections scroll under it.
             .safeAreaInset(edge: .top, spacing: 0) {
                 Color.clear.frame(height: 0).background(DS.Palette.paper)
@@ -107,75 +107,65 @@ struct LibraryView: View {
         let isLoading = snapshot == nil
         let cleared = max(vm.freedBytes, snapshot?.totalCleared ?? 0)
         return VStack(alignment: .leading, spacing: DS.Spacing.xl) {
-            HeroSection(snapshot: shown, isLoading: isLoading, clearedBytes: cleared)
-            OpportunitiesSection(snapshot: shown)
-                .redacted(reason: isLoading ? .placeholder : [])
-                .disabled(isLoading)
-            if cleared > 0, shown.cumulative.count > 1 {
-                ClearedChartSection(snapshot: shown)
-                    .redacted(reason: isLoading ? .placeholder : [])
-                    .disabled(isLoading)
-            }
-            Group {
-                if let timeline = shown.timeline, timeline.count > 1 {
-                    StorageTimelineSection(timeline: timeline, forecast: shown.forecast, isScanning: shown.scanPercent != nil)
-                }
-                if let composition = shown.composition, !composition.isEmpty {
-                    CompositionSection(slices: composition)
-                }
-                // Only once there's something to show; before the first cleanup the hero says what to do.
-                if cleared > 0, let activity = shown.activity {
-                    ActivitySection(activity: activity)
-                }
-                if let insights = shown.insights, insights.busiestMonth != nil {
-                    InsightsSection(insights: insights)
-                }
-            }
-            .redacted(reason: isLoading ? .placeholder : [])
-            .disabled(isLoading)
+            HeroSection(snapshot: shown, isLoading: isLoading, clearedBytes: cleared, isActive: isActive)
+            bin
+            LibraryCard(snapshot: shown, isLoading: isLoading)
         }
     }
 
-    private var pile: some View {
+    /// The pile as a bin, opening the pile screen, and under limited access the ways to show the app more.
+    private var bin: some View {
+        VStack(spacing: DS.Spacing.s) {
+            // Empty, there's nothing to open; a disabled link would also dim the card's text.
+            if vm.pendingItems.isEmpty {
+                binCard
+                    .accessibilityIdentifier("library.bin")
+            } else {
+                NavigationLink(value: Destination.pending) {
+                    binCard
+                }
+                .buttonStyle(.plain)
+                .accessibilityHint("Shows what's waiting to be cleared")
+                .accessibilityIdentifier("library.bin")
+            }
+            if vm.access == .limited {
+                limitedAccess
+            }
+        }
+    }
+
+    private var binCard: some View {
+        BinCard(
+            count: vm.pendingItems.count,
+            bytes: vm.pendingBytes,
+            limit: vm.pileLimitBytes.map { (counted: vm.pileCountedBytes, bytes: $0) }
+        )
+    }
+
+    private var limitedAccess: some View {
         VStack(spacing: 0) {
-            NavigationLink(value: Destination.pending) {
-                OverviewRow(
-                    icon: "trash",
-                    title: "Pending",
-                    value: "\(vm.pendingItems.count) to clear · \(Format.size(vm.pendingBytes))",
-                    isAccent: true,
-                    showsChevron: true
-                )
+            Button {
+                Task { await vm.addMorePhotos() }
+            } label: {
+                OverviewRow(icon: "plus.circle", title: "Add more photos", value: "", showsChevron: true)
             }
             .buttonStyle(.plain)
-            .accessibilityHint("Shows what's waiting to be cleared")
+            .accessibilityHint("Choose more photos for \(AppInfo.name) to look through")
             Divider()
                 .overlay(DS.Palette.line)
                 .padding(.leading, 52)
-            OverviewRow(icon: "clock", title: "Saved for later", value: "\(vm.laterCount)")
-            if vm.access == .limited {
-                Divider()
-                    .overlay(DS.Palette.line)
-                    .padding(.leading, 52)
-                Button {
-                    Task { await vm.addMorePhotos() }
-                } label: {
-                    OverviewRow(icon: "plus.circle", title: "Add more photos", value: "", showsChevron: true)
-                }
-                .buttonStyle(.plain)
-                .accessibilityHint("Choose more photos for \(AppInfo.name) to look through")
-                Divider()
-                    .overlay(DS.Palette.line)
-                    .padding(.leading, 52)
-                OpenSettingsButton {
-                    OverviewRow(icon: "lock", title: "Photo access", value: "Selected photos only")
-                }
-                .buttonStyle(.plain)
-                .accessibilityHint("Opens Settings")
+            OpenSettingsButton {
+                OverviewRow(icon: "lock", title: "Photo access", value: "Selected photos only")
             }
+            .buttonStyle(.plain)
+            .accessibilityHint("Opens Settings")
         }
-        .background(DS.Palette.card, in: RoundedRectangle(cornerRadius: DS.Radius.inner, style: .continuous))
-        .softShadow()
+        .background {
+            // On the shape, so the rows' text doesn't get a halo.
+            RoundedRectangle(cornerRadius: DS.Radius.inner, style: .continuous)
+                .fill(DS.Palette.card)
+                .softShadow()
+        }
     }
 
     private enum Destination: Hashable {
@@ -187,7 +177,6 @@ private struct OverviewRow: View {
     let icon: String
     let title: String
     let value: String
-    var isAccent = false
     var showsChevron = false
 
     @Environment(\.dynamicTypeSize) private var typeSize
@@ -196,7 +185,7 @@ private struct OverviewRow: View {
         HStack(spacing: DS.Spacing.m) {
             Image(systemName: icon)
                 .font(.body)
-                .foregroundStyle(isAccent ? DS.Palette.brick : DS.Palette.ink)
+                .foregroundStyle(DS.Palette.ink)
                 .frame(width: 24)
             // Title over value at accessibility sizes, so neither breaks mid-word.
             if typeSize.isAccessibilitySize {
@@ -229,8 +218,8 @@ private struct OverviewRow: View {
 
     private var valueText: some View {
         Text(value)
-            .font(.subheadline.weight(isAccent ? .semibold : .regular))
-            .foregroundStyle(isAccent ? DS.Palette.brick : DS.Palette.secondary)
+            .font(.subheadline)
+            .foregroundStyle(DS.Palette.secondary)
     }
 }
 

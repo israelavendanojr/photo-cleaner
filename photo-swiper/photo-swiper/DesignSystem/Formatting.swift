@@ -13,25 +13,9 @@ enum Format {
         return formatter.string(fromByteCount: bytes)
     }
 
-    /// "March 2024".
-    static func month(_ date: Date) -> String {
-        date.formatted(.dateTime.month(.wide).year())
-    }
-
-    /// "Mar", for a month over a chart column.
+    /// "Mar", for a month over the heatmap's columns.
     static func shortMonth(_ date: Date) -> String {
         date.formatted(.dateTime.month(.abbreviated))
-    }
-
-    /// "2024".
-    static func year(_ date: Date) -> String {
-        date.formatted(.dateTime.year())
-    }
-
-    /// How long until something runs out, for the storage forecast: "about 8 months", or "more than two
-    /// years" past that, since a guess further out isn't worth a number.
-    static func untilFull(days: Double) -> String {
-        days > 730 ? "more than two years" : roughDays(days)
     }
 
     /// "21%", for a 0...1 fraction.
@@ -39,18 +23,22 @@ enum Format {
         "\(Int((fraction * 100).rounded()))%"
     }
 
+    /// "+34.5%" or "−25.0%", for a change as a fraction, to one decimal.
+    static func signedPercent(_ fraction: Double) -> String {
+        let magnitude = abs(fraction).formatted(.percent.precision(.fractionLength(1)))
+        return fraction < 0 ? "−\(magnitude)" : "+\(magnitude)"
+    }
+
+    /// Space cleared this week against last: "+1.2 GB (+34.5%) vs last week", "−0.4 GB (−25.0%) vs last
+    /// week", or "+1.2 GB this week" when last week cleared nothing.
+    static func weeklyChange(_ change: DashboardSnapshot.WeeklyChange) -> String {
+        guard let percent = change.percent else { return "\(signedSize(change.delta)) this week" }
+        return "\(signedSize(change.delta)) (\(signedPercent(percent))) vs last week"
+    }
+
     /// "+1.2 GB" or "−340 MB", for a change.
     static func signedSize(_ bytes: Int64) -> String {
         bytes < 0 ? "−\(size(-bytes))" : "+\(size(bytes))"
-    }
-
-    /// "5 min ago", "yesterday", "just now" under a minute.
-    static func relative(_ date: Date, now: Date = .now) -> String {
-        guard now.timeIntervalSince(date) >= 60 else { return "just now" }
-        // Made per call: it isn't Sendable, and this runs about once a minute.
-        let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .short
-        return formatter.localizedString(for: date, relativeTo: now)
     }
 
     /// "Saturday, September 14".

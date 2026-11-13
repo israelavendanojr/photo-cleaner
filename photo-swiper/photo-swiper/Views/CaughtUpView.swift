@@ -16,7 +16,7 @@ struct CaughtUpView: View {
                 .dsSerif(34, relativeTo: .largeTitle)
                 .foregroundStyle(DS.Palette.ink)
                 .padding(.top, DS.Spacing.l)
-            Text(vm.feedFocus.map { "No more \($0.title.lowercased()) for now." } ?? "Nothing left to look at. Enjoy the space.")
+            Text(vm.feedFocus.map { "No more \($0.phrase) for now." } ?? "Nothing left to look at. Enjoy the space.")
                 .font(.callout)
                 .foregroundStyle(DS.Palette.secondary)
                 .padding(.top, DS.Spacing.xs)
@@ -35,7 +35,7 @@ struct CaughtUpView: View {
                 // Caught up on one kind only: the rest of the library is still there.
                 Button("Show everything") { vm.focusFeed(on: nil) }
                     .buttonStyle(.pill(.ghost))
-                    .accessibilityHint("Stops showing only \(focus.title.lowercased())")
+                    .accessibilityHint("Stops showing only \(focus.phrase)")
                     .accessibilityIdentifier("caughtUp.showEverything")
             }
         }

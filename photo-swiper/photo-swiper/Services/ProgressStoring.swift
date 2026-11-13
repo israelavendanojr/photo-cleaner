@@ -23,9 +23,16 @@ protocol ProgressStoring: AnyObject {
     func pile() -> [LibraryItem]
     /// Items a new page must not offer. See `StoredDecision.blocksNewSession(asOf:)`.
     func excludedFromNewSession(asOf now: Date) -> Set<LibraryItem.ID>
+    /// Items saved for later, whether or not their cooldown is over, for the dashboard's chip and the
+    /// feed focused on them.
+    func laterIDs() -> Set<LibraryItem.ID>
     /// Items decided keep or delete that are still in the library, each counted once.
     /// "Later" doesn't count, and neither do items settled as deleted or gone.
     func reviewedCount() -> Int
+    /// Items decided keep or delete since `since`, by the start of the day they were decided, for the
+    /// dashboard's heatmap. Read from the decisions themselves, so it needs no counter of its own: an item
+    /// decided again counts on its latest day, and an undone decision doesn't count. "Later" isn't a review.
+    func reviewsByDay(since: Date, calendar: Calendar) -> [Date: Int]
     /// Bytes of items this app actually deleted.
     func freedBytes() -> Int64
     /// The highest page number seen, or 0.
