@@ -16,28 +16,12 @@ enum MockHistory {
         }
         return entries
     }
-
-    /// When about ten weeks of made-up reviews happened: most days a few, some days many, some none.
-    static func reviews(now: Date, weeks: Int = 10) -> [Date] {
-        var rng = SeededGenerator(seed: 17)
-        var reviews: [Date] = []
-        for day in stride(from: weeks * 7, through: 1, by: -1) {
-            guard rng.unit() < 0.55, let at = Calendar.current.date(byAdding: .day, value: -day, to: now) else { continue }
-            reviews += Array(repeating: at, count: 1 + Int(rng.unit() * rng.unit() * 120))
-        }
-        return reviews
-    }
-
-    static func reviewsByDay(now: Date) -> [Date: Int] {
-        Dictionary(grouping: reviews(now: now)) { Calendar.current.startOfDay(for: $0) }.mapValues(\.count)
-    }
 }
 
 extension DashboardSnapshot {
     /// A populated dashboard for previews.
     static var preview: DashboardSnapshot {
-        DashboardStats.make(history: MockHistory.entries(now: .now), scan: MockFeedBuilder.scan,
-                            reviews: MockHistory.reviewsByDay(now: .now), now: .now)
+        DashboardStats.make(history: MockHistory.entries(now: .now), scan: MockFeedBuilder.scan, now: .now)
     }
 }
 #endif

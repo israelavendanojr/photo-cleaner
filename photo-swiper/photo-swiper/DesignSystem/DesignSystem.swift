@@ -53,6 +53,7 @@ enum DS {
         static let tab = Animation.spring(duration: 0.4, bounce: 0.22)
         /// The dashboard's space cleared counting up from zero, once per launch: how long it takes, in how
         /// many steps (each a `calm` numeric-text change), easing out so it slows as it lands.
+        /// The hero's progress bar fills alongside, in the same steps.
         static let countUpDuration: Duration = .milliseconds(900)
         static let countUpSteps = 16
     }
@@ -74,14 +75,10 @@ enum DS {
         static let iconDiameter: CGFloat = 52
     }
 
-    /// The dashboard's small chart: the review heatmap.
-    enum Chart {
-        /// Heatmap levels 1...4 as ink strengths (level 0 is `line`). Reviews aren't space cleared, so not brick.
-        static let heatOpacities: [Double] = [0.16, 0.36, 0.62, 1]
-        /// A heatmap cell at the default text size; scale it with `@ScaledMetric`.
-        static let heatCellSize: CGFloat = 14
-        static let heatCellGap: CGFloat = 3
-        static let heatCellRadius: CGFloat = 3
+    /// The dashboard hero's progress through the whole library: a thicker `ProgressLine` than the feed's,
+    /// since it's the card's one visual.
+    enum Progress {
+        static let heroHeight: CGFloat = 6
     }
 }
 

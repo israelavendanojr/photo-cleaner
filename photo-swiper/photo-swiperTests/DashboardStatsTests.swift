@@ -2,15 +2,8 @@ import Foundation
 import Testing
 @testable import photo_swiper
 
-/// The dashboard's numbers, from made-up history and features. Fixed time and calendar throughout.
+/// The dashboard's numbers, from made-up history and features. Fixed time throughout.
 struct DashboardStatsTests {
-    private static let calendar: Calendar = {
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(identifier: "UTC")!
-        calendar.firstWeekday = 2
-        return calendar
-    }()
-
     /// Wednesday 12 Nov 2025, noon UTC.
     private let now = Date(timeIntervalSince1970: 1_762_948_800)
     private let day: TimeInterval = 86_400
@@ -20,7 +13,7 @@ struct DashboardStatsTests {
     }
 
     private func make(_ history: [CleanupEntry], scan: LibraryScan? = nil) -> DashboardSnapshot {
-        DashboardStats.make(history: history, scan: scan, now: now, calendar: Self.calendar)
+        DashboardStats.make(history: history, scan: scan, now: now)
     }
 
     @Test func nothingClearedIsAllZero() {
@@ -106,80 +99,9 @@ struct DashboardStatsTests {
     }
 }
 
-/// The activity heatmap, and decoding older caches.
-struct DashboardInsightsTests {
-    private static let calendar: Calendar = {
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(identifier: "UTC")!
-        calendar.firstWeekday = 2
-        return calendar
-    }()
-
-    /// Wednesday 12 Nov 2025, noon UTC. This week starts Monday 10 Nov.
+/// Decoding older caches.
+struct DashboardCacheTests {
     private let now = Date(timeIntervalSince1970: 1_762_948_800)
-    private let day: TimeInterval = 86_400
-
-    /// `count` reviews on the day `daysAgo` days back.
-    private func reviewed(_ entries: [(daysAgo: Double, count: Int)]) -> [Date: Int] {
-        Dictionary(entries.map { (Self.calendar.startOfDay(for: now.addingTimeInterval(-$0.daysAgo * day)), $0.count) }, uniquingKeysWith: +)
-    }
-
-    private func make(reviews: [Date: Int] = [:]) -> DashboardSnapshot {
-        DashboardStats.make(history: [], scan: LibraryScan(), reviews: reviews, now: now, calendar: Self.calendar)
-    }
-
-    // MARK: Reviews
-
-    @Test func theHeatmapRunsSixteenWholeWeeksToToday() throws {
-        let activity = try #require(make().reviews)
-        #expect(activity.days.count == 15 * 7 + 3, "Fifteen whole weeks, then Monday to Wednesday")
-        #expect(Self.calendar.component(.weekday, from: try #require(activity.days.first).date) == 2)
-        #expect(activity.days.first?.date == DashboardStats.activityStart(now: now, calendar: Self.calendar))
-        #expect(activity.days.last?.date == Self.calendar.startOfDay(for: now))
-        #expect(activity.days.allSatisfy { $0.level == 0 })
-        #expect(activity.total == 0)
-    }
-
-    @Test func levelsAreQuartilesOfTheDaysWithReviews() throws {
-        let activity = try #require(make(reviews: reviewed([(1, 10), (2, 20), (3, 30), (4, 40)])).reviews)
-        let levels = Dictionary(activity.days.map { ($0.count, $0.level) }, uniquingKeysWith: { first, _ in first })
-        #expect(levels[10] == 1 && levels[20] == 2 && levels[30] == 3 && levels[40] == 4)
-        #expect(levels[0] == 0)
-        #expect(activity.activeDays == 4)
-        #expect(activity.total == 100)
-    }
-
-    @Test func reviewsBeforeTheFirstWeekArentShown() throws {
-        let activity = try #require(make(reviews: reviewed([(1, 5), (200, 50)])).reviews)
-        #expect(activity.total == 5)
-        #expect(activity.activeDays == 1)
-    }
-
-    @Test func aLoneReviewDayIsTheDarkestAndTiesShareALevel() throws {
-        let lone = try #require(make(reviews: reviewed([(1, 10)])).reviews)
-        #expect(lone.days.map(\.level).max() == 4)
-        let tied = try #require(make(reviews: reviewed([(1, 10), (2, 10), (3, 5)])).reviews)
-        let levels = Dictionary(tied.days.map { ($0.count, $0.level) }, uniquingKeysWith: { first, _ in first })
-        #expect(levels[10] == 4 && levels[5] == 2)
-    }
-
-    /// In Beirut, DST starts at midnight: the last Sunday of March begins at 01:00. Days after it still
-    /// line up with the store's days (`startOfDay`), with weeks starting on Sunday.
-    @Test func daysSurviveDSTStartingAtMidnight() throws {
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(identifier: "Asia/Beirut")!
-        calendar.firstWeekday = 1
-        let date = { (month: Int, day: Int) in calendar.date(from: DateComponents(year: 2025, month: month, day: day, hour: 12))! }
-        #expect(calendar.component(.hour, from: calendar.startOfDay(for: date(3, 30))) == 1, "Midnight doesn't exist that day")
-        let reviews = Dictionary(uniqueKeysWithValues: [date(3, 25), date(3, 30), date(4, 8)].map { (calendar.startOfDay(for: $0), 3) })
-
-        let activity = DashboardStats.activity(reviews, now: date(4, 9), calendar: calendar)
-        #expect(activity.activeDays == 3)
-        #expect(activity.days.filter { $0.count > 0 }.count == 3)
-        #expect(activity.days.allSatisfy { $0.date == calendar.startOfDay(for: $0.date) })
-    }
-
-    // MARK: Caches
 
     @Test func aSnapshotCachedBeforeTheseSectionsStillDecodes() throws {
         let older = DashboardSnapshot(totalCleared: 5, computedAt: now)
@@ -212,7 +134,7 @@ struct DashboardInsightsTests {
     }
 
     /// A snapshot cached by an earlier build of this dashboard, with the library card's chips, their thumbnails, the chip
-    /// picked first and the composition bar. It still decodes, with no rows until the next refresh.
+    /// picked first, the composition bar and the review heatmap. It still decodes, with no rows until the next refresh.
     @Test func aSnapshotCachedWithChipsStillDecodes() throws {
         let json = """
         {"totalCleared":8120000000,"clearedThisWeek":2820000000,"clearedLastWeek":60000000,"scanPercent":86,
@@ -224,7 +146,6 @@ struct DashboardInsightsTests {
         """
         let snapshot = try JSONDecoder().decode(DashboardSnapshot.self, from: Data(json.utf8))
         #expect(snapshot.totalCleared == 8_120_000_000)
-        #expect(snapshot.reviews?.total == 12)
         #expect(snapshot.rows == nil)
     }
 }

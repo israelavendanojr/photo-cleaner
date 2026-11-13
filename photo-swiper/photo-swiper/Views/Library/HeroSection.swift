@@ -1,11 +1,12 @@
 import SwiftUI
 
-/// The top of the dashboard, one card: total space cleared, with this week against last and how much of
-/// the library is reviewed under it, then photos reviewed by day. Before anything is cleared the number is an invitation
-/// to start instead.
+/// The top of the dashboard, one card: total space cleared, with this week against last, then how far
+/// through the whole library the user is, as a progress bar. Before anything is cleared the number is an
+/// invitation to start instead, and the bar sits under it as the goal.
 ///
-/// The first time the tab is seen each launch, the number counts up from zero and the change fades up
-/// under it once it lands. Later visits, and Reduce Motion, show it still.
+/// The first time the tab is seen each launch, the number counts up from zero while the bar fills from
+/// empty, and the change and the count under the bar fade up once they land. Later visits, and Reduce
+/// Motion, show it still.
 struct HeroSection: View {
     @Environment(FeedViewModel.self) private var vm
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -20,39 +21,48 @@ struct HeroSection: View {
 
     /// What the number shows while it counts up; nil shows `clearedBytes`.
     @State private var countingBytes: Int64?
+    /// What the bar shows while it fills; nil shows the share reviewed.
+    @State private var fillingFraction: Double?
     @State private var isChangeShown = true
 
     var body: some View {
         DashboardCard {
             if clearedBytes > 0 {
-                VStack(alignment: .leading, spacing: DS.Spacing.xxs) {
-                    cleared
-                    reviewed
-                        .opacity(isChangeShown && !isEntranceDue ? 1 : 0)
-                        .offset(y: isChangeShown && !isEntranceDue ? 0 : DS.Spacing.xs)
-                }
+                cleared
             } else {
                 firstCleanup
             }
         } content: {
-            // With nothing cleared there's no number to sit under, so it leads the content instead.
-            if clearedBytes == 0, vm.libraryReviewedCount > 0 {
+            if vm.stats.totalItems > 0 {
                 reviewed
-            }
-            if let reviews = snapshot.reviews, reviews.total > 0 {
-                ReviewHeatmap(activity: reviews)
-                    .redacted(reason: isLoading ? .placeholder : [])
                     .padding(.top, DS.Spacing.xs)
             }
         }
         .animation(reduceMotion ? nil : DS.Motion.calm, value: clearedBytes)
-        .task(id: isActive && !isLoading && clearedBytes > 0) { await playEntranceIfDue() }
+        .animation(reduceMotion ? nil : DS.Motion.calm, value: vm.libraryReviewedFraction)
+        .task(id: isActive && !isLoading && hasSomethingToShow) { await playEntranceIfDue() }
     }
 
-    /// The count-up hasn't played yet this launch, so the number waits at zero rather than flashing its total first.
+    /// The count-up hasn't played yet this launch, so the number and the bar wait at zero rather than
+    /// flashing their totals first.
     private var isEntranceDue: Bool {
         !vm.hasPlayedDashboardEntrance && !reduceMotion && !isLoading
     }
+
+    /// Something cleared or reviewed, so the entrance has a number or a bar to move.
+    private var hasSomethingToShow: Bool {
+        clearedBytes > 0 || vm.libraryReviewedCount > 0
+    }
+
+    private var isSettled: Bool { isChangeShown && !isEntranceDue }
+
+    /// The bar's part of the entrance hasn't played yet. Unlike the number it's live, not from the
+    /// snapshot, so it waits at empty while the snapshot loads too, rather than showing full and dropping.
+    private var isFillDue: Bool {
+        !vm.hasPlayedDashboardEntrance && !reduceMotion && hasSomethingToShow
+    }
+
+    private var isFillSettled: Bool { isChangeShown && !isFillDue }
 
     private var cleared: some View {
         let shown = countingBytes ?? (isEntranceDue ? 0 : clearedBytes)
@@ -73,8 +83,8 @@ struct HeroSection: View {
                     .foregroundStyle(change.isDown ? DS.Palette.ink : DS.Palette.brick)
                     .fixedSize(horizontal: false, vertical: true)
                     .redacted(reason: isLoading ? .placeholder : [])
-                    .opacity(isChangeShown && !isEntranceDue ? 1 : 0)
-                    .offset(y: isChangeShown && !isEntranceDue ? 0 : DS.Spacing.xs)
+                    .opacity(isSettled ? 1 : 0)
+                    .offset(y: isSettled ? 0 : DS.Spacing.xs)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -89,42 +99,68 @@ struct HeroSection: View {
         return "\(total), \(Format.weeklyChange(change))"
     }
 
-    /// Counts up from zero in `DS.Motion.countUpSteps` steps, easing out, then fades the change up.
-    /// Once per launch, only where it can be seen, and never under Reduce Motion.
+    /// Counts the number up from zero and fills the bar from empty together, in `DS.Motion.countUpSteps`
+    /// steps easing out, then fades the change and the count up. Once per launch, only where it can be
+    /// seen, and never under Reduce Motion.
     private func playEntranceIfDue() async {
-        guard isActive, !isLoading, clearedBytes > 0, !vm.hasPlayedDashboardEntrance else { return }
+        guard isActive, !isLoading, hasSomethingToShow, !vm.hasPlayedDashboardEntrance else { return }
         guard !reduceMotion else {
             vm.markDashboardEntrancePlayed()
             return
         }
-        let target = clearedBytes
+        let targetBytes = clearedBytes
+        let targetFraction = vm.libraryReviewedFraction
         let steps = DS.Motion.countUpSteps
-        // Set before the flag, in the same turn, so no frame shows the total between them.
+        // Set before the flag, in the same turn, so no frame shows the totals between them.
         countingBytes = 0
+        fillingFraction = 0
         isChangeShown = false
         vm.markDashboardEntrancePlayed()
         for step in 1...steps {
             try? await Task.sleep(for: DS.Motion.countUpDuration / steps)
-            // Leaving the tab mid-count lands the number at once.
+            // Leaving the tab mid-count lands them at once.
             guard !Task.isCancelled else { break }
             let progress = 1 - pow(1 - Double(step) / Double(steps), 3)
-            withAnimation(DS.Motion.calm) { countingBytes = Int64(Double(target) * progress) }
+            withAnimation(DS.Motion.calm) {
+                countingBytes = Int64(Double(targetBytes) * progress)
+                fillingFraction = targetFraction * progress
+            }
         }
-        withAnimation(DS.Motion.calm) { countingBytes = nil }
+        withAnimation(DS.Motion.calm) {
+            countingBytes = nil
+            fillingFraction = nil
+        }
         withAnimation(DS.Motion.gentle) { isChangeShown = true }
     }
 
-    /// How much of the library has been looked at, kept or not: a quiet line under the number, like the
-    /// week's change, since it's context for what was cleared rather than a second headline.
+    /// How far through the whole library the user is, kept or not: the card's one visual. The count
+    /// under the bar fades up with the week's change, once the bar has filled.
     private var reviewed: some View {
-        Text("\(Format.percent(vm.libraryReviewedFraction)) · \(Format.count(vm.libraryReviewedCount)) of \(Format.count(vm.stats.totalItems)) photos reviewed")
-            .font(.subheadline)
-            .monospacedDigit()
+        let fraction = fillingFraction ?? (isFillDue ? 0 : vm.libraryReviewedFraction)
+        return VStack(alignment: .leading, spacing: DS.Spacing.xs) {
+            HStack(alignment: .firstTextBaseline, spacing: DS.Spacing.xs) {
+                Text(Format.percent(fraction))
+                    .font(.title3.weight(.semibold))
+                    .monospacedDigit()
+                    .contentTransition(.numericText(value: fraction))
+                Text("reviewed")
+                    .font(.callout)
+            }
             .foregroundStyle(DS.Palette.ink)
-            .contentTransition(.numericText(value: vm.libraryReviewedFraction))
-            .fixedSize(horizontal: false, vertical: true)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .accessibilityIdentifier("library.reviewed")
+            ProgressLine(value: fraction, height: DS.Progress.heroHeight)
+            Text("\(Format.count(vm.libraryReviewedCount)) of \(Format.count(vm.stats.totalItems)) photos reviewed")
+                .font(.footnote)
+                .monospacedDigit()
+                .foregroundStyle(DS.Palette.ink)
+                .fixedSize(horizontal: false, vertical: true)
+                .opacity(isFillSettled ? 1 : 0)
+                .offset(y: isFillSettled ? 0 : DS.Spacing.xs)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        // One sentence from the live numbers, not the ones mid-entrance.
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(Format.percent(vm.libraryReviewedFraction)) · \(Format.count(vm.libraryReviewedCount)) of \(Format.count(vm.stats.totalItems)) photos reviewed")
+        .accessibilityIdentifier("library.reviewed")
     }
 
     /// Nothing cleared yet: say what this screen will show, and send them to the feed.

@@ -21,7 +21,6 @@ final class DashboardController {
     private let store: any ProgressStoring
     /// Where the snapshot is cached between launches. Nil keeps it in memory (tests, previews).
     private let cacheURL: URL?
-    private let calendar: Calendar
     private let now: () -> Date
     private var running: Task<Void, Never>?
     /// Each refresh asked for gets the next number; `completed` is the newest one whose numbers are in.
@@ -36,12 +35,10 @@ final class DashboardController {
         var removed: Set<LibraryItem.ID>
     }
 
-    init(builder: any FeedBuilding, store: any ProgressStoring, cacheURL: URL?,
-         calendar: Calendar = .current, now: @escaping () -> Date) {
+    init(builder: any FeedBuilding, store: any ProgressStoring, cacheURL: URL?, now: @escaping () -> Date) {
         self.builder = builder
         self.store = store
         self.cacheURL = cacheURL
-        self.calendar = calendar
         self.now = now
         snapshot = cacheURL.flatMap(Self.readCache)
     }
@@ -96,14 +93,13 @@ final class DashboardController {
     }
 
     private func compute(_ inputs: Inputs, target: Int) async {
-        // The history and the heatmap's days are small reads on the main actor; the scan and the sums aren't on it.
-        let now = now(), calendar = calendar
+        // The history is a small read on the main actor; the scan and the sums aren't on it.
+        let now = now()
         let history = store.cleanupHistory()
-        let reviews = store.reviewsByDay(since: DashboardStats.activityStart(now: now, calendar: calendar), calendar: calendar)
         let later = store.laterIDs()
         let scan = await builder.libraryScan(excluding: inputs.excluding, removed: inputs.removed, later: later)
         let next = await Task.detached(priority: .utility) {
-            DashboardStats.make(history: history, scan: scan, reviews: reviews, now: now, calendar: calendar)
+            DashboardStats.make(history: history, scan: scan, now: now)
         }.value
         guard target > clearedAt else { return }
         snapshot = next
