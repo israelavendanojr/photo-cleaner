@@ -13,11 +13,6 @@ enum Format {
         return formatter.string(fromByteCount: bytes)
     }
 
-    /// "Mar", for a month over the heatmap's columns.
-    static func shortMonth(_ date: Date) -> String {
-        date.formatted(.dateTime.month(.abbreviated))
-    }
-
     /// "21%", for a 0...1 fraction.
     static func percent(_ fraction: Double) -> String {
         "\(Int((fraction * 100).rounded()))%"

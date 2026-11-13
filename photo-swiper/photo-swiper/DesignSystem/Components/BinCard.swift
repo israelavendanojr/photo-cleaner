@@ -2,8 +2,8 @@ import SwiftUI
 
 /// The pile on the dashboard: a trash circle, like the feed's Delete, with how much is in it. With a free
 /// limit, a brick line shows how close it is to full. Brick throughout: it's what will be deleted. Empty,
-/// it says so quietly instead of disappearing. Wrap it in the link to the pile; it draws no chevron of its
-/// own when empty, since there's nothing to open.
+/// it looks the same with zeros and an empty line, so the card doesn't change shape as the pile fills. Wrap
+/// it in the link to the pile; it draws no chevron of its own when empty, since there's nothing to open.
 struct BinCard: View {
     let count: Int
     /// The pile's real size, as shown.
@@ -59,20 +59,13 @@ struct BinCard: View {
             Text("Bin")
                 .font(.headline)
                 .foregroundStyle(DS.Palette.ink)
-            if isEmpty {
-                Text("Empty. What you swipe away collects here.")
-                    .font(.callout)
-                    .foregroundStyle(DS.Palette.ink)
-                    .fixedSize(horizontal: false, vertical: true)
-            } else {
-                Text("\(Format.count(count)) to clear · \(Format.size(bytes))")
-                    .font(.subheadline.weight(.semibold))
-                    .monospacedDigit()
-                    .foregroundStyle(DS.Palette.brick)
-                    .contentTransition(.numericText(value: Double(bytes)))
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            if let limit, !isEmpty {
+            Text("\(Format.count(count)) to clear · \(Format.size(bytes))")
+                .font(.subheadline.weight(.semibold))
+                .monospacedDigit()
+                .foregroundStyle(DS.Palette.brick)
+                .contentTransition(.numericText(value: Double(bytes)))
+                .fixedSize(horizontal: false, vertical: true)
+            if let limit {
                 ProgressLine(value: fill, tint: DS.Palette.brick)
                     .animation(reduceMotion ? nil : DS.Motion.calm, value: fill)
                     .padding(.top, DS.Spacing.xxs)
@@ -87,7 +80,6 @@ struct BinCard: View {
     }
 
     private var accessibilityText: String {
-        guard !isEmpty else { return "Bin, empty" }
         var parts = ["Bin", "\(Format.count(count)) \(count == 1 ? "photo" : "photos") to clear", Format.size(bytes)]
         if let limit { parts.append(isFull ? "full" : "\(Format.percent(fill)) of \(Format.limit(limit.bytes))") }
         return parts.joined(separator: ", ")
