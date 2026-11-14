@@ -35,10 +35,10 @@ struct FeedView: View {
         }
     }
 
-    /// "Trim queued · saves ~335 MB · Undo", over the top of the deck after a trim from full screen.
+    /// "Edit queued · saves ~335 MB · Undo", over the top of the deck after an edit from full screen.
     @ViewBuilder private var trimToast: some View {
         if let toast = vm.trimToast {
-            Toast(text: "Trim queued · saves ~\(Format.size(toast.savedBytes))", actionTitle: "Undo") {
+            Toast(text: "Edit queued · saves ~\(Format.size(toast.savedBytes))", actionTitle: "Undo") {
                 withAnimation(DS.Motion.calm) { vm.undo() }
             }
             .padding(.horizontal, DS.Spacing.l)

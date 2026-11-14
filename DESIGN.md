@@ -139,7 +139,7 @@ All of these are in [`DesignSystem/Components/`](photo-swiper/photo-swiper/Desig
 | `PillTabBar` | The floating tab bar. Its selection animates with `DS.Motion.tab` and fires `Haptics.tabChange`. |
 | `ProgressLine` | A thin progress track. Ink by default, brick for amounts to clear. It reads its percentage to VoiceOver. The dashboard hero's is thicker, at `DS.Progress.heroHeight`. |
 | `ToClearCounter` | The brick serif running total, with a "+3.4 MB" chip that pops above it. Unlocked, it's the whole bin, edits included; with a free limit it's the deletes the limit counts. |
-| `Toast` | A short note in an ink `Capsule()` with an optional underlined action, announced to VoiceOver, e.g. the feed's "Trim queued · saves ~335 MB · Undo". The caller decides how long it stays. |
+| `Toast` | A short note in an ink `Capsule()` with an optional underlined action, announced to VoiceOver, e.g. the feed's "Edit queued · saves ~335 MB · Undo". The caller decides how long it stays. |
 | `UpsellLayout` / `UpsellCard` / `IncludedRow` | Every unlock surface (the wall and the sheets), so they read as one offer. |
 | `ConfettiView` | The celebration after freeing space. It never takes touches, announces `message`, and falls back to a note under Reduce Motion. |
 | `OpenSettingsButton` | Any link to the app's page in iOS Settings (permissions). |
@@ -149,15 +149,16 @@ All of these are in [`DesignSystem/Components/`](photo-swiper/photo-swiper/Desig
 
 Formatting goes through `Format` (`size`, `signedSize`, `percent`, `signedPercent`, `weeklyChange`, `day`, `shortDay`, `range`, `duration`, `countdown`, `roughDays`, `spelled`, `count`). `size` uses `ByteCountFormatter` in decimal units from MB up, as Photos and Settings do ("1.2 GB", "0.1 MB"), and reads "0 MB" for nothing. `signedPercent` has one decimal ("+34.5%", "−25.0%"); `weeklyChange` reads "+1.2 GB (+34.5%) vs last week", or "+1.2 GB this week" when last week cleared nothing.
 
-### The full-screen video and its trim strip
+### The full-screen video, its trim strip and compression
 
 `VideoPreviewView`, after Photos' video editor without its tool tabs or Cancel/Done. It's forced dark and sits on black, so fixed white and black are allowed here (see Color).
 
-- **Top bar:** round frosted (`.ultraThinMaterial`) 44pt buttons, Close and volume on the left, the size and short date in the middle, and on the right a hidden slot of the same size for compression (JUN-50), so adding it moves nothing.
+- **Top bar:** round frosted (`.ultraThinMaterial`) 44pt buttons, Close and volume on the left, the size and short date in the middle, and Compress (`arrow.down.right.and.arrow.up.left`) on the right. Compress turns brick once a level is set, like the strip once trimmed. Where it isn't offered (compression off, slow-motion, Cinematic) its slot stays empty, so nothing moves.
+- **`CompressionSheet`**, a medium sheet on `paper` (light, over the dark viewer), with the video still live above it: "Compress", a line on what it does, then None / Light / Balanced / Max as rows on `card` at `DS.Radius.tile` (a `checkmark.circle.fill` on the choice, the level's caption under its name: "Original quality", "Looks the same", none, "Fine on a phone"), each with "380 MB → ~120 MB" after the trim, and Apply as an ink pill. A level that saves under 10% is at 40% opacity and reads "Already small". Choosing a level previews it: "Preview · Balanced" as a frosted `Chip` where the 2x pill goes, with a small white spinner while it encodes, and "Original" while the video is held.
 - **Bottom bar:** one flat bar, as in Photos, with nothing around it: the play button on a frosted segment, a black hairline, then `TrimStrip` at the same height. Its outer corners are `DS.Trim.cornerRadius`. The play button sits above the strip, so the start handle's touch area never takes its taps.
 - **`TrimStrip`** (`DS.Trim`): stills across the clip at `stripHeight` (scaled), a white `playheadWidth` playhead, and chevron handles of `handleWidth` outside the stills, each reaching a 44pt touch area outward. Untrimmed, there's no frame: white chevrons sit on the same frosted ground as the play button, so the bar reads as one piece. Once a handle moves, the frame (`frameWidth`) and handles turn brick (space to clear), and what's cut is dimmed with black. With no handles (short clips, slow-motion, Cinematic, trimmer off) it's a plain seek bar.
-- **Trim summary**, above the panel once trimmed: "0:08 · 1.23 GB → 0:05 · ~752 MB" in footnote semibold, "saves ~476 MB" in subheadline bold under it, and while the handles differ from what's saved, Reset (frosted capsule) and Trim (brick capsule), both 44pt tall.
-- **Leaving** with unsaved handles uses a system `.confirmationDialog`: Save trim, Discard (destructive), Keep editing (cancel).
+- **Edit summary**, above the panel once trimmed or compressed: "0:08 · 1.23 GB → 0:05 · ~752 MB" in footnote semibold, "saves ~476 MB" (trim and compression together) in subheadline bold under it, and while the edit differs from what's saved, Reset (frosted capsule) and Save (brick capsule), both 44pt tall.
+- **Leaving** with an unsaved trim or level uses a system `.confirmationDialog`, "Save changes?": Save changes, Discard (destructive), Keep editing (cancel).
 
 ### The bin's edits and clearing
 

@@ -40,7 +40,7 @@ struct DeleteChip: Equatable {
     let bytes: Int64
 }
 
-/// "Trim queued · saves ~335 MB · Undo", shown for a few seconds after a trim from the feed.
+/// "Edit queued · saves ~335 MB · Undo", shown for a few seconds after an edit from the feed.
 struct TrimToast: Equatable {
     let id = UUID()
     let savedBytes: Int64

@@ -1558,7 +1558,7 @@ final class FeedViewModel {
         }
     }
 
-    /// Hides the "Trim queued" toast now.
+    /// Hides the "Edit queued" toast now.
     func dismissTrimToast() {
         trimToastTask?.cancel()
         trimToast = nil

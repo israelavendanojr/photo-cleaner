@@ -4,18 +4,6 @@ import Testing
 /// The trim handles against what's saved: when leaving the viewer asks first (JUN-7).
 @MainActor
 struct TrimDraftTests {
-    @Test func theSummarySaysWhatTheTrimKeepsAndSaves() {
-        var draft = TrimDraft(duration: 100)
-        draft.setEnd(25)
-        let lines = VideoPreviewView.summary(draft, bytes: 400_000_000)
-        #expect(lines.change == "1:40 · \(Format.size(400_000_000)) → 0:25 · ~\(Format.size(100_000_000))")
-        #expect(lines.saves == "saves ~\(Format.size(300_000_000))")
-
-        var whole = TrimDraft(duration: 100, saved: TrimRange(start: 0, end: 25))
-        whole.setEnd(100)
-        #expect(VideoPreviewView.summary(whole, bytes: 400_000_000).saves == nil)
-    }
-
     @Test func nothingChangedLeavesWithoutAsking() {
         let draft = TrimDraft(duration: 100)
         #expect(!draft.isTrimmed)

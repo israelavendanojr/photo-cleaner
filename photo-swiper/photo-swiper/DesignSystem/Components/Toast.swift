@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// A short note in an ink capsule, with an optional action, e.g. "Trim queued · saves ~335 MB · Undo".
+/// A short note in an ink capsule, with an optional action, e.g. "Edit queued · saves ~335 MB · Undo".
 /// It announces itself to VoiceOver when it appears. The caller decides how long it stays.
 struct Toast: View {
     let text: String
@@ -39,9 +39,9 @@ struct Toast: View {
 
 #Preview {
     VStack(spacing: DS.Spacing.m) {
-        Toast(text: "Trim queued · saves ~335 MB", actionTitle: "Undo")
+        Toast(text: "Edit queued · saves ~335 MB", actionTitle: "Undo")
         Toast(text: "Developer mode on")
-        Toast(text: "Trim queued · saves ~335 MB", actionTitle: "Undo")
+        Toast(text: "Edit queued · saves ~335 MB", actionTitle: "Undo")
             .dynamicTypeSize(.xxLarge)
     }
     .padding()
