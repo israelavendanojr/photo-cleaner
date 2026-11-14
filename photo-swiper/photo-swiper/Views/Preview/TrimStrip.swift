@@ -6,8 +6,8 @@ import SwiftUI
 /// Dragging the stills seeks, inside the selection once there is one, and resumes if it was playing.
 /// Dragging a handle shows the frame under it, and on release plays the selection from its start;
 /// the viewer loops it. The handles sit outside the stills, so a drag near either end of the stills
-/// still seeks. Before a handle moves there's no frame, only white chevrons on the bar's frosted ground;
-/// once trimmed the frame and handles turn brick and what's cut is dimmed. With `draft` nil there are no handles: a plain seek bar.
+/// still seeks. Before a handle moves the handles are white tabs with no frame between them; once
+/// trimmed the frame and handles turn brick and what's cut is dimmed. With `draft` nil there are no handles: a plain seek bar.
 struct TrimStrip: View {
     let playback: VideoPlayback
     @Binding var draft: TrimDraft?
@@ -20,9 +20,10 @@ struct TrimStrip: View {
     private let handleWidth = DS.Trim.handleWidth
     private var handles: CGFloat { draft == nil ? 0 : handleWidth }
     private var isTrimmed: Bool { draft?.isTrimmed ?? false }
-    /// The frame and handles: none until trimmed, so the handles sit on the bar's own frosted ground like
-    /// the play button; then brick, the color of space to clear.
-    private var accent: Color { isTrimmed ? DS.Palette.brick : .clear }
+    /// The frame around what's kept: none until trimmed, then brick, the color of space to clear.
+    private var frame: Color { isTrimmed ? DS.Palette.brick : .clear }
+    /// The handle tabs: white at rest, as in Photos, with no frame between them; brick once trimmed.
+    private var handleFill: Color { isTrimmed ? DS.Palette.brick : .white }
     private static let space = "trimStrip"
 
     var body: some View {
@@ -139,7 +140,7 @@ struct TrimStrip: View {
             UnevenRoundedRectangle(topLeadingRadius: leading, bottomLeadingRadius: leading,
                                    bottomTrailingRadius: DS.Trim.cornerRadius, topTrailingRadius: DS.Trim.cornerRadius,
                                    style: .continuous)
-                .strokeBorder(accent, lineWidth: DS.Trim.frameWidth)
+                .strokeBorder(frame, lineWidth: DS.Trim.frameWidth)
                 .frame(width: end - start + 2 * handleWidth, height: height)
                 .offset(x: start)
                 .allowsHitTesting(false)
@@ -160,9 +161,9 @@ struct TrimStrip: View {
     private func handle(_ edge: Edge, width: CGFloat) -> some View {
         Image(systemName: edge == .start ? "chevron.compact.left" : "chevron.compact.right")
             .font(.title3.weight(.bold))
-            .foregroundStyle(.white)
+            .foregroundStyle(isTrimmed ? .white : .black.opacity(0.7))
             .frame(width: handleWidth, height: height)
-            .background(accent, in: UnevenRoundedRectangle(
+            .background(handleFill, in: UnevenRoundedRectangle(
                 topLeadingRadius: edge == .start ? draft.map(leadingRadius) ?? 0 : 0,
                 bottomLeadingRadius: edge == .start ? draft.map(leadingRadius) ?? 0 : 0,
                 bottomTrailingRadius: edge == .end ? DS.Trim.cornerRadius : 0,
