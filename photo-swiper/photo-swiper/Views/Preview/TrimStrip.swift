@@ -6,8 +6,8 @@ import SwiftUI
 /// Dragging the stills seeks, inside the selection once there is one, and resumes if it was playing.
 /// Dragging a handle shows the frame under it, and on release plays the selection from its start;
 /// the viewer loops it. The handles sit outside the stills, so a drag near either end of the stills
-/// still seeks. Before a handle moves the frame is neutral; once trimmed it turns brick and what's cut
-/// is dimmed. With `draft` nil there are no handles: a plain seek bar.
+/// still seeks. Before a handle moves there's no frame, only white chevrons on the bar's frosted ground;
+/// once trimmed the frame and handles turn brick and what's cut is dimmed. With `draft` nil there are no handles: a plain seek bar.
 struct TrimStrip: View {
     let playback: VideoPlayback
     @Binding var draft: TrimDraft?
@@ -20,8 +20,9 @@ struct TrimStrip: View {
     private let handleWidth = DS.Trim.handleWidth
     private var handles: CGFloat { draft == nil ? 0 : handleWidth }
     private var isTrimmed: Bool { draft?.isTrimmed ?? false }
-    /// The frame and handles: neutral like Photos' until trimmed, then brick, the color of space to clear.
-    private var accent: Color { isTrimmed ? DS.Palette.brick : .white.opacity(0.85) }
+    /// The frame and handles: none until trimmed, so the handles sit on the bar's own frosted ground like
+    /// the play button; then brick, the color of space to clear.
+    private var accent: Color { isTrimmed ? DS.Palette.brick : .clear }
     private static let space = "trimStrip"
 
     var body: some View {
@@ -159,7 +160,7 @@ struct TrimStrip: View {
     private func handle(_ edge: Edge, width: CGFloat) -> some View {
         Image(systemName: edge == .start ? "chevron.compact.left" : "chevron.compact.right")
             .font(.title3.weight(.bold))
-            .foregroundStyle(isTrimmed ? .white : .black.opacity(0.7))
+            .foregroundStyle(.white)
             .frame(width: handleWidth, height: height)
             .background(accent, in: UnevenRoundedRectangle(
                 topLeadingRadius: edge == .start ? draft.map(leadingRadius) ?? 0 : 0,

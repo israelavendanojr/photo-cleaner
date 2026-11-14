@@ -15,6 +15,7 @@ final class VideoTrimUITests: XCTestCase {
         let scrubber = openVideo(app)
         XCTAssertTrue(trimStart(app).waitForExistence(timeout: 5), "The mock clip is long enough to trim")
         XCTAssertFalse(summary(app).exists, "No summary before a handle moves")
+        attachScreenshot(app, "untouched")
 
         tapCenter(onScreen(app, "Close"))
         XCTAssertTrue(scrubber.waitForNonExistence(timeout: 3), "Closes at once")
