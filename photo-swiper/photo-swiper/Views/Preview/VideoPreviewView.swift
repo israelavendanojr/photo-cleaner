@@ -245,28 +245,31 @@ struct VideoPreviewView: View {
                 trimSummary(draft)
                     .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
             }
-            HStack(spacing: DS.Spacing.xs) {
+            // One flat bar, as in Photos: the play button and the strip at the same height, side by side.
+            HStack(spacing: 0) {
                 Button(action: playback.togglePlay) {
                     Image(systemName: playback.isPlaying ? "pause.fill" : "play.fill")
                         .font(.title2)
                         .foregroundStyle(.white)
                         .contentTransition(.symbolEffect(.replace))
-                        .frame(minWidth: DS.Tap.minimum, maxHeight: .infinity)
+                        .frame(minWidth: DS.Tap.minimum + DS.Spacing.xs, maxHeight: .infinity)
+                        .background(.ultraThinMaterial, in: UnevenRoundedRectangle(
+                            topLeadingRadius: DS.Trim.cornerRadius, bottomLeadingRadius: DS.Trim.cornerRadius, style: .continuous
+                        ))
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(PressScaleStyle())
                 .disabled(!playback.isReady)
                 .accessibilityLabel(playback.isPlaying ? "Pause" : "Play")
+                // Above the strip, so the start handle's touch area, which reaches outward, never takes its taps.
+                .zIndex(1)
                 Rectangle()
-                    .fill(.white.opacity(0.25))
+                    .fill(.black)
                     .frame(width: 1)
                     .accessibilityHidden(true)
                 TrimStrip(playback: playback, draft: $draft)
-                    .padding(.leading, DS.Spacing.xs)
             }
             .fixedSize(horizontal: false, vertical: true)
-            .padding(DS.Spacing.xs)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: DS.Radius.tile, style: .continuous))
         }
         .animation(reduceMotion ? nil : DS.Motion.calm, value: draft?.isTrimmed)
         .animation(reduceMotion ? nil : DS.Motion.calm, value: hasUnsavedTrim)

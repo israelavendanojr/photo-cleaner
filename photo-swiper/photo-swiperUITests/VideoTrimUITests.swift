@@ -64,8 +64,10 @@ final class VideoTrimUITests: XCTestCase {
         XCTAssertTrue(waitForTopCard(app, not: position), "The video counts as kept and the feed moves on")
         attachScreenshot(app, "queued")
 
-        tapCenter(onScreen(app, "Undo"))
+        // The toast hides itself after a few seconds; its Undo is at its trailing end.
+        toast.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
         XCTAssertTrue(waitForTopCard(app, is: position), "Undo brings the video back")
+        XCTAssertTrue(toast.waitForNonExistence(timeout: 2), "and the toast goes")
     }
 
     // MARK: Helpers

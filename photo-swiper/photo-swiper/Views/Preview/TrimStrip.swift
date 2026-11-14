@@ -28,6 +28,12 @@ struct TrimStrip: View {
         GeometryReader { proxy in
             let width = max(proxy.size.width - 2 * handles, 1)
             ZStack(alignment: .leading) {
+                // The same frosted ground as the play button, so the bar reads as one piece, and the
+                // handle slots a moved handle leaves aren't see-through.
+                UnevenRoundedRectangle(bottomTrailingRadius: DS.Trim.cornerRadius, topTrailingRadius: DS.Trim.cornerRadius,
+                                       style: .continuous)
+                    .fill(.ultraThinMaterial)
+                    .frame(height: height)
                 stills(width: width)
                     .offset(x: handles)
                 if let draft {
@@ -38,6 +44,9 @@ struct TrimStrip: View {
                     .offset(x: handles + x(playback.currentTime, in: width) - DS.Trim.playheadWidth / 2)
                     .allowsHitTesting(false)
             }
+            // Pinned to the strip's height, so the taller playhead overhangs evenly instead of pushing
+            // the stills down out of line with the play button.
+            .frame(width: proxy.size.width, height: height, alignment: .leading)
             .coordinateSpace(.named(Self.space))
         }
         .frame(height: height)
@@ -62,7 +71,12 @@ struct TrimStrip: View {
             }
         }
         .frame(width: width, height: height)
-        .clipShape(RoundedRectangle(cornerRadius: draft == nil ? DS.Radius.thumb / 2 : 0, style: .continuous))
+        // With no handles, the stills end the bar, so they take its rounded trailing corners.
+        .clipShape(UnevenRoundedRectangle(
+            bottomTrailingRadius: draft == nil ? DS.Trim.cornerRadius : 0,
+            topTrailingRadius: draft == nil ? DS.Trim.cornerRadius : 0,
+            style: .continuous
+        ))
         .contentShape(Rectangle())
         .gesture(seekGesture(width: width))
         .accessibilityElement()
@@ -114,12 +128,16 @@ struct TrimStrip: View {
         .allowsHitTesting(false)
     }
 
-    /// The frame around what's kept, with its two handles.
+    /// The frame around what's kept, with its two handles. At the very start it meets the play button
+    /// square, as in Photos; anywhere else its corners are rounded.
     private func selection(_ draft: TrimDraft, width: CGFloat) -> some View {
         let start = x(draft.range.start, in: width)
         let end = x(draft.range.end, in: width)
+        let leading = leadingRadius(draft)
         return ZStack(alignment: .leading) {
-            RoundedRectangle(cornerRadius: DS.Radius.thumb / 2, style: .continuous)
+            UnevenRoundedRectangle(topLeadingRadius: leading, bottomLeadingRadius: leading,
+                                   bottomTrailingRadius: DS.Trim.cornerRadius, topTrailingRadius: DS.Trim.cornerRadius,
+                                   style: .continuous)
                 .strokeBorder(accent, lineWidth: DS.Trim.frameWidth)
                 .frame(width: end - start + 2 * handleWidth, height: height)
                 .offset(x: start)
@@ -133,16 +151,21 @@ struct TrimStrip: View {
 
     private enum Edge { case start, end }
 
+    /// Square while the start handle is against the play button, rounded once it moves in.
+    private func leadingRadius(_ draft: TrimDraft) -> CGFloat {
+        draft.range.start <= TrimDraft.tolerance ? 0 : DS.Trim.cornerRadius
+    }
+
     private func handle(_ edge: Edge, width: CGFloat) -> some View {
         Image(systemName: edge == .start ? "chevron.compact.left" : "chevron.compact.right")
             .font(.title3.weight(.bold))
             .foregroundStyle(isTrimmed ? .white : .black.opacity(0.7))
             .frame(width: handleWidth, height: height)
             .background(accent, in: UnevenRoundedRectangle(
-                topLeadingRadius: edge == .start ? DS.Radius.thumb / 2 : 0,
-                bottomLeadingRadius: edge == .start ? DS.Radius.thumb / 2 : 0,
-                bottomTrailingRadius: edge == .end ? DS.Radius.thumb / 2 : 0,
-                topTrailingRadius: edge == .end ? DS.Radius.thumb / 2 : 0,
+                topLeadingRadius: edge == .start ? draft.map(leadingRadius) ?? 0 : 0,
+                bottomLeadingRadius: edge == .start ? draft.map(leadingRadius) ?? 0 : 0,
+                bottomTrailingRadius: edge == .end ? DS.Trim.cornerRadius : 0,
+                topTrailingRadius: edge == .end ? DS.Trim.cornerRadius : 0,
                 style: .continuous
             ))
             // Reaches outward to a full tap target, never over the stills it bounds.
