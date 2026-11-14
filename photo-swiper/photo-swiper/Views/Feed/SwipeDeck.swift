@@ -47,6 +47,7 @@ struct SwipeDeck: View {
     /// the preview closes, if it still holds that item.
     @State private var previewDecision: (direction: SwipeDirection, itemID: LibraryItem.ID, trim: PendingTrim?)?
     /// A trim from full screen waiting for its card to fly off, by card. It's handed to `onTrim` instead of a keep.
+    /// A refused swipe drops it, so it can't ride along on a later plain keep of the same card.
     @State private var queuedTrim: (trim: PendingTrim, cardID: FeedCard.ID)?
     /// What was pre-cached before this deck appeared, handed back when it goes (a nested deck).
     @State private var outerPreheat: [String: CGSize]?
@@ -80,7 +81,7 @@ struct SwipeDeck: View {
                         onSwipe: { finish($0, card: card) },
                         nudges: isTop && showsHint,
                         canCommit: { !isTop || canSwipe($0, card) },
-                        onRefused: { onRefused($0, card) }
+                        onRefused: { queuedTrim = nil; onRefused($0, card) }
                     ) {
                         CardContentView(
                             card: card,
@@ -185,7 +186,7 @@ struct SwipeDeck: View {
         guard let decision = previewDecision else { return }
         previewDecision = nil
         guard let card = currentCard, card.items.contains(where: { $0.id == decision.itemID }) else { return }
-        if let trim = decision.trim { queuedTrim = (trim, card.id) }
+        queuedTrim = decision.trim.map { ($0, card.id) }
         request = decision.direction
     }
 

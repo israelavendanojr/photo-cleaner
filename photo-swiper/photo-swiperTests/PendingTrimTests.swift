@@ -131,6 +131,63 @@ struct PendingTrimTests {
         #expect(vm.pendingTrims.isEmpty)
     }
 
+    @Test func trimmingWithNoSwipesLeftDoesNothing() async throws {
+        // Find how many keeps reach the video, then start a free user with exactly that many swipes.
+        let probe = await started()
+        _ = try moveToVideo(probe)
+        let tunables = SwipeAllowance.Tunables(cap: 1_000)
+        let vm = FeedViewModel(library: FakeLibrary(), builder: MockFeedBuilder(), store: InMemoryProgressStore(),
+                               entitlements: TestEntitlements(isUnlocked: false), defaults: freshDefaults(),
+                               allowanceStore: SwipeAllowanceStore(initial: SwipeAllowance(balance: probe.index, tunables: tunables, now: now)),
+                               freeTier: .fixed(FreeTierLimits(allowance: tunables, freeBinBytes: 1_000_000_000)), now: { [now] in now })
+        await vm.start()
+        let item = try moveToVideo(vm)
+        #expect(vm.swipesLeft == 0)
+        let index = vm.index
+
+        vm.decideTrim(quarter, cardID: try #require(vm.currentCard?.id))
+
+        #expect(vm.index == index)
+        #expect(vm.decisions[item.id] == nil)
+        #expect(vm.pendingTrims.isEmpty)
+        #expect(vm.trimToast == nil)
+    }
+
+    @Test func trimmingACardThatIsntAVideoDoesNothing() async throws {
+        let vm = await started()
+        let card = try #require(vm.currentCard)
+        if case .video = card { Issue.record("The mock deck starts on a photo"); return }
+
+        vm.decideTrim(quarter, cardID: card.id)
+
+        #expect(vm.index == 0)
+        #expect(vm.pendingTrims.isEmpty)
+        #expect(vm.trimToast == nil)
+    }
+
+    /// Clearing the bin deletes only the deletions; a trimmed video is never handed to the library's delete.
+    @Test func clearingTheBinLeavesTrimsAlone() async throws {
+        let library = FakeLibrary()
+        var deleted: [LibraryItem.ID] = []
+        library.onDelete = { items in
+            deleted = items.map(\.id)
+            return DeletionOutcome(deleted: deleted)
+        }
+        let vm = FeedViewModel(library: library, builder: MockFeedBuilder(), store: InMemoryProgressStore(),
+                               entitlements: TestEntitlements(), defaults: freshDefaults(), now: { [now] in now })
+        await vm.start()
+        let video = try moveToVideo(vm)
+        vm.decideTrim(quarter, cardID: try #require(vm.currentCard?.id))
+        vm.decideCurrent(.left)
+        let binned = vm.pendingItems.map(\.id)
+        #expect(binned.count == 1 && !binned.contains(video.id))
+
+        await vm.deleteNow(vm.pendingItems)
+
+        #expect(deleted == binned)
+        #expect(vm.pendingTrims.map(\.id) == [video.id], "The trim waits for the confirm that makes its copy")
+    }
+
     @Test func undoTakesTheTrimBack() async throws {
         let vm = await started()
         let item = try moveToVideo(vm)
