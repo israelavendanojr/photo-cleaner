@@ -21,8 +21,8 @@ protocol ProgressStoring: AnyObject {
 
     /// Decided delete, not yet settled, oldest decision first.
     func pile() -> [LibraryItem]
-    /// Kept videos waiting to be trimmed, not yet settled, oldest decision first.
-    func pendingTrims() -> [TrimmedItem]
+    /// Kept videos waiting to be trimmed or compressed, not yet settled, oldest decision first.
+    func pendingEdits() -> [EditedItem]
     /// Items a new page must not offer. See `StoredDecision.blocksNewSession(asOf:)`.
     func excludedFromNewSession(asOf now: Date) -> Set<LibraryItem.ID>
     /// Items saved for later, whether or not their cooldown is over, for the dashboard's chip and the
@@ -84,9 +84,9 @@ struct StoredDecision: Equatable, Sendable {
     var settlement: Settlement?
     /// What the item was decided as, from its card. Nil in decisions saved before categories existed.
     var category: CleanupCategory?
-    /// A video kept on the way to being trimmed. Only a keep carries one: any other decision drops it,
-    /// so a video binned after it was trimmed is deleted, not trimmed.
-    var trim: PendingTrim?
+    /// A video kept on the way to being trimmed or compressed. Only a keep carries one: any other decision
+    /// drops it, so a video binned after it was edited is deleted, not edited.
+    var edit: PendingEdit?
 
     /// Keep and delete are final; "later" sits out for `laterCooldown`.
     func blocksNewSession(asOf now: Date) -> Bool {
@@ -94,8 +94,14 @@ struct StoredDecision: Equatable, Sendable {
     }
 
     var isPending: Bool { decision == .delete && settlement == nil }
-    /// In the bin's Trims section.
-    var isPendingTrim: Bool { decision == .keep && trim != nil && settlement == nil }
+    /// In the bin's Edits section.
+    var isPendingEdit: Bool { savedEdit != nil && settlement == nil }
+    /// The edit as the stores save it: only a keep carries one, and one with neither a trim nor a
+    /// compression level is no edit at all.
+    var savedEdit: PendingEdit? {
+        guard decision == .keep, let edit, !edit.isEmpty else { return nil }
+        return edit
+    }
     /// Not deleted by this app or gone some other way. Undeletable items are still there.
     var isInLibrary: Bool { settlement != .deleted && settlement != .gone }
 }

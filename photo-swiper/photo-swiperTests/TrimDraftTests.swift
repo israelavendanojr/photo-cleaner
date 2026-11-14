@@ -28,7 +28,7 @@ struct TrimDraftTests {
         start.setStart(10)
         #expect(start.isTrimmed)
         #expect(start.hasUnsavedChanges)
-        #expect(start.result == PendingTrim(range: TrimRange(start: 10, end: 100), originalDuration: 100))
+        #expect(start.result == PendingEdit(range: TrimRange(start: 10, end: 100), originalDuration: 100))
 
         var end = TrimDraft(duration: 100)
         end.setEnd(60)
@@ -42,14 +42,14 @@ struct TrimDraftTests {
         #expect(!draft.hasUnsavedChanges)
     }
 
-    @Test func aPendingTrimOpensWithItsHandlesAndNoChanges() {
+    @Test func aPendingEditOpensWithItsHandlesAndNoChanges() {
         let draft = TrimDraft(duration: 100, saved: TrimRange(start: 20, end: 50))
         #expect(draft.range == TrimRange(start: 20, end: 50))
         #expect(draft.isTrimmed)
         #expect(!draft.hasUnsavedChanges)
     }
 
-    @Test func draggingAPendingTrimBackToFullLengthIsAChangeThatRemovesIt() {
+    @Test func draggingAPendingEditBackToFullLengthIsAChangeThatRemovesIt() {
         var draft = TrimDraft(duration: 100, saved: TrimRange(start: 20, end: 50))
         draft.setStart(0)
         draft.setEnd(100)

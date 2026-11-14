@@ -2,8 +2,9 @@ import SwiftUI
 
 /// Everything waiting to be cleared, all marked to delete. Tap the ones worth saving to unmark
 /// them, then Keep sends those back to the library and Delete clears the marked ones now.
-/// After a delete it says how much was freed, then closes. Videos waiting to be trimmed are listed
-/// under Trims, with the space each saves; swiping one away cancels the trim and keeps the video whole.
+/// After a delete it says how much was freed, then closes. Videos waiting to be trimmed or compressed are
+/// listed under Edits, with the space each saves; swiping one away cancels the edit and keeps the video
+/// as it is.
 ///
 /// Opens as a sheet from the feed's "to clear" counter, or pushed from the overview's Pending row.
 /// Admin Tools' mock items can be in the pile too; deleting them only drops them, and never reaches the
@@ -60,8 +61,8 @@ struct PendingPileView: View {
                         .foregroundStyle(DS.Palette.secondary)
                         .padding(.top, DS.Spacing.l)
                 }
-                if !vm.pendingTrims.isEmpty {
-                    trims
+                if !vm.pendingEdits.isEmpty {
+                    edits
                 }
             }
             .padding(.horizontal, DS.Spacing.l)
@@ -186,27 +187,27 @@ struct PendingPileView: View {
         }
     }
 
-    /// "to clear from 12 photos and 2 trims"
+    /// "to clear from 12 photos and 2 edits"
     private var summary: String {
         var parts: [String] = []
-        if count > 0 || vm.pendingTrims.isEmpty { parts.append("\(count) \(count == 1 ? "photo" : "photos")") }
-        let trimCount = vm.pendingTrims.count
-        if trimCount > 0 { parts.append("\(trimCount) \(trimCount == 1 ? "trim" : "trims")") }
+        if count > 0 || vm.pendingEdits.isEmpty { parts.append("\(count) \(count == 1 ? "photo" : "photos")") }
+        let editCount = vm.pendingEdits.count
+        if editCount > 0 { parts.append("\(editCount) \(editCount == 1 ? "edit" : "edits")") }
         return "to clear from " + parts.joined(separator: " and ")
     }
 
-    /// Videos waiting to be trimmed. Swiping one away cancels it.
-    private var trims: some View {
+    /// Videos waiting to be trimmed or compressed. Swiping one away cancels its edit.
+    private var edits: some View {
         VStack(alignment: .leading, spacing: DS.Spacing.s) {
-            Text("Trims")
+            Text("Edits")
                 .font(.headline)
                 .foregroundStyle(DS.Palette.ink)
                 .accessibilityAddTraits(.isHeader)
-            ForEach(vm.pendingTrims) { trimmed in
-                TrimRow(trimmed: trimmed) { cancelTrim(trimmed) }
+            ForEach(vm.pendingEdits) { edited in
+                EditRow(edited: edited) { cancelEdit(edited) }
                     .transition(reduceMotion ? .opacity : .move(edge: .leading).combined(with: .opacity))
             }
-            Text("Each video is replaced by its trimmed copy when you clear the bin. Swipe one away to keep it whole.")
+            Text("Each video is replaced by its edited copy when you clear the bin. Swipe one away to keep it as it is.")
                 .font(.footnote)
                 .foregroundStyle(DS.Palette.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -214,9 +215,9 @@ struct PendingPileView: View {
         .padding(.top, DS.Spacing.xl)
     }
 
-    private func cancelTrim(_ trimmed: TrimmedItem) {
-        withAnimation(DS.Motion.calm) { vm.setTrim(nil, for: trimmed.item) }
-        AccessibilityNotification.Announcement("Trim cancelled. The video stays whole.").post()
+    private func cancelEdit(_ edited: EditedItem) {
+        withAnimation(DS.Motion.calm) { vm.setEdit(nil, for: edited.item) }
+        AccessibilityNotification.Announcement("Edit cancelled. The video stays as it is.").post()
     }
 
     private var hasDeleteNotice: Binding<Bool> {
@@ -315,10 +316,11 @@ private struct FreedConfirmation: View {
     }
 }
 
-/// A video waiting to be trimmed: its thumbnail, the length it's trimmed to, and the space that saves.
-/// Swiping it left past a threshold cancels the trim; VoiceOver and the context menu offer the same.
-private struct TrimRow: View {
-    let trimmed: TrimmedItem
+/// A video waiting to be edited: its thumbnail, what's done to it (trimmed, compressed or both), its new
+/// length and size, and the space that saves. Swiping it left past a threshold cancels the edit; VoiceOver
+/// and the context menu offer the same.
+private struct EditRow: View {
+    let edited: EditedItem
     let onCancel: () -> Void
 
     @State private var offset: CGFloat = 0
@@ -328,19 +330,23 @@ private struct TrimRow: View {
     /// How far left a swipe has to go to cancel.
     private let threshold: CGFloat = 96
 
+    private var edit: PendingEdit { edited.edit }
+
     var body: some View {
         HStack(spacing: DS.Spacing.s) {
             Color.clear
                 .frame(width: thumbSize, height: thumbSize)
-                .overlay { ItemImage(trimmed.item.image) }
+                .overlay { ItemImage(edited.item.image) }
                 .clipShape(RoundedRectangle(cornerRadius: DS.Radius.thumb, style: .continuous))
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: DS.Spacing.xxs) {
-                Text("\(Format.duration(trimmed.trim.originalDuration)) → \(Format.duration(trimmed.trim.range.length))")
+                marks
+                Text(change)
                     .font(.subheadline.weight(.semibold))
                     .monospacedDigit()
                     .foregroundStyle(DS.Palette.ink)
-                Text("saves ~\(Format.size(trimmed.savedBytes))")
+                    .fixedSize(horizontal: false, vertical: true)
+                Text("saves ~\(Format.size(edited.savedBytes))")
                     .font(.footnote.weight(.semibold))
                     .monospacedDigit()
                     .foregroundStyle(DS.Palette.brick)
@@ -372,16 +378,45 @@ private struct TrimRow: View {
                 }
         )
         .contextMenu {
-            Button("Cancel trim", systemImage: "xmark", action: onCancel)
+            Button("Cancel edit", systemImage: "xmark", action: onCancel)
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityText)
-        .accessibilityAction(named: "Cancel trim", onCancel)
-        .accessibilityIdentifier("pile.trimRow")
+        .accessibilityAction(named: "Cancel edit", onCancel)
+        .accessibilityIdentifier("pile.editRow")
+    }
+
+    /// "Trimmed · Compressed · Balanced", each with its symbol.
+    private var marks: some View {
+        HStack(spacing: DS.Spacing.s) {
+            if edit.isTrimmed {
+                Label("Trimmed", systemImage: "scissors")
+            }
+            if let level = edit.compression {
+                Label("Compressed · \(level.title)", systemImage: "arrow.down.right.and.arrow.up.left")
+            }
+        }
+        .labelStyle(.titleAndIcon)
+        .font(.caption.weight(.semibold))
+        .foregroundStyle(DS.Palette.ink)
+        .accessibilityIdentifier("pile.editMarks")
+    }
+
+    /// "1:42 → 0:12 · 380 MB → ~45 MB", or "1:42 · 380 MB → ~120 MB" when the length doesn't change.
+    private var change: String {
+        let length = edit.isTrimmed
+            ? "\(Format.duration(edit.originalDuration)) → \(Format.duration(edit.newDuration))"
+            : Format.duration(edit.originalDuration)
+        return "\(length) · \(Format.size(edited.item.bytes)) → ~\(Format.size(edited.newBytes))"
     }
 
     private var accessibilityText: String {
-        "Video trimmed from \(Format.duration(trimmed.trim.originalDuration)) to \(Format.duration(trimmed.trim.range.length)), saves about \(Format.size(trimmed.savedBytes))"
+        var what: [String] = []
+        if edit.isTrimmed {
+            what.append("trimmed from \(Format.duration(edit.originalDuration)) to \(Format.duration(edit.newDuration))")
+        }
+        if let level = edit.compression { what.append("compressed, \(level.title)") }
+        return "Video \(what.joined(separator: " and ")), \(Format.size(edited.item.bytes)) to about \(Format.size(edited.newBytes)), saves about \(Format.size(edited.savedBytes))"
     }
 }
 

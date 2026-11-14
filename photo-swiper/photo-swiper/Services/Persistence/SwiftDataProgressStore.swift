@@ -118,8 +118,8 @@ final class SwiftDataProgressStore: ProgressStoring {
             record.bytes = change.item.bytes
             record.itemData = itemData
             record.categoryRaw = change.category?.rawValue
-            // Only a keep carries a trim (`StoredDecision.trim`).
-            record.trimData = change.decision == .keep ? change.trim.flatMap { try? encoder.encode($0) } : nil
+            // Only a keep carries an edit, and an empty one is dropped (`StoredDecision.savedEdit`).
+            record.trimData = change.savedEdit.flatMap { try? encoder.encode($0) }
             if record.settlementRaw != change.settlement?.rawValue {
                 record.settlementRaw = change.settlement?.rawValue
                 record.settledAt = change.settlement == nil ? nil : .now
@@ -171,7 +171,7 @@ final class SwiftDataProgressStore: ProgressStoring {
         return fetch(descriptor).compactMap { try? decoder.decode(LibraryItem.self, from: $0.itemData) }
     }
 
-    func pendingTrims() -> [TrimmedItem] {
+    func pendingEdits() -> [EditedItem] {
         let keep = Decision.keep.rawValue
         let descriptor = FetchDescriptor<ItemProgress>(
             predicate: #Predicate { $0.decisionRaw == keep && $0.trimData != nil && $0.settlementRaw == nil },
@@ -179,9 +179,9 @@ final class SwiftDataProgressStore: ProgressStoring {
         )
         return fetch(descriptor).compactMap { record in
             guard let data = record.trimData,
-                  let trim = try? decoder.decode(PendingTrim.self, from: data),
+                  let edit = try? decoder.decode(PendingEdit.self, from: data),
                   let item = try? decoder.decode(LibraryItem.self, from: record.itemData) else { return nil }
-            return TrimmedItem(item: item, trim: trim)
+            return EditedItem(item: item, edit: edit)
         }
     }
 
@@ -387,7 +387,7 @@ final class SwiftDataProgressStore: ProgressStoring {
             decision: decision, decidedAt: record.decidedAt, sessionNumber: record.sessionNumber,
             item: item, settlement: record.settlementRaw.flatMap(Settlement.init(rawValue:)),
             category: record.categoryRaw.flatMap(CleanupCategory.init(rawValue:)),
-            trim: record.trimData.flatMap { try? decoder.decode(PendingTrim.self, from: $0) }
+            edit: record.trimData.flatMap { try? decoder.decode(PendingEdit.self, from: $0) }
         )
     }
 

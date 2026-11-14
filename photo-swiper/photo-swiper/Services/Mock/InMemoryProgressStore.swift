@@ -20,9 +20,10 @@ final class InMemoryProgressStore: ProgressStoring {
 
     func save(_ changes: [LibraryItem.ID: StoredDecision?]) {
         for (id, record) in changes {
-            // Only a keep carries a trim, as on disk.
+            // Only a keep carries an edit, and an empty one is dropped, as on disk.
             var record = record
-            if record?.decision != .keep { record?.trim = nil }
+            let edit = record?.savedEdit
+            record?.edit = edit
             records[id] = record
         }
     }
@@ -49,9 +50,9 @@ final class InMemoryProgressStore: ProgressStoring {
         records.values.filter(\.isPending).sorted { $0.decidedAt < $1.decidedAt }.map(\.item)
     }
 
-    func pendingTrims() -> [TrimmedItem] {
-        records.values.filter(\.isPendingTrim).sorted { $0.decidedAt < $1.decidedAt }.compactMap { record in
-            record.trim.map { TrimmedItem(item: record.item, trim: $0) }
+    func pendingEdits() -> [EditedItem] {
+        records.values.filter(\.isPendingEdit).sorted { $0.decidedAt < $1.decidedAt }.compactMap { record in
+            record.edit.map { EditedItem(item: record.item, edit: $0) }
         }
     }
 

@@ -98,6 +98,7 @@ extension FeedViewModel {
     private func simulateSwipes(_ count: Int) {
         gate.chargesSwipes = false
         defer { gate.chargesSwipes = true }
+        var videos = 0
         for _ in 0..<count where phase == .feed && currentCard != nil {
             let isVideo = if case .video = currentCard { true } else { false }
             let direction: SwipeDirection = switch index % 9 {
@@ -107,9 +108,17 @@ extension FeedViewModel {
             default: .left
             }
             if let card = currentCard {
-                // Kept videos are trimmed to their first quarter, so the bin has a Trims section.
+                // Kept videos are edited in turn (trimmed to their first quarter, compressed, then both),
+                // so the bin's Edits section shows every kind of row.
                 if case .video(let item) = card, let duration = item.duration {
-                    decideTrim(PendingTrim(range: TrimRange(start: 0, end: duration / 4), originalDuration: duration), cardID: card.id)
+                    let quarter = TrimRange(start: 0, end: duration / 4)
+                    let edit = switch videos % 3 {
+                    case 0: PendingEdit(range: quarter, originalDuration: duration)
+                    case 1: PendingEdit(originalDuration: duration, compression: .balanced, compressedBytes: item.bytes * 3 / 10)
+                    default: PendingEdit(range: quarter, originalDuration: duration, compression: .max, compressedBytes: item.bytes / 20)
+                    }
+                    videos += 1
+                    decideEdit(edit, cardID: card.id)
                 } else {
                     decide(direction, cardID: card.id)
                 }

@@ -5,9 +5,9 @@ import SwiftUI
 /// the video in the middle, and at the bottom a play button beside the trim strip (`TrimStrip`).
 ///
 /// The strip is the timeline. Moving either handle plays the selection on a loop and shows what the
-/// trim would save, with Reset and Trim. Trim hands the selection to `onTrim`; nothing is exported until
+/// trim would save, with Reset and Trim. Trim hands the edit to `onEdit`; nothing is exported until
 /// the bin is confirmed. Leaving with the handles moved (close, a swipe down, a decision swipe) asks first:
-/// save the trim, discard it, or keep editing. Without `onTrim`, or for a clip too short to trim, the
+/// save the trim, discard it, or keep editing. Without `onEdit`, or for a clip too short to trim, the
 /// strip is a plain seek bar.
 ///
 /// Pinch and double-tap zoom like photos. Swiping the video left, right, or up decides like on the card;
@@ -21,11 +21,11 @@ struct VideoPreviewView: View {
     var label: (SwipeDirection) -> String = { _ in "" }
     /// Called once a decision swipe has flown the video off. The caller closes the preview.
     var onDecide: (SwipeDirection) -> Void = { _ in }
-    /// The trim waiting for this video, if any. The handles open where it left them.
-    var savedTrim: PendingTrim?
-    /// Called with the trim to save, or nil to keep the whole video (a saved trim dragged back to the ends).
-    /// The caller closes the preview. Nil offers no trimming.
-    var onTrim: ((PendingTrim?) -> Void)?
+    /// The edit waiting for this video, if any. The handles open where its trim left them.
+    var savedEdit: PendingEdit?
+    /// Called with the edit to save, or nil to keep the video as it is (a saved trim dragged back to the
+    /// ends, with no compression level). The caller closes the preview. Nil offers no trimming.
+    var onEdit: ((PendingEdit?) -> Void)?
 
     @State private var playback = VideoPlayback()
     @State private var showsControls = true
@@ -164,7 +164,7 @@ struct VideoPreviewView: View {
 
     // MARK: Leaving
 
-    private var hasUnsavedTrim: Bool { draft?.hasUnsavedChanges ?? false }
+    private var hasUnsavedEdit: Bool { draft?.hasUnsavedChanges ?? false }
 
     private var isAskingToLeave: Binding<Bool> {
         Binding(get: { pendingExit != nil }, set: { if !$0 { pendingExit = nil } })
@@ -172,7 +172,7 @@ struct VideoPreviewView: View {
 
     /// Every way out comes through here. With the handles moved, the video settles back and the dialog asks.
     private func requestExit(_ exit: Exit) {
-        guard hasUnsavedTrim else { return leave(exit) }
+        guard hasUnsavedEdit else { return leave(exit) }
         swipe.cancel()
         pendingExit = exit
     }
@@ -185,18 +185,21 @@ struct VideoPreviewView: View {
         }
     }
 
-    /// Hands the selection to the caller, which closes the viewer.
+    /// Hands the selection to the caller, which closes the viewer. A compression level already waiting
+    /// stays with the new trim.
     private func saveTrim() {
         pendingExit = nil
         guard let draft, draft.hasUnsavedChanges else { return }
-        onTrim?(draft.result)
+        let edit = PendingEdit(range: draft.result?.range, originalDuration: draft.duration,
+                               compression: savedEdit?.compression, compressedBytes: savedEdit?.compressedBytes)
+        onEdit?(edit.isEmpty ? nil : edit)
     }
 
-    /// Handles once the clip's length is known, where a saved trim left them. None without `onTrim` or
+    /// Handles once the clip's length is known, where a saved trim left them. None without `onEdit` or
     /// for a clip too short to trim.
     private func setUpTrim() {
-        guard onTrim != nil, draft == nil, playback.isReady, TrimDraft.canTrim(duration: playback.duration) else { return }
-        draft = TrimDraft(duration: playback.duration, saved: savedTrim?.range)
+        guard onEdit != nil, draft == nil, playback.isReady, TrimDraft.canTrim(duration: playback.duration) else { return }
+        draft = TrimDraft(duration: playback.duration, saved: savedEdit?.range)
     }
 
     // MARK: Top bar
@@ -272,7 +275,7 @@ struct VideoPreviewView: View {
             .fixedSize(horizontal: false, vertical: true)
         }
         .animation(reduceMotion ? nil : DS.Motion.calm, value: draft?.isTrimmed)
-        .animation(reduceMotion ? nil : DS.Motion.calm, value: hasUnsavedTrim)
+        .animation(reduceMotion ? nil : DS.Motion.calm, value: hasUnsavedEdit)
         .padding(.horizontal, DS.Spacing.l)
         .padding(.top, DS.Spacing.xxl)
         .padding(.bottom, DS.Spacing.m)
@@ -319,7 +322,7 @@ struct VideoPreviewView: View {
     static func summary(_ draft: TrimDraft, bytes: Int64) -> (change: String, saves: String?) {
         guard let trim = draft.result else { return ("Whole video · removes the trim", nil) }
         let original = "\(Format.duration(draft.duration)) · \(Format.size(bytes))"
-        let trimmed = "\(Format.duration(trim.range.length)) · ~\(Format.size(trim.estimatedBytes(from: bytes)))"
+        let trimmed = "\(Format.duration(trim.newDuration)) · ~\(Format.size(trim.estimatedBytes(from: bytes)))"
         return ("\(original) → \(trimmed)", "saves ~\(Format.size(trim.savedBytes(from: bytes)))")
     }
 }
@@ -616,12 +619,12 @@ private struct PlayerLayerView: UIViewRepresentable {
 
 #if DEBUG
 #Preview("Trimmable") {
-    VideoPreviewView(item: PreviewSamples.video, onTrim: { _ in })
+    VideoPreviewView(item: PreviewSamples.video, onEdit: { _ in })
 }
 
 #Preview("Pending trim") {
     VideoPreviewView(item: PreviewSamples.video,
-                     savedTrim: PendingTrim(range: TrimRange(start: 1, end: 5), originalDuration: 8), onTrim: { _ in })
+                     savedEdit: PendingEdit(range: TrimRange(start: 1, end: 5), originalDuration: 8), onEdit: { _ in })
 }
 
 #Preview("Seek bar only") {
@@ -629,7 +632,7 @@ private struct PlayerLayerView: UIViewRepresentable {
 }
 
 #Preview("XXL") {
-    VideoPreviewView(item: PreviewSamples.video, onTrim: { _ in })
+    VideoPreviewView(item: PreviewSamples.video, onEdit: { _ in })
         .dynamicTypeSize(.xxLarge)
 }
 #endif

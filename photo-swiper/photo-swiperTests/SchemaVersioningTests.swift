@@ -5,7 +5,7 @@ import Testing
 @testable import photo_swiper
 
 /// Saved progress is versioned (`BristleSchema.swift`). Stores written before versioning, and V1 stores,
-/// still open with everything in them (JUN-22, S-4; V2 in JUN-9; V3 in JUN-7).
+/// still open with everything in them (JUN-22, S-4; V2 in JUN-9; V3 in JUN-7; its trims load as JUN-50 edits).
 @MainActor
 struct SchemaVersioningTests {
     private let item = LibraryItem(id: "kept-1", kind: .photo, date: Date(timeIntervalSince1970: 1_800_000_000),
@@ -109,16 +109,36 @@ struct SchemaVersioningTests {
         let kept = store.decisions(for: [deleted.id])[deleted.id]
         #expect(kept?.decision == .keep)
         #expect(kept?.category == .video)
-        #expect(kept?.trim == nil, "V2 rows have no trim")
+        #expect(kept?.edit == nil, "V2 rows have no edit")
         #expect(store.pile() == [pending])
-        #expect(store.pendingTrims().isEmpty)
+        #expect(store.pendingEdits().isEmpty)
         #expect(store.cleanupHistory().count == 1)
 
         // A trim saved after the migration is kept.
-        let trim = PendingTrim(range: TrimRange(start: 0, end: 3), originalDuration: 12)
-        store.save([deleted.id: StoredDecision(decision: .keep, decidedAt: decidedAt, sessionNumber: 3, item: deleted, trim: trim)])
+        let trim = PendingEdit(range: TrimRange(start: 0, end: 3), originalDuration: 12)
+        store.save([deleted.id: StoredDecision(decision: .keep, decidedAt: decidedAt, sessionNumber: 3, item: deleted, edit: trim)])
         let reopened = SwiftDataProgressStore(container: try SwiftDataProgressStore.makeContainer(url: url), defaults: nil)
-        #expect(reopened.pendingTrims() == [TrimmedItem(item: deleted, trim: trim)])
+        #expect(reopened.pendingEdits() == [EditedItem(item: deleted, edit: trim)])
+    }
+
+    /// A V3 row written by a JUN-7 build holds `PendingTrim` JSON. After JUN-50 it loads as a trim-only
+    /// edit in the bin, with no schema change and nothing lost.
+    @Test func aPendingTrimSavedBeforeEditsLoadsAsAnEdit() throws {
+        let url = try temporaryStoreURL()
+        let first = SwiftDataProgressStore(container: try SwiftDataProgressStore.makeContainer(url: url), defaults: nil)
+        // Saved as a plain keep, then given the old build's bytes directly.
+        first.save([deleted.id: StoredDecision(decision: .keep, decidedAt: decidedAt, sessionNumber: 3, item: deleted)])
+        let container = try SwiftDataProgressStore.makeContainer(url: url)
+        let context = ModelContext(container)
+        let row = try #require(try context.fetch(FetchDescriptor<ItemProgress>()).first)
+        row.trimData = Data(#"{"range":{"start":2,"end":5},"originalDuration":12}"#.utf8)
+        try context.save()
+
+        let store = SwiftDataProgressStore(container: try SwiftDataProgressStore.makeContainer(url: url), defaults: nil)
+
+        let trim = PendingEdit(range: TrimRange(start: 2, end: 5), originalDuration: 12)
+        #expect(store.pendingEdits() == [EditedItem(item: deleted, edit: trim)])
+        #expect(store.decisions(for: [deleted.id])[deleted.id]?.edit == trim)
     }
 
     @Test func deletesFromBeforeTheHistoryAreFilledInOnce() throws {
