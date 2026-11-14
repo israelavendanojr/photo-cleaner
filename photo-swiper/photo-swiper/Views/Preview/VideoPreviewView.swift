@@ -30,11 +30,9 @@ struct VideoPreviewView: View {
     /// Called with the edit to save, or nil to keep the video as it is (a saved trim dragged back to the
     /// ends, with no compression level). The caller closes the preview. Nil offers no editing.
     var onEdit: ((PendingEdit?) -> Void)?
-    /// Whether trimming and compressing are offered (each is a feature that can be off).
-    var canTrim = true
-    var canCompress = true
-    /// The compression levels' settings, for the estimates and previews.
-    var levels: CompressionLevels = .standard
+    /// Whether trimming and compressing are offered (each is a feature that can be off), and the levels'
+    /// settings for the estimates and previews.
+    var options = VideoEditOptions()
 
     @State private var playback = VideoPlayback()
     @State private var showsControls = true
@@ -254,8 +252,8 @@ struct VideoPreviewView: View {
     /// and Cinematic videos, or when there's nothing left to offer (too short to trim, compression off).
     private func setUpEdit() {
         guard onEdit != nil, draft == nil, playback.isReady, VideoSource.canEdit(item) else { return }
-        let edit = EditDraft(duration: playback.duration, saved: savedEdit, canTrim: canTrim)
-        guard edit.trim != nil || canCompress else { return }
+        let edit = EditDraft(duration: playback.duration, saved: savedEdit, canTrim: options.canTrim)
+        guard edit.trim != nil || options.canCompress else { return }
         draft = edit
     }
 
@@ -288,7 +286,7 @@ struct VideoPreviewView: View {
         guard let source, let draft else { return nil }
         let trimmed = PendingEdit(range: draft.range, originalDuration: draft.duration)
         return Dictionary(uniqueKeysWithValues: CompressionLevel.allCases.map {
-            ($0, CompressionEstimate.make($0, levels: levels, source: source, originalBytes: item.bytes, edit: trimmed))
+            ($0, CompressionEstimate.make($0, levels: options.levels, source: source, originalBytes: item.bytes, edit: trimmed))
         })
     }
 
@@ -329,7 +327,7 @@ struct VideoPreviewView: View {
 
     /// Encodes (or reuses) `level`'s sample around the playhead, inside the trim.
     private func preview(_ level: CompressionLevel?) {
-        let settings = level.flatMap { level in source.map { CompressionSettings.resolve(level, levels: levels, source: $0) } }
+        let settings = level.flatMap { level in source.map { CompressionSettings.resolve(level, levels: options.levels, source: $0) } }
         let range = draft?.range ?? TrimRange(start: 0, end: playback.duration)
         previewer.show(level, asset: playback.asset, settings: settings, around: playback.currentTime, within: range)
     }
@@ -390,7 +388,7 @@ struct VideoPreviewView: View {
                                   accessibilityLabel: playback.isMuted ? "Unmute" : "Mute", action: playback.toggleMute)
                     .accessibilityIdentifier("video.volume")
                 Spacer(minLength: DS.Spacing.xs)
-                if canCompress, draft != nil {
+                if options.canCompress, draft != nil {
                     FrostedIconButton(systemImage: "arrow.down.right.and.arrow.up.left", accessibilityLabel: "Compress",
                                       isActive: draft?.compression != nil, action: openLevels)
                         .accessibilityValue(draft?.compression?.title ?? "None")

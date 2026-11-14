@@ -3,7 +3,7 @@ import SwiftUI
 /// The Admin tab, shown only while Developer mode is on (see `DevMode`, `AppTab.visible`).
 ///
 /// Debug switches, upsell and notification raising, mock cards (debug builds), the free-tier tuning
-/// panel and feature availability. It's a tab rather than part of Settings so anything it raises comes
+/// panel, feature availability and the compression levels. It's a tab rather than part of Settings so anything it raises comes
 /// up over it and closes back to it. Settings keeps only the Developer mode switch and the version-row taps.
 struct AdminToolsView: View {
     @Environment(FeedViewModel.self) private var vm
@@ -34,6 +34,7 @@ struct AdminToolsView: View {
                 #endif
                 FreeLimitsPanel()
                 FeatureAvailabilityPanel()
+                CompressionLevelsPanel()
             }
             .padding(.horizontal, DS.Spacing.l)
             .padding(.bottom, DS.Spacing.xxl)

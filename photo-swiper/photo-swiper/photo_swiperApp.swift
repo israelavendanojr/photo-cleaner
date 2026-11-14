@@ -84,13 +84,13 @@ private extension FeedViewModel {
             let allowance = debugSwipesLeft.map { SwipeAllowance(balance: $0, tunables: allowanceTunables, now: .now) }
             if let raw = UserDefaults.standard.string(forKey: "startAt"), let start = MockStart(rawValue: raw) {
                 return .mock(startingAt: start, entitlements: entitlements, allowance: allowance,
-                             freeTier: .shared, features: .shared, notifier: notifier)
+                             freeTier: .shared, features: .shared, notifier: notifier, compression: .shared)
             }
             return FeedViewModel(
                 library: MockPhotoLibrary(grantedAccess: UserDefaults.standard.bool(forKey: "limitedAccess") ? .limited : .full),
                 builder: MockFeedBuilder(), store: mockProgressStore(), entitlements: entitlements,
                 allowanceStore: SwipeAllowanceStore(initial: allowance), freeTier: .shared, features: .shared, notifier: notifier,
-                editor: MockVideoEditor()
+                editor: MockVideoEditor(), compression: .shared
             )
         }
         if let left = debugSwipesLeft {
@@ -114,7 +114,7 @@ private extension FeedViewModel {
             return FeedViewModel(
                 library: library, builder: PhotoKitFeedBuilder(), store: InMemoryProgressStore(), entitlements: entitlements,
                 allowanceStore: SwipeAllowanceStore(defaults: .standard), freeTier: .shared, features: .shared,
-                progressLoadFailed: true, editor: PhotoKitVideoEditor()
+                progressLoadFailed: true, editor: PhotoKitVideoEditor(), compression: .shared
             )
         }
         let store = SwiftDataProgressStore(container: container)
@@ -139,7 +139,8 @@ private extension FeedViewModel {
             features: .shared,
             notifier: RefillNotifier(center: SystemNotificationCenter(), defaults: .standard),
             dashboardCache: DashboardController.defaultCacheURL,
-            editor: PhotoKitVideoEditor()
+            editor: PhotoKitVideoEditor(),
+            compression: .shared
         )
     }
 

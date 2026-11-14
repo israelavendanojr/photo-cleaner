@@ -123,8 +123,6 @@ final class FeedViewModel {
     private let library: any PhotoLibraryProviding
     /// Makes the bin's edited copies. Nil in tests that don't need one.
     private let editor: (any VideoEditing)?
-    /// The compression levels' settings, for the bin's exports.
-    private let compressionLevels: CompressionLevels
     private let builder: any FeedBuilding
     private let store: any ProgressStoring
     private let entitlements: any EntitlementStore
@@ -141,6 +139,8 @@ final class FeedViewModel {
     let freeTier: FreeTierTunables
     /// Which bundle cards free and unlocked users get.
     let features: FeatureAvailabilityTunables
+    /// The compression levels' settings, for the viewer's estimates and previews and the bin's exports.
+    let compression: CompressionTunables
     /// The allowance, the wall and the unlock purchase, and the free pile limit.
     let gate: SwipeGate
     /// The review prompt or unlock offer a delete earns.
@@ -161,6 +161,7 @@ final class FeedViewModel {
     ///   - features: Live feature availability. Nil gives everyone every feature.
     ///   - progressLoadFailed: Saved progress couldn't be opened, so `store` is a stand-in. The user is told once.
     ///   - editor: Makes the bin's edited copies. Nil leaves edits waiting in the bin when it's cleared.
+    ///   - compression: Live compression settings. Nil fixes them at the standard levels.
     init(
         library: any PhotoLibraryProviding,
         builder: any FeedBuilding,
@@ -177,11 +178,11 @@ final class FeedViewModel {
         progressLoadFailed: Bool = false,
         dashboardCache: URL? = nil,
         editor: (any VideoEditing)? = nil,
-        compressionLevels: CompressionLevels = .standard,
+        compression: CompressionTunables? = nil,
         now: @escaping () -> Date = Date.init
     ) {
         self.editor = editor
-        self.compressionLevels = compressionLevels
+        self.compression = compression ?? .fixed()
         self.library = library
         self.builder = builder
         self.store = store
@@ -217,10 +218,12 @@ final class FeedViewModel {
         freeTier: FreeTierTunables? = nil,
         features: FeatureAvailabilityTunables? = nil,
         notifier: RefillNotifier? = nil,
-        editor: (any VideoEditing)? = nil
+        editor: (any VideoEditing)? = nil,
+        compression: CompressionTunables? = nil
     ) {
         self.init(library: library, builder: builder, store: store, entitlements: entitlements, allowanceStore: allowanceStore,
-                  allowanceTunables: allowanceTunables, freeTier: freeTier, features: features, notifier: notifier, editor: editor)
+                  allowanceTunables: allowanceTunables, freeTier: freeTier, features: features, notifier: notifier, editor: editor,
+                  compression: compression)
         libraryStats = stats
         apply(session)
         refreshTotals()
@@ -318,6 +321,13 @@ final class FeedViewModel {
     var binBytes: Int64 { pendingBytes + editSavedBytes }
     /// Deletes and edits together.
     var binCount: Int { pendingItems.count + pendingEdits.count }
+    /// What the full-screen video offers: trimming and compressing as the feature toggles allow, at the
+    /// current compression settings.
+    var videoEditOptions: VideoEditOptions {
+        VideoEditOptions(canTrim: features.availability(.videoTrimmer).allows(isUnlocked: isUnlocked),
+                         canCompress: features.availability(.videoCompression).allows(isUnlocked: isUnlocked),
+                         levels: compression.levels)
+    }
     /// The edit waiting for this video, if there is one.
     func pendingEdit(for itemID: LibraryItem.ID) -> PendingEdit? {
         pendingEdits.first { $0.id == itemID }?.edit
@@ -773,7 +783,7 @@ final class FeedViewModel {
             let index = offset + 1
             editProgress = EditProgress(index: index, count: edits.count, fraction: 0)
             do {
-                let copy = try await editor.makeCopy(of: edited.item, edit: edited.edit, levels: compressionLevels) { fraction in
+                let copy = try await editor.makeCopy(of: edited.item, edit: edited.edit, levels: compression.levels) { fraction in
                     Task { @MainActor [weak self] in
                         guard let self, editProgress?.index == index else { return }
                         editProgress?.fraction = fraction

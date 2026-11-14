@@ -1,12 +1,17 @@
 import Foundation
 import Observation
 
-/// A feature that can be limited to free or unlocked users. Adding one is a case here plus its arms
-/// below and in `FeedCard.feature`; the Settings panel lists every case on its own.
+/// A feature that can be limited to free or unlocked users, or turned off. Adding one is a case here
+/// plus its arms below, and in `FeedCard.feature` for a card bundle; the Settings panel lists every
+/// case on its own.
 enum TierFeature: String, CaseIterable, Identifiable, Sendable {
     case similarShots
     case duplicates
     case screenshotBatches
+    /// Trim handles in the full-screen video (JUN-7). Off leaves a plain seek bar.
+    case videoTrimmer
+    /// The compression button in the full-screen video (JUN-50). Off hides it.
+    case videoCompression
 
     var id: Self { self }
 
@@ -15,6 +20,8 @@ enum TierFeature: String, CaseIterable, Identifiable, Sendable {
         case .similarShots: "Similar shots"
         case .duplicates: "Duplicates"
         case .screenshotBatches: "Screenshot batches"
+        case .videoTrimmer: "Video Trimmer"
+        case .videoCompression: "Video Compression"
         }
     }
 
@@ -23,6 +30,8 @@ enum TierFeature: String, CaseIterable, Identifiable, Sendable {
         case .similarShots: "square.stack"
         case .duplicates: "doc.on.doc"
         case .screenshotBatches: "iphone"
+        case .videoTrimmer: "scissors"
+        case .videoCompression: "arrow.down.right.and.arrow.up.left"
         }
     }
 
@@ -35,6 +44,8 @@ enum FeatureAvailability: String, CaseIterable, Identifiable, Sendable {
     case freeOnly
     case paidOnly
     case universal
+    /// No one.
+    case off
 
     var id: Self { self }
 
@@ -43,6 +54,7 @@ enum FeatureAvailability: String, CaseIterable, Identifiable, Sendable {
         case .freeOnly: "Free only"
         case .paidOnly: "Paid only"
         case .universal: "Universal"
+        case .off: "Off"
         }
     }
 
@@ -51,6 +63,7 @@ enum FeatureAvailability: String, CaseIterable, Identifiable, Sendable {
         case .freeOnly: !isUnlocked
         case .paidOnly: isUnlocked
         case .universal: true
+        case .off: false
         }
     }
 }

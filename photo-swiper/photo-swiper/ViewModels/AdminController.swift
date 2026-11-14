@@ -212,6 +212,17 @@ final class AdminController {
         freeTierChanged(from: before)
     }
 
+    // MARK: Compression levels
+
+    /// Changes one compression setting. The next estimate, preview and export use it.
+    func setCompressionValue(_ tunable: CompressionTunable, _ value: Int) {
+        vm.compression.set(tunable, value)
+    }
+
+    func resetCompressionToDefaults() {
+        vm.compression.resetToDefaults()
+    }
+
     // MARK: Feature availability
 
     /// Changes who gets one feature. The next page follows it; `adminRebuildDeck()` applies it now.

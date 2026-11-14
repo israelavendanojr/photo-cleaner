@@ -32,6 +32,8 @@ struct SwipeDeck: View {
     /// A trim saved in the full-screen video. The card flies off right, as kept, and this is called in
     /// place of `onDecide`. Nil offers no trimming.
     var onEdit: ((PendingEdit, FeedCard) -> Void)?
+    /// What the full-screen video offers for editing.
+    var videoEditOptions = VideoEditOptions()
 
     /// How far the top card is toward committing, 0...1.
     @State private var progress = 0.0
@@ -124,7 +126,7 @@ struct SwipeDeck: View {
                     if let edit { previewDecision = (.right, item.id, edit) }
                     previewingVideo = nil
                 }
-            })
+            }, options: videoEditOptions)
         }
         .fullScreenCover(item: $previewingPhoto, onDismiss: flyOutPreviewDecision) { item in
             PhotoPreviewView(item: item, label: previewLabel) { direction in

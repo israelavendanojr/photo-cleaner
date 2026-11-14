@@ -25,7 +25,8 @@ struct CardStackView: View {
             canSwipe: canDecide,
             onRefused: refused,
             waitingText: vm.isFindingMore ? "Finding more…" : nil,
-            onEdit: edit
+            onEdit: edit,
+            videoEditOptions: vm.videoEditOptions
         )
         #if DEBUG
         .overlay(alignment: .top) { CurrentCardMarker() }

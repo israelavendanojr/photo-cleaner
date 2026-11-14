@@ -23,7 +23,8 @@ extension FeedViewModel {
         allowanceTunables: SwipeAllowance.Tunables = .standard,
         freeTier: FreeTierTunables? = nil,
         features: FeatureAvailabilityTunables? = nil,
-        notifier: RefillNotifier? = nil
+        notifier: RefillNotifier? = nil,
+        compression: CompressionTunables? = nil
     ) -> FeedViewModel {
         let entitlements = entitlements ?? EntitlementServices.make(mock: true)
         if start == .onboarding {
@@ -57,7 +58,8 @@ extension FeedViewModel {
             freeTier: freeTier,
             features: features,
             notifier: notifier,
-            editor: MockVideoEditor()
+            editor: MockVideoEditor(),
+            compression: compression
         )
         switch start {
         case .first:

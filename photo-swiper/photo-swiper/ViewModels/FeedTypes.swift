@@ -53,6 +53,14 @@ struct EditProgress: Equatable {
     var fraction: Double
 }
 
+/// What the full-screen video offers for editing: trimming and compressing (each a feature that can be
+/// off), and the compression levels' current settings.
+struct VideoEditOptions: Equatable {
+    var canTrim = true
+    var canCompress = true
+    var levels = CompressionLevels.standard
+}
+
 /// The card an undo just restored, and the side it left from.
 struct ReturningCard: Equatable {
     let cardID: FeedCard.ID
