@@ -22,8 +22,14 @@ struct TrimStrip: View {
     private var isTrimmed: Bool { draft?.isTrimmed ?? false }
     /// The frame around what's kept: none until trimmed, then brick, the color of space to clear.
     private var frame: Color { isTrimmed ? DS.Palette.brick : .clear }
-    /// The handle tabs: white at rest, as in Photos, with no frame between them; brick once trimmed.
-    private var handleFill: Color { isTrimmed ? DS.Palette.brick : .white }
+    /// The handle tabs: white at rest, with no frame between them; brick once trimmed.
+    private var handleFill: Color { Self.fill(isTrimmed: isTrimmed) }
+
+    /// What the play button and the handles are filled with: white at rest, brick once trimmed.
+    /// The play button follows the strip, so the bar reads as one piece either way.
+    static func fill(isTrimmed: Bool) -> Color { isTrimmed ? DS.Palette.brick : .white }
+    /// Their icons: the reverse of `fill`, brick on white at rest and white on brick once trimmed.
+    static func glyph(isTrimmed: Bool) -> Color { isTrimmed ? .white : DS.Palette.brick }
     private static let space = "trimStrip"
 
     var body: some View {
@@ -161,7 +167,7 @@ struct TrimStrip: View {
     private func handle(_ edge: Edge, width: CGFloat) -> some View {
         Image(systemName: edge == .start ? "chevron.compact.left" : "chevron.compact.right")
             .font(.title3.weight(.bold))
-            .foregroundStyle(isTrimmed ? .white : .black.opacity(0.7))
+            .foregroundStyle(Self.glyph(isTrimmed: isTrimmed))
             .frame(width: handleWidth, height: height)
             .background(handleFill, in: UnevenRoundedRectangle(
                 topLeadingRadius: edge == .start ? draft.map(leadingRadius) ?? 0 : 0,

@@ -165,6 +165,7 @@ struct VideoPreviewView: View {
     // MARK: Leaving
 
     private var hasUnsavedTrim: Bool { draft?.hasUnsavedChanges ?? false }
+    private var isTrimmed: Bool { draft?.isTrimmed ?? false }
 
     private var isAskingToLeave: Binding<Bool> {
         Binding(get: { pendingExit != nil }, set: { if !$0 { pendingExit = nil } })
@@ -250,10 +251,10 @@ struct VideoPreviewView: View {
                 Button(action: playback.togglePlay) {
                     Image(systemName: playback.isPlaying ? "pause.fill" : "play.fill")
                         .font(.title2)
-                        .foregroundStyle(.white)
+                        .foregroundStyle(TrimStrip.glyph(isTrimmed: isTrimmed))
                         .contentTransition(.symbolEffect(.replace))
                         .frame(minWidth: DS.Tap.minimum + DS.Spacing.xs, maxHeight: .infinity)
-                        .background(.ultraThinMaterial, in: UnevenRoundedRectangle(
+                        .background(TrimStrip.fill(isTrimmed: isTrimmed), in: UnevenRoundedRectangle(
                             topLeadingRadius: DS.Trim.cornerRadius, bottomLeadingRadius: DS.Trim.cornerRadius, style: .continuous
                         ))
                         .contentShape(Rectangle())
