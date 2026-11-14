@@ -5,7 +5,7 @@ import Testing
 @testable import photo_swiper
 
 /// Saved progress is versioned (`BristleSchema.swift`). Stores written before versioning, and V1 stores,
-/// still open with everything in them (JUN-22, S-4; V2 in JUN-9).
+/// still open with everything in them (JUN-22, S-4; V2 in JUN-9; V3 in JUN-7).
 @MainActor
 struct SchemaVersioningTests {
     private let item = LibraryItem(id: "kept-1", kind: .photo, date: Date(timeIntervalSince1970: 1_800_000_000),
@@ -80,6 +80,45 @@ struct SchemaVersioningTests {
         #expect(store.pile() == [pending])
         #expect(store.freedBytes() == deleted.bytes)
         #expect(store.loadSession()?.session == saved.session)
+    }
+
+    /// Writes progress as V2 builds did, through the frozen V2 models: a kept video with its category,
+    /// and a pending delete.
+    private func writeV2Store(at url: URL) throws {
+        let container = try ModelContainer(for: Schema(versionedSchema: BristleSchemaV2.self), configurations: ModelConfiguration(url: url))
+        let context = ModelContext(container)
+        let encoder = JSONEncoder()
+        for (item, decision) in [(deleted, Decision.keep), (pending, .delete)] {
+            let row = BristleSchemaV2.ItemProgress(itemID: item.id, decisionRaw: decision.rawValue, decidedAt: decidedAt,
+                                                   sessionNumber: 3, bytes: item.bytes, itemData: try encoder.encode(item))
+            row.categoryRaw = CleanupCategory.video.rawValue
+            context.insert(row)
+        }
+        context.insert(CleanupEvent(id: UUID(), at: settledAt, count: 1, bytes: 1_000, categoryRaw: CleanupCategory.photo.rawValue))
+        try context.save()
+    }
+
+    @Test func aV2StoreOpensAsV3ThroughThePlanWithNoTrims() throws {
+        let url = try temporaryStoreURL()
+        try writeV2Store(at: url)
+
+        let store = SwiftDataProgressStore(
+            container: try SwiftDataProgressStore.makeContainer(url: url, allowsUnplannedFallback: false), defaults: nil
+        )
+
+        let kept = store.decisions(for: [deleted.id])[deleted.id]
+        #expect(kept?.decision == .keep)
+        #expect(kept?.category == .video)
+        #expect(kept?.trim == nil, "V2 rows have no trim")
+        #expect(store.pile() == [pending])
+        #expect(store.pendingTrims().isEmpty)
+        #expect(store.cleanupHistory().count == 1)
+
+        // A trim saved after the migration is kept.
+        let trim = PendingTrim(range: TrimRange(start: 0, end: 3), originalDuration: 12)
+        store.save([deleted.id: StoredDecision(decision: .keep, decidedAt: decidedAt, sessionNumber: 3, item: deleted, trim: trim)])
+        let reopened = SwiftDataProgressStore(container: try SwiftDataProgressStore.makeContainer(url: url), defaults: nil)
+        #expect(reopened.pendingTrims() == [TrimmedItem(item: deleted, trim: trim)])
     }
 
     @Test func deletesFromBeforeTheHistoryAreFilledInOnce() throws {
@@ -170,7 +209,7 @@ struct SchemaVersioningTests {
 
     @Test func theContainerUsesTheVersionedSchema() throws {
         let container = try SwiftDataProgressStore.makeContainer(inMemory: true)
-        #expect(container.schema.version == BristleSchemaV2.versionIdentifier)
+        #expect(container.schema.version == BristleSchemaV3.versionIdentifier)
         #expect(Set(container.schema.entities.map(\.name)) == ["ItemProgress", "SessionProgress", "AssetFeatureRecord", "CleanupEvent"])
     }
 

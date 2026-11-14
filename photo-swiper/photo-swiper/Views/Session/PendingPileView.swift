@@ -2,7 +2,8 @@ import SwiftUI
 
 /// Everything waiting to be cleared, all marked to delete. Tap the ones worth saving to unmark
 /// them, then Keep sends those back to the library and Delete clears the marked ones now.
-/// After a delete it says how much was freed, then closes.
+/// After a delete it says how much was freed, then closes. Videos waiting to be trimmed are listed
+/// under Trims, with the space each saves; swiping one away cancels the trim and keeps the video whole.
 ///
 /// Opens as a sheet from the feed's "to clear" counter, or pushed from the overview's Pending row.
 /// Admin Tools' mock items can be in the pile too; deleting them only drops them, and never reaches the
@@ -37,12 +38,13 @@ struct PendingPileView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 header
-                if vm.pendingItems.isEmpty {
+                if vm.binCount == 0 {
                     Text("Nothing marked to clear.")
                         .font(.callout)
                         .foregroundStyle(DS.Palette.secondary)
                         .padding(.top, DS.Spacing.xl)
-                } else {
+                }
+                if !vm.pendingItems.isEmpty {
                     LazyVGrid(columns: columns, spacing: 6) {
                         ForEach(vm.pendingItems) { item in
                             Button { toggle(item) } label: {
@@ -57,6 +59,9 @@ struct PendingPileView: View {
                         .font(.footnote)
                         .foregroundStyle(DS.Palette.secondary)
                         .padding(.top, DS.Spacing.l)
+                }
+                if !vm.pendingTrims.isEmpty {
+                    trims
                 }
             }
             .padding(.horizontal, DS.Spacing.l)
@@ -107,14 +112,14 @@ struct PendingPileView: View {
                         .foregroundStyle(DS.Palette.ink)
                 }
             }
-            Text(Format.size(vm.pendingBytes))
+            Text(Format.size(vm.binBytes))
                 .dsSerif(48, relativeTo: .largeTitle)
                 .foregroundStyle(DS.Palette.brick)
-                .contentTransition(.numericText(value: Double(vm.pendingBytes)))
+                .contentTransition(.numericText(value: Double(vm.binBytes)))
                 .padding(.top, DS.Spacing.s)
                 .accessibilityElement(children: .combine)
             HStack(alignment: .firstTextBaseline) {
-                Text("to clear from \(count) \(count == 1 ? "photo" : "photos")")
+                Text(summary)
                     .font(.callout)
                     .foregroundStyle(DS.Palette.secondary)
                 Spacer()
@@ -179,6 +184,39 @@ struct PendingPileView: View {
                 .disabled(isDeleting)
                 .accessibilityIdentifier("binButton")
         }
+    }
+
+    /// "to clear from 12 photos and 2 trims"
+    private var summary: String {
+        var parts: [String] = []
+        if count > 0 || vm.pendingTrims.isEmpty { parts.append("\(count) \(count == 1 ? "photo" : "photos")") }
+        let trimCount = vm.pendingTrims.count
+        if trimCount > 0 { parts.append("\(trimCount) \(trimCount == 1 ? "trim" : "trims")") }
+        return "to clear from " + parts.joined(separator: " and ")
+    }
+
+    /// Videos waiting to be trimmed. Swiping one away cancels it.
+    private var trims: some View {
+        VStack(alignment: .leading, spacing: DS.Spacing.s) {
+            Text("Trims")
+                .font(.headline)
+                .foregroundStyle(DS.Palette.ink)
+                .accessibilityAddTraits(.isHeader)
+            ForEach(vm.pendingTrims) { trimmed in
+                TrimRow(trimmed: trimmed) { cancelTrim(trimmed) }
+                    .transition(reduceMotion ? .opacity : .move(edge: .leading).combined(with: .opacity))
+            }
+            Text("Each video is replaced by its trimmed copy when you clear the bin. Swipe one away to keep it whole.")
+                .font(.footnote)
+                .foregroundStyle(DS.Palette.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.top, DS.Spacing.xl)
+    }
+
+    private func cancelTrim(_ trimmed: TrimmedItem) {
+        withAnimation(DS.Motion.calm) { vm.setTrim(nil, for: trimmed.item) }
+        AccessibilityNotification.Announcement("Trim cancelled. The video stays whole.").post()
     }
 
     private var hasDeleteNotice: Binding<Bool> {
@@ -274,6 +312,76 @@ private struct FreedConfirmation: View {
             .onAppear {
                 AccessibilityNotification.Announcement("Freed \(Format.size(bytes))").post()
             }
+    }
+}
+
+/// A video waiting to be trimmed: its thumbnail, the length it's trimmed to, and the space that saves.
+/// Swiping it left past a threshold cancels the trim; VoiceOver and the context menu offer the same.
+private struct TrimRow: View {
+    let trimmed: TrimmedItem
+    let onCancel: () -> Void
+
+    @State private var offset: CGFloat = 0
+    @ScaledMetric(relativeTo: .body) private var thumbSize: CGFloat = 56
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    /// How far left a swipe has to go to cancel.
+    private let threshold: CGFloat = 96
+
+    var body: some View {
+        HStack(spacing: DS.Spacing.s) {
+            Color.clear
+                .frame(width: thumbSize, height: thumbSize)
+                .overlay { ItemImage(trimmed.item.image) }
+                .clipShape(RoundedRectangle(cornerRadius: DS.Radius.thumb, style: .continuous))
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: DS.Spacing.xxs) {
+                Text("\(Format.duration(trimmed.trim.originalDuration)) → \(Format.duration(trimmed.trim.range.length))")
+                    .font(.subheadline.weight(.semibold))
+                    .monospacedDigit()
+                    .foregroundStyle(DS.Palette.ink)
+                Text("saves ~\(Format.size(trimmed.savedBytes))")
+                    .font(.footnote.weight(.semibold))
+                    .monospacedDigit()
+                    .foregroundStyle(DS.Palette.brick)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(DS.Spacing.s)
+        .background {
+            RoundedRectangle(cornerRadius: DS.Radius.tile, style: .continuous)
+                .fill(DS.Palette.card)
+                .softShadow()
+        }
+        .contentShape(RoundedRectangle(cornerRadius: DS.Radius.tile, style: .continuous))
+        .offset(x: offset)
+        .opacity(1 - min(Double(-offset / (threshold * 2)), 0.5))
+        .gesture(
+            DragGesture(minimumDistance: 20)
+                .onChanged { value in
+                    // Left only, and only once the drag is clearly sideways, so the list still scrolls.
+                    guard abs(value.translation.width) > abs(value.translation.height) else { return }
+                    offset = min(value.translation.width, 0)
+                }
+                .onEnded { _ in
+                    if offset < -threshold {
+                        onCancel()
+                    } else {
+                        withAnimation(reduceMotion ? nil : DS.Motion.snapBack) { offset = 0 }
+                    }
+                }
+        )
+        .contextMenu {
+            Button("Cancel trim", systemImage: "xmark", action: onCancel)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(accessibilityText)
+        .accessibilityAction(named: "Cancel trim", onCancel)
+        .accessibilityIdentifier("pile.trimRow")
+    }
+
+    private var accessibilityText: String {
+        "Video trimmed from \(Format.duration(trimmed.trim.originalDuration)) to \(Format.duration(trimmed.trim.range.length)), saves about \(Format.size(trimmed.savedBytes))"
     }
 }
 

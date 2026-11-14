@@ -6,7 +6,8 @@ import SwiftData
 ///
 /// V1 is exactly the models that shipped before versioning existed, so stores written by earlier
 /// builds open as V1 with no migration and no data change. V2 adds the cleanup history
-/// (`CleanupEvent`) and the category of each decision (`ItemProgress.categoryRaw`, optional).
+/// (`CleanupEvent`) and the category of each decision (`ItemProgress.categoryRaw`, optional). V3 adds
+/// pending video trims (`ItemProgress.trimData`, optional).
 ///
 /// Changing a model:
 /// - Adding an **optional** property (or one with a default) is a lightweight change, but it still needs
@@ -59,9 +60,41 @@ enum BristleSchemaV1: VersionedSchema {
     }
 }
 
-/// The current models: V1 plus `CleanupEvent` and `ItemProgress.categoryRaw`.
+/// V1 plus `CleanupEvent` and `ItemProgress.categoryRaw`.
 enum BristleSchemaV2: VersionedSchema {
     static var versionIdentifier: Schema.Version { Schema.Version(2, 0, 0) }
+
+    static var models: [any PersistentModel.Type] {
+        [BristleSchemaV2.ItemProgress.self, SessionProgress.self, AssetFeatureRecord.self, CleanupEvent.self]
+    }
+
+    /// `ItemProgress` as V2 shipped it, frozen. Only migration reads it.
+    @Model
+    final class ItemProgress {
+        @Attribute(.unique) var itemID: String
+        var decisionRaw: String
+        var decidedAt: Date
+        var sessionNumber: Int
+        var bytes: Int64
+        var settlementRaw: String?
+        var settledAt: Date?
+        var itemData: Data
+        var categoryRaw: String?
+
+        init(itemID: String, decisionRaw: String, decidedAt: Date, sessionNumber: Int, bytes: Int64, itemData: Data) {
+            self.itemID = itemID
+            self.decisionRaw = decisionRaw
+            self.decidedAt = decidedAt
+            self.sessionNumber = sessionNumber
+            self.bytes = bytes
+            self.itemData = itemData
+        }
+    }
+}
+
+/// The current models: V2 plus `ItemProgress.trimData`.
+enum BristleSchemaV3: VersionedSchema {
+    static var versionIdentifier: Schema.Version { Schema.Version(3, 0, 0) }
 
     static var models: [any PersistentModel.Type] {
         [ItemProgress.self, SessionProgress.self, AssetFeatureRecord.self, CleanupEvent.self]
@@ -70,8 +103,14 @@ enum BristleSchemaV2: VersionedSchema {
 
 /// How saved progress moves between schema versions.
 enum BristleMigrationPlan: SchemaMigrationPlan {
-    static var schemas: [any VersionedSchema.Type] { [BristleSchemaV1.self, BristleSchemaV2.self] }
-    /// V2 only adds a model and an optional property, so SwiftData moves the data over as it is.
-    /// The cleanup history for deletes made before V2 is filled in by `SwiftDataProgressStore`, not here.
-    static var stages: [MigrationStage] { [.lightweight(fromVersion: BristleSchemaV1.self, toVersion: BristleSchemaV2.self)] }
+    static var schemas: [any VersionedSchema.Type] { [BristleSchemaV1.self, BristleSchemaV2.self, BristleSchemaV3.self] }
+    /// V2 only adds a model and an optional property, and V3 only an optional property, so SwiftData moves
+    /// the data over as it is. The cleanup history for deletes made before V2 is filled in by
+    /// `SwiftDataProgressStore`, not here.
+    static var stages: [MigrationStage] {
+        [
+            .lightweight(fromVersion: BristleSchemaV1.self, toVersion: BristleSchemaV2.self),
+            .lightweight(fromVersion: BristleSchemaV2.self, toVersion: BristleSchemaV3.self),
+        ]
+    }
 }

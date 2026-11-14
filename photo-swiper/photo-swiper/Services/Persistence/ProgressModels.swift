@@ -1,7 +1,7 @@
 import Foundation
 import SwiftData
 
-// The current models, `BristleSchemaV2`. Before changing one, read `BristleSchema.swift`.
+// The current models, `BristleSchemaV3`. Before changing one, read `BristleSchema.swift`.
 
 /// One item's decision, keyed by `PHAsset.localIdentifier`.
 @Model
@@ -20,6 +20,8 @@ final class ItemProgress {
     var itemData: Data
     /// `CleanupCategory.rawValue`, from the card the decision was made on. Nil in rows saved before V2.
     var categoryRaw: String?
+    /// JSON `PendingTrim`, for a video kept on the way to being trimmed. Nil otherwise, and in rows saved before V3.
+    var trimData: Data?
 
     init(itemID: String, decisionRaw: String, decidedAt: Date, sessionNumber: Int, bytes: Int64, itemData: Data) {
         self.itemID = itemID
