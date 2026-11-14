@@ -66,6 +66,8 @@ final class FeedViewModel {
     private(set) var isPileFullNoticePresented = false
     /// Something about the last delete the user should know, e.g. items the system refused.
     private(set) var deleteNotice: String?
+    /// Clearing the bin is making the edited copies. Nil otherwise.
+    private(set) var editProgress: EditProgress?
     /// Saved progress couldn't be opened at launch, so this launch runs on a throwaway store.
     /// RootView says so once.
     private(set) var isProgressLoadNoticePresented = false
@@ -119,6 +121,10 @@ final class FeedViewModel {
     private var savedCardsRevision: Int?
 
     private let library: any PhotoLibraryProviding
+    /// Makes the bin's edited copies. Nil in tests that don't need one.
+    private let editor: (any VideoEditing)?
+    /// The compression levels' settings, for the bin's exports.
+    private let compressionLevels: CompressionLevels
     private let builder: any FeedBuilding
     private let store: any ProgressStoring
     private let entitlements: any EntitlementStore
@@ -154,6 +160,7 @@ final class FeedViewModel {
     ///   - freeTier: The live free-tier limits. Nil fixes them at `allowanceTunables` and the standard pile limit.
     ///   - features: Live feature availability. Nil gives everyone every feature.
     ///   - progressLoadFailed: Saved progress couldn't be opened, so `store` is a stand-in. The user is told once.
+    ///   - editor: Makes the bin's edited copies. Nil leaves edits waiting in the bin when it's cleared.
     init(
         library: any PhotoLibraryProviding,
         builder: any FeedBuilding,
@@ -169,8 +176,12 @@ final class FeedViewModel {
         notifier: RefillNotifier? = nil,
         progressLoadFailed: Bool = false,
         dashboardCache: URL? = nil,
+        editor: (any VideoEditing)? = nil,
+        compressionLevels: CompressionLevels = .standard,
         now: @escaping () -> Date = Date.init
     ) {
+        self.editor = editor
+        self.compressionLevels = compressionLevels
         self.library = library
         self.builder = builder
         self.store = store
@@ -205,10 +216,11 @@ final class FeedViewModel {
         allowanceTunables: SwipeAllowance.Tunables = .standard,
         freeTier: FreeTierTunables? = nil,
         features: FeatureAvailabilityTunables? = nil,
-        notifier: RefillNotifier? = nil
+        notifier: RefillNotifier? = nil,
+        editor: (any VideoEditing)? = nil
     ) {
         self.init(library: library, builder: builder, store: store, entitlements: entitlements, allowanceStore: allowanceStore,
-                  allowanceTunables: allowanceTunables, freeTier: freeTier, features: features, notifier: notifier)
+                  allowanceTunables: allowanceTunables, freeTier: freeTier, features: features, notifier: notifier, editor: editor)
         libraryStats = stats
         apply(session)
         refreshTotals()
@@ -677,9 +689,16 @@ final class FeedViewModel {
         refreshTotals(includingFreed: false)
     }
 
-    /// Deletes some of the pile, from the pending screen. The deck carries on,
-    /// and the rest stays pending. Returns the bytes freed, or nil if nothing was deleted,
+    /// Clears the bin, from the pending screen: makes every pending edit's copy, then deletes `items`
+    /// (chosen from the deletes) and the edited originals together, in one system prompt. The deck
+    /// carries on, and the rest stays pending. Returns the bytes freed, or nil if nothing was deleted,
     /// including when the user cancels the system prompt.
+    ///
+    /// Each copy is saved and checked before anything is deleted (`makeEditedCopies`). An original whose
+    /// copy failed isn't deleted: it stays in the bin with its edit, and the user is told which. A copy
+    /// that's saved stays in the library even if the delete is then cancelled; its edit remembers it
+    /// (`PendingEdit.copyID`), so the next clear goes straight to the delete. Once its original is
+    /// deleted, the copy is saved as kept, so the feed never offers it.
     ///
     /// Admin Tools' mock items never reach the library: they're only dropped from the pile, here and not
     /// in the store, and their bytes count as freed so the post-delete offer can show. Deleting only mocks
@@ -690,9 +709,18 @@ final class FeedViewModel {
         let pending = Set(pendingItems.map(\.id))
         let chosen = items.filter { pending.contains($0.id) }
         let real = chosen.filter { !$0.isAdminMock }
+        let copies = await makeEditedCopies()
+        // Still waiting after the exports' awaits, and with a saved copy.
+        let edited = pendingEdits.filter { copies[$0.id] != nil }
         var deletedItems: [LibraryItem] = []
-        if !real.isEmpty {
-            guard let deleted = await delete(real) else { return nil }
+        if !real.isEmpty || !edited.isEmpty {
+            guard let deleted = await delete(real + edited.map(\.item)) else {
+                if !edited.isEmpty, deleteNotice == nil {
+                    deleteNotice = "Your edited videos are saved. The originals stay in the bin until you clear it again."
+                }
+                refreshEdits()
+                return nil
+            }
             deletedItems = deleted
         }
         // Still pending after the system prompt's await.
@@ -701,8 +729,15 @@ final class FeedViewModel {
         guard !deletedItems.isEmpty || !mocks.isEmpty else { return nil }
         let ids = Set(deletedItems.map(\.id))
         let mockIDs = Set(mocks.map(\.id))
+        // An edited original frees what its copy saves, not its whole size.
+        let replaced = edited.filter { ids.contains($0.id) }
+        var freedBytes = Dictionary(uniqueKeysWithValues: deletedItems.map { ($0.id, $0.bytes) })
+        for original in replaced {
+            freedBytes[original.id] = max(original.item.bytes - (copies[original.id]?.bytes ?? original.newBytes), 0)
+        }
         // Before settling: the store's first history write fills in older deletes, and these must not be among them.
-        recordCleanup(deletedItems)
+        recordCleanup(deletedItems, freed: freedBytes)
+        keepCopies(of: replaced, copies: copies)
         settle(ids, as: .deleted)
         settledIDs.formUnion(mockIDs)
         carriedPending.removeAll { ids.contains($0.id) || mockIDs.contains($0.id) }
@@ -711,20 +746,93 @@ final class FeedViewModel {
             history.removeAll()
         }
         saveProgress()
+        refreshEdits()
         if !deletedItems.isEmpty { await refreshLibraryTotal() }
-        let freed = (deletedItems + mocks).reduce(0) { $0 + $1.bytes }
+        let freed = freedBytes.values.reduce(0, +) + mocks.reduce(0) { $0 + $1.bytes }
         followUps.queueFollowUp(freed: freed, isUnlocked: isUnlocked, isWallPresented: isWallPresented,
                                 purchasedThisLaunch: purchasedThisLaunch, isMockOnly: deletedItems.isEmpty)
         if !deletedItems.isEmpty { Task { await refreshDashboard() } }
         return freed
     }
 
+    /// Makes the copy of every pending edit, one video at a time, and returns them by original. Each
+    /// video is exported once, by `editor`. A copy saved by an earlier clear that didn't finish is used as
+    /// it is. Each new copy is remembered with its edit as soon as it's saved (write-through), so it's
+    /// never made twice. Failures are left out and told to the user; their originals stay in the bin.
+    private func makeEditedCopies() async -> [LibraryItem.ID: EditedCopy] {
+        let edits = pendingEdits
+        guard let editor, !edits.isEmpty else { return [:] }
+        var copies: [LibraryItem.ID: EditedCopy] = [:]
+        var failed: [EditedItem] = []
+        let saved = await editor.existingCopies(Set(edits.compactMap(\.edit.copyID)))
+        for (offset, edited) in edits.enumerated() {
+            if let copyID = edited.edit.copyID, saved.contains(copyID) {
+                copies[edited.id] = EditedCopy(id: copyID, bytes: edited.newBytes)
+                continue
+            }
+            let index = offset + 1
+            editProgress = EditProgress(index: index, count: edits.count, fraction: 0)
+            do {
+                let copy = try await editor.makeCopy(of: edited.item, edit: edited.edit, levels: compressionLevels) { fraction in
+                    Task { @MainActor [weak self] in
+                        guard let self, editProgress?.index == index else { return }
+                        editProgress?.fraction = fraction
+                    }
+                }
+                rememberCopy(copy.id, for: edited.id)
+                copies[edited.id] = copy
+            } catch {
+                Self.log.error("Couldn't make an edited copy: \(error)")
+                failed.append(edited)
+            }
+        }
+        editProgress = nil
+        if !failed.isEmpty { deleteNotice = Self.copyFailureNotice(failed) }
+        return copies
+    }
+
+    /// "Couldn't save the edited video from Mar 3, so it stays as it is in the bin."
+    private static func copyFailureNotice(_ failed: [EditedItem]) -> String {
+        let days = failed.map { Format.day($0.item.date) }
+        if days.count == 1 { return "Couldn't save the edited video from \(days[0]), so it stays as it is in the bin." }
+        return "Couldn't save \(days.count) edited videos (from \(days.joined(separator: ", "))), so they stay as they are in the bin."
+    }
+
+    /// Saves `copyID` with the edit for `itemID`, so the copy is used again if this clear doesn't finish.
+    private func rememberCopy(_ copyID: LibraryItem.ID, for itemID: LibraryItem.ID) {
+        guard var record = store.decisions(for: [itemID])[itemID], var edit = record.edit else { return }
+        edit.copyID = copyID
+        record.edit = edit
+        store.save([itemID: record])
+    }
+
+    /// Saves each copy whose original was deleted as kept, with the original's category, so the feed
+    /// never offers it and the library counts as reviewed as before.
+    private func keepCopies(of originals: [EditedItem], copies: [LibraryItem.ID: EditedCopy]) {
+        let saved = store.decisions(for: Set(originals.map(\.id)))
+        let decidedAt = now()
+        let kept: [LibraryItem.ID: StoredDecision?] = Dictionary(uniqueKeysWithValues: originals.compactMap { original in
+            guard let copy = copies[original.id] else { return nil }
+            let item = original.item
+            let image: ImageReference = if case .photoKit = item.image { .photoKit(localIdentifier: copy.id) } else { item.image }
+            let copyItem = LibraryItem(id: copy.id, kind: .video(duration: original.edit.newDuration), date: item.date,
+                                       location: item.location, bytes: copy.bytes, isFavorite: item.isFavorite, image: image)
+            return (copy.id, StoredDecision(decision: .keep, decidedAt: decidedAt, sessionNumber: session?.number ?? 0, item: copyItem,
+                                            category: saved[original.id]?.category))
+        })
+        if !kept.isEmpty { store.save(kept) }
+    }
+
     /// Adds a delete to the cleanup history, one entry per category, at the time it happened.
     /// Each item's category is the one saved with its decision; older decisions fall back to a guess.
-    private func recordCleanup(_ deleted: [LibraryItem]) {
+    /// `freed` gives what each item freed, when that isn't its whole size (an edited original).
+    private func recordCleanup(_ deleted: [LibraryItem], freed: [LibraryItem.ID: Int64] = [:]) {
         guard !deleted.isEmpty else { return }
         let saved = store.decisions(for: Set(deleted.map(\.id)))
-        store.recordCleanup(CleanupEntry.entries(for: deleted, at: now()) { saved[$0.id]?.category ?? .inferred(from: $0) })
+        let counted = deleted.map { item in
+            freed[item.id].map { LibraryItem(id: item.id, kind: item.kind, date: item.date, location: item.location, bytes: $0, image: item.image) } ?? item
+        }
+        store.recordCleanup(CleanupEntry.entries(for: counted, at: now()) { saved[$0.id]?.category ?? .inferred(from: $0) })
     }
 
     // MARK: Dashboard
@@ -1195,7 +1303,7 @@ final class FeedViewModel {
         } catch DeletionError.cancelled {
             return nil
         } catch {
-            deleteNotice = "Couldn't delete right now. Nothing was removed."
+            deleteNotice = [deleteNotice, "Couldn't delete right now. Nothing was removed."].compactMap { $0 }.joined(separator: " ")
             return nil
         }
 
@@ -1214,7 +1322,7 @@ final class FeedViewModel {
             let n = outcome.undeletable.count
             notices.append("\(n) \(n == 1 ? "item" : "items") can't be deleted from this app and stayed in your library.")
         }
-        if !notices.isEmpty { deleteNotice = notices.joined(separator: " ") }
+        if !notices.isEmpty { deleteNotice = ([deleteNotice].compactMap { $0 } + notices).joined(separator: " ") }
 
         let deleted = Set(outcome.deleted)
         let deletedItems = items.filter { deleted.contains($0.id) }

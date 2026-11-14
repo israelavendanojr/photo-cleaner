@@ -101,6 +101,8 @@ Put the shadow on the background shape, not on the view that holds text, so the 
   | Undo | `arrow.uturn.backward` |
   | Close | `xmark` |
   | Best pick | `star.fill` |
+  | Trimmed | `scissors` |
+  | Compressed / compression | `arrow.down.right.and.arrow.up.left` |
 
 - Symbol effects: `.symbolEffect(.bounce, value:)` when a count or selection changes, and `.contentTransition(.symbolEffect(.replace))` for toggles such as play and pause.
 - Decorative icons get `.accessibilityHidden(true)`. Icon-only buttons get an `accessibilityLabel`.
@@ -156,6 +158,11 @@ Formatting goes through `Format` (`size`, `signedSize`, `percent`, `signedPercen
 - **`TrimStrip`** (`DS.Trim`): stills across the clip at `stripHeight` (scaled), a white `playheadWidth` playhead, and chevron handles of `handleWidth` outside the stills, each reaching a 44pt touch area outward. Untrimmed, there's no frame: white chevrons sit on the same frosted ground as the play button, so the bar reads as one piece. Once a handle moves, the frame (`frameWidth`) and handles turn brick (space to clear), and what's cut is dimmed with black. With no handles (short clips, slow-motion, Cinematic, trimmer off) it's a plain seek bar.
 - **Trim summary**, above the panel once trimmed: "0:08 · 1.23 GB → 0:05 · ~752 MB" in footnote semibold, "saves ~476 MB" in subheadline bold under it, and while the handles differ from what's saved, Reset (frosted capsule) and Trim (brick capsule), both 44pt tall.
 - **Leaving** with unsaved handles uses a system `.confirmationDialog`: Save trim, Discard (destructive), Keep editing (cancel).
+
+### The bin's edits and clearing
+
+- **Edits section** in `PendingPileView`, under the photo grid: one `EditRow` per video on `card` at `DS.Radius.tile`, with the thumbnail, then the marks ("Trimmed", "Compressed · Balanced", or both) as `caption` semibold ink labels with their symbols, the change ("1:42 → 0:12 · 380 MB → ~45 MB") in subheadline semibold, and "saves ~X" in brick footnote. Swiping a row left cancels the edit.
+- **Clearing.** With edits waiting, the bin's one brick pill reads "Clear bin · X" (the marked photos plus what the edits save), and the system alert says what happens: edited copies saved first, then the originals and photos deleted. While copies are made, "Saving edited video 1 of 2" sits above the buttons with an ink `ProgressLine`, and the screen stays awake.
 
 ### The Library dashboard
 

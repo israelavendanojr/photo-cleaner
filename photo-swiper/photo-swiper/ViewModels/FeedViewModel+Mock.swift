@@ -56,7 +56,8 @@ extension FeedViewModel {
             allowanceTunables: allowanceTunables,
             freeTier: freeTier,
             features: features,
-            notifier: notifier
+            notifier: notifier,
+            editor: MockVideoEditor()
         )
         switch start {
         case .first:

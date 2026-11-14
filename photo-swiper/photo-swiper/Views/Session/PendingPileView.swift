@@ -1,7 +1,9 @@
 import SwiftUI
 
 /// Everything waiting to be cleared, all marked to delete. Tap the ones worth saving to unmark
-/// them, then Keep sends those back to the library and Delete clears the marked ones now.
+/// them, then Keep sends those back to the library and Delete clears the marked ones now. With edits
+/// waiting, the button clears the bin instead: it saves every edited copy, then deletes the marked
+/// photos and the edited originals in one system prompt, keeping the screen awake while copies are made.
 /// After a delete it says how much was freed, then closes. Videos waiting to be trimmed or compressed are
 /// listed under Edits, with the space each saves; swiping one away cancels the edit and keeps the video
 /// as it is.
@@ -73,7 +75,7 @@ struct PendingPileView: View {
             if let freed {
                 FreedConfirmation(bytes: freed)
                     .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
-            } else if !vm.pendingItems.isEmpty {
+            } else if !vm.pendingItems.isEmpty || !vm.pendingEdits.isEmpty {
                 actions.transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
@@ -89,12 +91,17 @@ struct PendingPileView: View {
         .onChange(of: vm.pendingItems.map(\.id)) { _, ids in
             selected.formIntersection(ids)
         }
-        .alert("Delete \(selected.count) \(selected.count == 1 ? "photo" : "photos")?", isPresented: $isConfirming) {
-            Button("Delete", role: .destructive, action: deleteSelected)
+        .alert(confirmTitle, isPresented: $isConfirming) {
+            Button(vm.pendingEdits.isEmpty ? "Delete" : "Clear", role: .destructive, action: deleteSelected)
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("This frees \(Format.size(selectedBytes)). They'll stay in Recently Deleted for 30 days.")
+            Text(confirmMessage)
         }
+        // Making copies can take minutes; the screen stays on meanwhile.
+        .onChange(of: vm.editProgress != nil) { _, isEditing in
+            UIApplication.shared.isIdleTimerDisabled = isEditing
+        }
+        .onDisappear { UIApplication.shared.isIdleTimerDisabled = false }
         .alert(vm.deleteNotice ?? "", isPresented: hasDeleteNotice) {
             Button("OK", role: .cancel) {}
         }
@@ -138,9 +145,31 @@ struct PendingPileView: View {
         .padding(.top, showsDone ? DS.Spacing.xl : DS.Spacing.xs)
     }
 
+    /// What clearing frees: the marked photos, plus what the edits save.
+    private var clearBytes: Int64 { selectedBytes + vm.editSavedBytes }
+
+    private var confirmTitle: String {
+        guard !vm.pendingEdits.isEmpty else { return "Delete \(selected.count) \(selected.count == 1 ? "photo" : "photos")?" }
+        return "Clear the bin?"
+    }
+
+    /// "Saves 2 edited videos, then deletes their originals and 12 photos. This frees about 1.2 GB. …"
+    private var confirmMessage: String {
+        let edits = vm.pendingEdits.count
+        guard edits > 0 else { return "This frees \(Format.size(selectedBytes)). They'll stay in Recently Deleted for 30 days." }
+        let videos = "\(edits) edited \(edits == 1 ? "video" : "videos")"
+        let photos = selected.isEmpty ? "" : " and \(selected.count) \(selected.count == 1 ? "photo" : "photos")"
+        return "Saves \(videos), then deletes \(edits == 1 ? "its original" : "their originals")\(photos). "
+            + "This frees about \(Format.size(clearBytes)). Deleted items stay in Recently Deleted for 30 days."
+    }
+
     /// Keep for the unmarked photos, above the bin the marked ones go to.
     private var actions: some View {
         VStack(spacing: DS.Spacing.s) {
+            if let progress = vm.editProgress {
+                EditProgressRow(progress: progress)
+                    .transition(.opacity)
+            }
             if !keptItems.isEmpty {
                 Button("Keep \(keptItems.count)", action: keepUnmarked)
                     .buttonStyle(.pill(.outline))
@@ -149,7 +178,7 @@ struct PendingPileView: View {
                     .accessibilityIdentifier("keepButton")
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
-            if !selected.isEmpty {
+            if !selected.isEmpty || !vm.pendingEdits.isEmpty {
                 binRow.transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
@@ -159,31 +188,36 @@ struct PendingPileView: View {
         .background(DS.Palette.paper)
     }
 
+    /// The marked photos plus the edits, as the bin's badge counts them.
+    private var binCount: Int { selected.count + vm.pendingEdits.count }
+
     /// The bin the marked photos go to: how many, and the button that deletes them now.
     private var binRow: some View {
         HStack(spacing: DS.Spacing.s) {
             Image(systemName: "trash.fill")
                 .font(.system(size: 20, weight: .medium))
                 .foregroundStyle(DS.Palette.brick)
-                .symbolEffect(.bounce, value: selected.count)
+                .symbolEffect(.bounce, value: binCount)
                 .frame(width: 52, height: 52)
                 .background(DS.Palette.brickTint, in: Circle())
                 .overlay(alignment: .topTrailing) {
-                    Text("\(selected.count)")
+                    Text("\(binCount)")
                         .font(.caption2.weight(.bold))
                         .monospacedDigit()
                         .foregroundStyle(.white)
                         .padding(.horizontal, 6)
                         .frame(minWidth: 20, minHeight: 20)
                         .background(DS.Palette.brick, in: Capsule())
-                        .contentTransition(.numericText(value: Double(selected.count)))
+                        .contentTransition(.numericText(value: Double(binCount)))
                         .offset(x: 4, y: -4)
                 }
                 .accessibilityHidden(true)
-            Button("Delete \(selected.count) · \(Format.size(selectedBytes))") { isConfirming = true }
-                .buttonStyle(.pill(.brick))
-                .disabled(isDeleting)
-                .accessibilityIdentifier("binButton")
+            Button(vm.pendingEdits.isEmpty ? "Delete \(selected.count) · \(Format.size(selectedBytes))" : "Clear bin · \(Format.size(clearBytes))") {
+                isConfirming = true
+            }
+            .buttonStyle(.pill(.brick))
+            .disabled(isDeleting)
+            .accessibilityIdentifier("binButton")
         }
     }
 
@@ -291,6 +325,22 @@ private struct PileLimit: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(Format.size(bytes)) of \(Format.limit(limit)) in the free pile\(isFull ? ". Full." : "")")
         .accessibilityIdentifier("pile.limit")
+    }
+}
+
+/// "Saving edited video 1 of 2", with how far along it is.
+private struct EditProgressRow: View {
+    let progress: EditProgress
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: DS.Spacing.xs) {
+            Text("Saving edited video \(progress.index) of \(progress.count)")
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(DS.Palette.ink)
+            ProgressLine(value: progress.fraction, tint: DS.Palette.ink, height: 4)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("pile.editProgress")
     }
 }
 

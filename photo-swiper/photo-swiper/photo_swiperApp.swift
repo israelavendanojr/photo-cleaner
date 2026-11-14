@@ -89,7 +89,8 @@ private extension FeedViewModel {
             return FeedViewModel(
                 library: MockPhotoLibrary(grantedAccess: UserDefaults.standard.bool(forKey: "limitedAccess") ? .limited : .full),
                 builder: MockFeedBuilder(), store: mockProgressStore(), entitlements: entitlements,
-                allowanceStore: SwipeAllowanceStore(initial: allowance), freeTier: .shared, features: .shared, notifier: notifier
+                allowanceStore: SwipeAllowanceStore(initial: allowance), freeTier: .shared, features: .shared, notifier: notifier,
+                editor: MockVideoEditor()
             )
         }
         if let left = debugSwipesLeft {
@@ -113,7 +114,7 @@ private extension FeedViewModel {
             return FeedViewModel(
                 library: library, builder: PhotoKitFeedBuilder(), store: InMemoryProgressStore(), entitlements: entitlements,
                 allowanceStore: SwipeAllowanceStore(defaults: .standard), freeTier: .shared, features: .shared,
-                progressLoadFailed: true
+                progressLoadFailed: true, editor: PhotoKitVideoEditor()
             )
         }
         let store = SwiftDataProgressStore(container: container)
@@ -137,7 +138,8 @@ private extension FeedViewModel {
             freeTier: .shared,
             features: .shared,
             notifier: RefillNotifier(center: SystemNotificationCenter(), defaults: .standard),
-            dashboardCache: DashboardController.defaultCacheURL
+            dashboardCache: DashboardController.defaultCacheURL,
+            editor: PhotoKitVideoEditor()
         )
     }
 

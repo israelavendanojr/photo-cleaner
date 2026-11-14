@@ -234,8 +234,9 @@ struct PendingEditTests {
         #expect(vm.trimToast == nil)
     }
 
-    /// Clearing the bin deletes only the deletions; a trimmed video is never handed to the library's delete.
-    @Test func clearingTheBinLeavesTrimsAlone() async throws {
+    /// Without an editor (`FeedViewModel.editor` nil), clearing the bin deletes only the deletions: an edited
+    /// video is never handed to the library's delete before its copy is saved. `ConfirmEditsTests` has the rest.
+    @Test func withoutAnEditorClearingTheBinLeavesEditsAlone() async throws {
         let library = FakeLibrary()
         var deleted: [LibraryItem.ID] = []
         library.onDelete = { items in
