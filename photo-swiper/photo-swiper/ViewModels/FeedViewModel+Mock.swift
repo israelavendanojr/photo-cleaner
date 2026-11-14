@@ -7,7 +7,7 @@ extension FeedViewModel {
     /// Named starting points for previews and `-startAt` launch arguments.
     enum MockStart: String {
         case first, video, similar, batch, duplicates, onboarding
-        /// Partway through the first page with a few deletes pending.
+        /// Partway through the first page with a few deletes pending, and the video it kept waiting to be trimmed.
         case pending
         /// Locked with no swipes left, the wall up over the deck.
         case outOfSwipes
@@ -106,7 +106,14 @@ extension FeedViewModel {
             case 4 where index < 20: .up
             default: .left
             }
-            if let card = currentCard { decide(direction, cardID: card.id) }
+            if let card = currentCard {
+                // Kept videos are trimmed to their first quarter, so the bin has a Trims section.
+                if case .video(let item) = card, let duration = item.duration {
+                    decideTrim(PendingTrim(range: TrimRange(start: 0, end: duration / 4), originalDuration: duration), cardID: card.id)
+                } else {
+                    decide(direction, cardID: card.id)
+                }
+            }
         }
         dismissChip()
     }

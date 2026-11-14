@@ -44,6 +44,8 @@ final class FeedViewModel {
     private(set) var index = 0
     private(set) var decisions: [LibraryItem.ID: Decision] = [:]
     private(set) var deleteChip: DeleteChip?
+    /// The last swipe queued a trim. Its Undo is the feed's undo; anything decided after it hides it.
+    private(set) var trimToast: TrimToast?
     private(set) var returningCard: ReturningCard?
     private(set) var stats = LibraryStats(totalItems: 0, reviewedItems: 0, freedBytes: 0)
     private(set) var access = LibraryAccess.full
@@ -79,6 +81,9 @@ final class FeedViewModel {
     private var history: [Snapshot] = []
     /// Pending deletes that are no longer in the deck: from earlier decks, or trimmed from behind this one.
     private var carriedPending: [LibraryItem] = []
+    /// Kept videos waiting to be trimmed, as saved. Read again from the store after anything that can
+    /// add, change or drop a trim, since the trim lives with the saved decision.
+    private var savedTrims: [TrimmedItem] = []
     /// Items deleted, gone from the library, or undeletable. They stay decided but are no longer pending.
     private var settledIDs: Set<LibraryItem.ID> = []
     /// Of those, the ones no longer in the library (deleted or gone), for the dashboard: the index drops
@@ -97,6 +102,7 @@ final class FeedViewModel {
     /// Totals the library reports itself. Reviewed counts come from saved progress.
     private var libraryStats = LibraryStats(totalItems: 0, reviewedItems: 0, freedBytes: 0)
     private var chipTask: Task<Void, Never>?
+    private var trimToastTask: Task<Void, Never>?
     private var changesTask: Task<Void, Never>?
     /// A refill landed while no deck could take the strongest cards first; the next one dealt does.
     private var refilledSinceDeal = false
@@ -289,6 +295,21 @@ final class FeedViewModel {
         return (carriedPending + current).filter { !settledIDs.contains($0.id) && !outOfReachIDs.contains($0.id) }
     }
     var pendingBytes: Int64 { pendingItems.reduce(0) { $0 + $1.bytes } }
+    /// The bin's Trims section, oldest first. Items the app can't see under limited access are hidden, as in the pile.
+    var pendingTrims: [TrimmedItem] {
+        savedTrims.filter { !settledIDs.contains($0.id) && !outOfReachIDs.contains($0.id) }
+    }
+    /// Space the pending trims give back, estimated.
+    var trimSavedBytes: Int64 { pendingTrims.reduce(0) { $0 + $1.savedBytes } }
+    /// What confirming the bin frees: the deletes plus what the trims save. The free pile limit counts
+    /// only the deletes (`pileCountedBytes`).
+    var binBytes: Int64 { pendingBytes + trimSavedBytes }
+    /// Deletes and trims together.
+    var binCount: Int { pendingItems.count + pendingTrims.count }
+    /// The trim waiting for this video, if there is one.
+    func pendingTrim(for itemID: LibraryItem.ID) -> PendingTrim? {
+        pendingTrims.first { $0.id == itemID }?.trim
+    }
     /// Admin Tools' mock items are left out: they aren't in the library.
     var keptCount: Int { decisions.filter { $0.value == .keep && !LibraryItem.isAdminMock(id: $0.key) }.count }
     var laterCount: Int { decisions.filter { $0.value == .later && !LibraryItem.isAdminMock(id: $0.key) }.count }
@@ -528,6 +549,17 @@ final class FeedViewModel {
         commit(outcome, card: card, direction: direction)
     }
 
+    /// Keeps video card `cardID` and queues `trim` for it in the bin, as a right swipe would keep it.
+    /// It costs a swipe like any keep, and undo takes the trim back with the decision. If that card is
+    /// no longer the current one, or isn't a video, nothing happens.
+    func decideTrim(_ trim: PendingTrim, cardID: FeedCard.ID) {
+        guard phase == .feed, let top = currentCard else { return }
+        // Admitting can credit a refill, which reorders the deck, so the card is only read after it.
+        guard top.isAdminMock || admitSwipe(), let card = currentCard(matching: cardID), case .video(let item) = card else { return }
+        commit([item.id: .keep], card: card, direction: .right, trims: [item.id: trim])
+        showTrimToast(savedBytes: trim.savedBytes(from: item.bytes))
+    }
+
     /// Settles batch or similar-shots card `cardID` from a one-by-one review. Items left out
     /// count as "later" in a batch, and follow their marks in a similar set. If that card is no longer
     /// the current one, nothing happens.
@@ -581,14 +613,37 @@ final class FeedViewModel {
         if last.charged { gate.refund() }
         returningCard = ReturningCard(cardID: last.cardID, direction: last.direction)
         dismissChip()
+        dismissTrimToast()
         phase = .feed
         saveProgress(with: last.stored)
+        refreshTrims()
         refreshTotals(includingFreed: false)
     }
 
     /// Takes items out of the pile by keeping them instead, here, in the store, and in undo history.
     /// Admin Tools' mock items are kept here only; `saveProgress` never writes them.
     func keep(_ items: [LibraryItem]) {
+        keep(items, trims: [:])
+    }
+
+    /// Sets, changes or cancels the trim waiting for `item`, from the bin. A video in the deletes moves to
+    /// the trims, kept, as `keep` would keep it. A trim already waiting is replaced, and nil cancels it:
+    /// the video stays kept, whole. Costs no swipe. Anything else is left alone.
+    func setTrim(_ trim: PendingTrim?, for item: LibraryItem) {
+        guard item.isVideo else { return }
+        if pendingItems.contains(where: { $0.id == item.id }) {
+            guard let trim else { return }
+            keep([item], trims: [item.id: trim])
+        } else if pendingTrim(for: item.id) != nil, var record = store.decisions(for: [item.id])[item.id] {
+            record.trim = trim
+            record.decidedAt = now()
+            saveProgress(with: [item.id: record])
+            refreshTrims()
+        }
+    }
+
+    /// `keep`, with a trim queued for any of `items` in `trims`, in the same write.
+    private func keep(_ items: [LibraryItem], trims: [LibraryItem.ID: PendingTrim]) {
         let pending = Set(pendingItems.map(\.id))
         let items = items.filter { pending.contains($0.id) }
         guard !items.isEmpty else { return }
@@ -600,7 +655,8 @@ final class FeedViewModel {
         let decidedAt = now()
         let kept = Dictionary(uniqueKeysWithValues: items.map { item in
             let sessionNumber = saved[item.id]?.sessionNumber ?? session?.number ?? 0
-            return (item.id, Optional(StoredDecision(decision: .keep, decidedAt: decidedAt, sessionNumber: sessionNumber, item: item)))
+            return (item.id, Optional(StoredDecision(decision: .keep, decidedAt: decidedAt, sessionNumber: sessionNumber, item: item,
+                                                     trim: trims[item.id])))
         })
 
         // Undoing a later swipe must not put them back in the pile.
@@ -616,6 +672,7 @@ final class FeedViewModel {
         }
         for group in marks.keys { marks[group]?.subtract(ids) }
         saveProgress(with: kept)
+        if !trims.isEmpty { refreshTrims() }
         refreshTotals(includingFreed: false)
     }
 
@@ -967,7 +1024,10 @@ final class FeedViewModel {
     /// `direction` is the side the card left from, so undo brings it back the same way.
     /// An Admin Tools mock card is never saved or charged: its decisions live only in memory, where a
     /// delete puts it in the pile like any other (see `deleteNow` for what deleting it does).
-    private func commit(_ outcome: [LibraryItem.ID: Decision], card: FeedCard, direction: SwipeDirection) {
+    /// `trims` queues a trim with a keep (`decideTrim`). Any other decision is saved without one, so
+    /// binning a video that was waiting to be trimmed drops the trim: the delete wins.
+    private func commit(_ outcome: [LibraryItem.ID: Decision], card: FeedCard, direction: SwipeDirection,
+                        trims: [LibraryItem.ID: PendingTrim] = [:]) {
         let isMock = card.isAdminMock
         let ids = card.items.map(\.id)
         let before = isMock ? [:] : store.decisions(for: Set(ids))
@@ -977,13 +1037,14 @@ final class FeedViewModel {
         decisions.merge(outcome) { _, new in new }
         drafts[card.id] = nil
         returningCard = nil
+        dismissTrimToast()
 
         let decidedAt = now()
         let sessionNumber = session?.number ?? 0
         let changes: [LibraryItem.ID: StoredDecision?] = isMock ? [:] : Dictionary(uniqueKeysWithValues: card.items.compactMap { item in
             outcome[item.id].map {
                 (item.id, StoredDecision(decision: $0, decidedAt: decidedAt, sessionNumber: sessionNumber, item: item,
-                                         category: category(of: item, on: card)))
+                                         category: category(of: item, on: card), trim: trims[item.id]))
             }
         })
 
@@ -993,6 +1054,8 @@ final class FeedViewModel {
         index += 1
         // The decisions and the deck's new position, in one save, before returning.
         saveProgress(with: changes)
+        // A trim was added, or a decision replaced one that had a trim.
+        if !trims.isEmpty || savedTrims.contains(where: { outcome[$0.id] != nil }) { refreshTrims() }
         refreshTotals(includingFreed: false)
         fillIfNeeded()
     }
@@ -1244,8 +1307,10 @@ final class FeedViewModel {
         let ids = Set(next.items.map(\.id))
         if feedFocus != nil { dealtWhileFocused.formUnion(ids) }
         carriedPending = store.pile().filter { !ids.contains($0.id) }
+        refreshTrims()
         returningCard = nil
         dismissChip()
+        dismissTrimToast()
         enterDeckPhase(next.cards.isEmpty ? .caughtUp : .feed)
         saveProgress()
         fillIfNeeded()
@@ -1253,7 +1318,7 @@ final class FeedViewModel {
 
     /// Picks up the saved deck on the card the user left it at, dropping anything deleted outside
     /// the app while it was closed. Under limited access, items outside the selection leave the deck
-    /// and are hidden from the pile, but stay pending in the store.
+    /// and are hidden from the bin (deletes and trims), but stay pending in the store.
     private func restore(_ saved: SavedSession) async {
         var restored = saved.session
         var position = saved.index
@@ -1261,7 +1326,8 @@ final class FeedViewModel {
         position -= restored.cards.prefix(position).filter(\.isAdminMock).count
         restored.cards.removeAll(where: \.isAdminMock)
         let savedIndex = position
-        let unseen = await library.missing(from: Set(restored.items.map(\.id)).union(store.pile().map(\.id)))
+        let waiting = store.pile().map(\.id) + store.pendingTrims().map(\.id)
+        let unseen = await library.missing(from: Set(restored.items.map(\.id)).union(waiting))
         // Only full access proves an item is gone; a limited selection just hides the rest.
         let gone = library.currentAccess() == .full ? unseen : []
         outOfReachIDs = unseen.subtracting(gone)
@@ -1294,6 +1360,7 @@ final class FeedViewModel {
         decisions = records.mapValues(\.decision)
         settledIDs = Set(records.filter { $0.value.settlement != nil }.keys).union(gone)
         carriedPending = store.pile().filter { !ids.contains($0.id) }
+        refreshTrims()
         history = []
         returningCard = nil
         enterDeckPhase(cards.isEmpty ? .caughtUp : .feed)
@@ -1332,6 +1399,11 @@ final class FeedViewModel {
         savedCardsRevision = cardsRevision
     }
 
+    /// Reads the waiting trims again from the store, where they live with their keep decisions.
+    private func refreshTrims() {
+        savedTrims = store.pendingTrims()
+    }
+
     /// Recomputes library totals from saved progress. The freed sum only changes on confirm.
     private func refreshTotals(includingFreed: Bool = true) {
         stats.totalItems = libraryStats.totalItems
@@ -1364,6 +1436,23 @@ final class FeedViewModel {
             guard !Task.isCancelled, self?.deleteChip == chip else { return }
             self?.deleteChip = nil
         }
+    }
+
+    private func showTrimToast(savedBytes: Int64) {
+        let toast = TrimToast(savedBytes: savedBytes)
+        trimToast = toast
+        trimToastTask?.cancel()
+        trimToastTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(4))
+            guard !Task.isCancelled, self?.trimToast == toast else { return }
+            self?.trimToast = nil
+        }
+    }
+
+    /// Hides the "Trim queued" toast now.
+    func dismissTrimToast() {
+        trimToastTask?.cancel()
+        trimToast = nil
     }
 
     /// Hides the "+3.4 MB" chip now.

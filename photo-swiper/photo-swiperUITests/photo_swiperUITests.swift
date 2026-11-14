@@ -619,7 +619,9 @@ final class photo_swiperUITests: XCTestCase {
         XCTAssertFalse(app.descendants(matching: .any)["pile.limit"].exists, "No limit once unlocked")
         deleteAllInPile(app)
 
-        XCTAssertTrue(emptyPile(app).waitForExistence(timeout: 5))
+        // The pile closes once the deletes are done. The mock's pending trim stays in the bin, and
+        // unlocked the counter shows the whole bin, so it doesn't read 0 MB.
+        XCTAssertTrue(app.descendants(matching: .any)["pile.freed"].waitForNonExistence(timeout: 5), "The pile closes")
         XCTAssertFalse(app.buttons["paywall.unlock"].waitForExistence(timeout: 2))
     }
 

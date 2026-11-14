@@ -49,7 +49,7 @@ final class SwiftDataProgressStore: ProgressStoring {
     nonisolated static func makeContainer(url: URL? = nil, inMemory: Bool = false,
                                           allowsUnplannedFallback: Bool = true) throws -> ModelContainer {
         let configuration = if let url { ModelConfiguration(url: url) } else { ModelConfiguration(isStoredInMemoryOnly: inMemory) }
-        let schema = Schema(versionedSchema: BristleSchemaV2.self)
+        let schema = Schema(versionedSchema: BristleSchemaV3.self)
         do {
             return try ModelContainer(for: schema, migrationPlan: BristleMigrationPlan.self, configurations: configuration)
         } catch {
@@ -118,6 +118,8 @@ final class SwiftDataProgressStore: ProgressStoring {
             record.bytes = change.item.bytes
             record.itemData = itemData
             record.categoryRaw = change.category?.rawValue
+            // Only a keep carries a trim (`StoredDecision.trim`).
+            record.trimData = change.decision == .keep ? change.trim.flatMap { try? encoder.encode($0) } : nil
             if record.settlementRaw != change.settlement?.rawValue {
                 record.settlementRaw = change.settlement?.rawValue
                 record.settledAt = change.settlement == nil ? nil : .now
@@ -167,6 +169,20 @@ final class SwiftDataProgressStore: ProgressStoring {
             sortBy: [SortDescriptor(\.decidedAt)]
         )
         return fetch(descriptor).compactMap { try? decoder.decode(LibraryItem.self, from: $0.itemData) }
+    }
+
+    func pendingTrims() -> [TrimmedItem] {
+        let keep = Decision.keep.rawValue
+        let descriptor = FetchDescriptor<ItemProgress>(
+            predicate: #Predicate { $0.decisionRaw == keep && $0.trimData != nil && $0.settlementRaw == nil },
+            sortBy: [SortDescriptor(\.decidedAt)]
+        )
+        return fetch(descriptor).compactMap { record in
+            guard let data = record.trimData,
+                  let trim = try? decoder.decode(PendingTrim.self, from: data),
+                  let item = try? decoder.decode(LibraryItem.self, from: record.itemData) else { return nil }
+            return TrimmedItem(item: item, trim: trim)
+        }
     }
 
     func excludedFromNewSession(asOf now: Date) -> Set<LibraryItem.ID> {
@@ -370,7 +386,8 @@ final class SwiftDataProgressStore: ProgressStoring {
         return StoredDecision(
             decision: decision, decidedAt: record.decidedAt, sessionNumber: record.sessionNumber,
             item: item, settlement: record.settlementRaw.flatMap(Settlement.init(rawValue:)),
-            category: record.categoryRaw.flatMap(CleanupCategory.init(rawValue:))
+            category: record.categoryRaw.flatMap(CleanupCategory.init(rawValue:)),
+            trim: record.trimData.flatMap { try? decoder.decode(PendingTrim.self, from: $0) }
         )
     }
 

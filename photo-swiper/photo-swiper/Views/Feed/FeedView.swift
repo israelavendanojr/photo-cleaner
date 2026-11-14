@@ -3,6 +3,7 @@ import SwiftUI
 /// The main screen: top bar and the card stack.
 struct FeedView: View {
     @Environment(FeedViewModel.self) private var vm
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var onOpenPile: () -> Void = {}
 
     var body: some View {
@@ -14,8 +15,10 @@ struct FeedView: View {
                 .padding(.top, DS.Spacing.s)
                 .padding(.bottom, DS.Spacing.m)
             CardStackView()
+                .overlay(alignment: .top) { trimToast }
         }
         .background(DS.Palette.paper)
+        .animation(DS.Motion.calm, value: vm.trimToast)
         // Free users clear the pile to go on; the unlock is offered after the delete instead.
         .alert("Your pile is full", isPresented: Binding(get: { vm.isPileFullNoticePresented }, set: { if !$0 { vm.dismissPileFullNotice() } })) {
             Button("Review pile", action: onOpenPile)
@@ -29,6 +32,20 @@ struct FeedView: View {
             guard let next = vm.nextRefillAt else { return }
             try? await Task.sleep(for: .seconds(max(0.5, next.timeIntervalSinceNow)))
             vm.refreshAllowance()
+        }
+    }
+
+    /// "Trim queued · saves ~335 MB · Undo", over the top of the deck after a trim from full screen.
+    @ViewBuilder private var trimToast: some View {
+        if let toast = vm.trimToast {
+            Toast(text: "Trim queued · saves ~\(Format.size(toast.savedBytes))", actionTitle: "Undo") {
+                withAnimation(DS.Motion.calm) { vm.undo() }
+            }
+            .padding(.horizontal, DS.Spacing.l)
+            .padding(.top, DS.Spacing.xs)
+            .transition(reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity))
+            .id(toast.id)
+            .accessibilityIdentifier("feed.trimToast")
         }
     }
 }

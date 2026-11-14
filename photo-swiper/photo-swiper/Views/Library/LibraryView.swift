@@ -117,7 +117,7 @@ struct LibraryView: View {
     private var bin: some View {
         VStack(spacing: DS.Spacing.s) {
             // Empty, there's nothing to open; a disabled link would also dim the card's text.
-            if vm.pendingItems.isEmpty {
+            if vm.binCount == 0 {
                 binCard
                     .accessibilityIdentifier("library.bin")
             } else {
@@ -136,8 +136,8 @@ struct LibraryView: View {
 
     private var binCard: some View {
         BinCard(
-            count: vm.pendingItems.count,
-            bytes: vm.pendingBytes,
+            count: vm.binCount,
+            bytes: vm.binBytes,
             limit: vm.pileLimitBytes.map { (counted: vm.pileCountedBytes, bytes: $0) }
         )
     }

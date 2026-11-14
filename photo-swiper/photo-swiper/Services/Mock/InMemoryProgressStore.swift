@@ -19,7 +19,12 @@ final class InMemoryProgressStore: ProgressStoring {
     }
 
     func save(_ changes: [LibraryItem.ID: StoredDecision?]) {
-        for (id, record) in changes { records[id] = record }
+        for (id, record) in changes {
+            // Only a keep carries a trim, as on disk.
+            var record = record
+            if record?.decision != .keep { record?.trim = nil }
+            records[id] = record
+        }
     }
 
     func settle(_ ids: Set<LibraryItem.ID>, as settlement: Settlement) {
@@ -42,6 +47,12 @@ final class InMemoryProgressStore: ProgressStoring {
 
     func pile() -> [LibraryItem] {
         records.values.filter(\.isPending).sorted { $0.decidedAt < $1.decidedAt }.map(\.item)
+    }
+
+    func pendingTrims() -> [TrimmedItem] {
+        records.values.filter(\.isPendingTrim).sorted { $0.decidedAt < $1.decidedAt }.compactMap { record in
+            record.trim.map { TrimmedItem(item: record.item, trim: $0) }
+        }
     }
 
     func excludedFromNewSession(asOf now: Date) -> Set<LibraryItem.ID> {
