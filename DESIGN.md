@@ -136,7 +136,8 @@ All of these are in [`DesignSystem/Components/`](photo-swiper/photo-swiper/Desig
 | `Chip` | Small rounded labels. `.brick` for counts tied to clearing (swipes left), `.plain` for neutral markers over imagery (Best pick, Keep) and the feed's focus ("Only large videos ×", with `trailingSystemImage: "xmark"`, which takes the text color), `.frosted` for text over video. |
 | `PillTabBar` | The floating tab bar. Its selection animates with `DS.Motion.tab` and fires `Haptics.tabChange`. |
 | `ProgressLine` | A thin progress track. Ink by default, brick for amounts to clear. It reads its percentage to VoiceOver. The dashboard hero's is thicker, at `DS.Progress.heroHeight`. |
-| `ToClearCounter` | The brick serif running total, with a "+3.4 MB" chip that pops above it. |
+| `ToClearCounter` | The brick serif running total, with a "+3.4 MB" chip that pops above it. Unlocked, it's the whole bin, trims included; with a free limit it's the deletes the limit counts. |
+| `Toast` | A short note in an ink `Capsule()` with an optional underlined action, announced to VoiceOver, e.g. the feed's "Trim queued · saves ~335 MB · Undo". The caller decides how long it stays. |
 | `UpsellLayout` / `UpsellCard` / `IncludedRow` | Every unlock surface (the wall and the sheets), so they read as one offer. |
 | `ConfettiView` | The celebration after freeing space. It never takes touches, announces `message`, and falls back to a note under Reduce Motion. |
 | `OpenSettingsButton` | Any link to the app's page in iOS Settings (permissions). |
@@ -145,6 +146,16 @@ All of these are in [`DesignSystem/Components/`](photo-swiper/photo-swiper/Desig
 | `BinCard` | The pile on the dashboard: `trash` in brick on a `brickTint` circle (`DS.Bin.iconDiameter`, scaled), like the feed's Delete, then "Bin" and "N to clear · size" in brick. With a free limit, a brick `ProgressLine` of the pile against it and "56.6 MB of 64 MB" ("Full at …" when full). Empty, it looks the same with zeros and an empty line. Wrap it in the link to the pile only when there's something in it: a disabled link would dim its text. One VoiceOver sentence. |
 
 Formatting goes through `Format` (`size`, `signedSize`, `percent`, `signedPercent`, `weeklyChange`, `day`, `shortDay`, `range`, `duration`, `countdown`, `roughDays`, `spelled`, `count`). `size` uses `ByteCountFormatter` in decimal units from MB up, as Photos and Settings do ("1.2 GB", "0.1 MB"), and reads "0 MB" for nothing. `signedPercent` has one decimal ("+34.5%", "−25.0%"); `weeklyChange` reads "+1.2 GB (+34.5%) vs last week", or "+1.2 GB this week" when last week cleared nothing.
+
+### The full-screen video and its trim strip
+
+`VideoPreviewView`, after Photos' video editor without its tool tabs or Cancel/Done. It's forced dark and sits on black, so fixed white and black are allowed here (see Color).
+
+- **Top bar:** round frosted (`.ultraThinMaterial`) 44pt buttons, Close and volume on the left, the size and short date in the middle, and on the right a hidden slot of the same size for compression (JUN-50), so adding it moves nothing.
+- **Bottom bar:** one frosted panel at `Radius.tile`: the play button, a hairline divider, then `TrimStrip`.
+- **`TrimStrip`** (`DS.Trim`): stills across the clip at `stripHeight` (scaled), a white `playheadWidth` playhead, and chevron handles of `handleWidth` outside the stills, each reaching a 44pt touch area outward. Untrimmed, the frame and handles are a neutral white, as in Photos; once a handle moves they turn brick (space to clear) at `frameWidth`, and what's cut is dimmed with black. With no handles (short clips, slow-motion, Cinematic, trimmer off) it's a plain seek bar.
+- **Trim summary**, above the panel once trimmed: "0:08 · 1.23 GB → 0:05 · ~752 MB" in footnote semibold, "saves ~476 MB" in subheadline bold under it, and while the handles differ from what's saved, Reset (frosted capsule) and Trim (brick capsule), both 44pt tall.
+- **Leaving** with unsaved handles uses a system `.confirmationDialog`: Save trim, Discard (destructive), Keep editing (cancel).
 
 ### The Library dashboard
 
@@ -214,7 +225,7 @@ These are known gaps in the code as of this file's first version. They're docume
 - **Raw shadows outside the two modifiers:** a third style in `ScreenshotBatchCardView` (radius 14, y 10), and black shadows in `PendingPileView` and `VideoPreviewView`.
 - **Raw animations outside `DS.Motion`:** `RootView` (2), `PhotoAccessPrimerView` (2), `OnboardingView`, `NotificationsPrimerView` and `SwipeableCard` (2).
 - **Haptic outside `Haptics`:** `PendingPileView` uses `.sensoryFeedback(.selection, trigger:)`.
-- **Duplicated toast:** `SettingsView` builds the same ink capsule toast twice, and there's no shared component.
+- **Duplicated toast:** `SettingsView` builds the same ink capsule toast twice instead of using `Toast`.
 - **Press styles differ:** `PressScaleStyle` dims to 0.4 when disabled, and the tab bar's private `TabPressStyle` doesn't.
 - **Two screen gutters:** 20 (`l`) in most screens and 28 (`xl`) in onboarding. The reason isn't written down.
 - **Literal 44pt tap target:** `.frame(minHeight: 44)` in `FeedFocusChip`, where `DS.Tap.minimum` now exists.

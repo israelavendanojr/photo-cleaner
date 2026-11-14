@@ -40,6 +40,12 @@ struct DeleteChip: Equatable {
     let bytes: Int64
 }
 
+/// "Trim queued · saves ~335 MB · Undo", shown for a few seconds after a trim from the feed.
+struct TrimToast: Equatable {
+    let id = UUID()
+    let savedBytes: Int64
+}
+
 /// The card an undo just restored, and the side it left from.
 struct ReturningCard: Equatable {
     let cardID: FeedCard.ID

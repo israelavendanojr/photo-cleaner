@@ -101,6 +101,23 @@ struct PendingTrimTests {
         #expect(vm.binCount == 1)
     }
 
+    @Test func aTrimFromTheFeedSaysWhatItSavesUntilTheNextDecisionOrUndo() async throws {
+        let vm = await started()
+        let item = try moveToVideo(vm)
+        vm.decideTrim(quarter, cardID: try #require(vm.currentCard?.id))
+        #expect(vm.trimToast?.savedBytes == quarter.savedBytes(from: item.bytes))
+
+        vm.decideCurrent(.right)
+        #expect(vm.trimToast == nil, "The next swipe hides it, so its Undo can't reach past it")
+
+        vm.undo()
+        vm.undo()
+        vm.decideTrim(quarter, cardID: try #require(vm.currentCard?.id))
+        vm.undo()
+        #expect(vm.trimToast == nil)
+        #expect(vm.pendingTrims.isEmpty)
+    }
+
     @Test func trimmingACardThatIsNoLongerOnTopDoesNothing() async throws {
         let vm = await started()
         _ = try moveToVideo(vm)

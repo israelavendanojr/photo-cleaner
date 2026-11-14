@@ -75,6 +75,17 @@ enum DS {
         static let iconDiameter: CGFloat = 52
     }
 
+    /// The full-screen video's trim strip (`TrimStrip`).
+    enum Trim {
+        /// The strip's height at the default text size; it scales with Dynamic Type.
+        static let stripHeight: CGFloat = 48
+        /// A handle's visible width. Its touch area reaches out to `Tap.minimum`.
+        static let handleWidth: CGFloat = 18
+        /// The frame around what's kept.
+        static let frameWidth: CGFloat = 3
+        static let playheadWidth: CGFloat = 3
+    }
+
     /// The dashboard hero's progress through the whole library: a thicker `ProgressLine` than the feed's,
     /// since it's the card's one visual.
     enum Progress {

@@ -44,6 +44,8 @@ final class FeedViewModel {
     private(set) var index = 0
     private(set) var decisions: [LibraryItem.ID: Decision] = [:]
     private(set) var deleteChip: DeleteChip?
+    /// The last swipe queued a trim. Its Undo is the feed's undo; anything decided after it hides it.
+    private(set) var trimToast: TrimToast?
     private(set) var returningCard: ReturningCard?
     private(set) var stats = LibraryStats(totalItems: 0, reviewedItems: 0, freedBytes: 0)
     private(set) var access = LibraryAccess.full
@@ -100,6 +102,7 @@ final class FeedViewModel {
     /// Totals the library reports itself. Reviewed counts come from saved progress.
     private var libraryStats = LibraryStats(totalItems: 0, reviewedItems: 0, freedBytes: 0)
     private var chipTask: Task<Void, Never>?
+    private var trimToastTask: Task<Void, Never>?
     private var changesTask: Task<Void, Never>?
     /// A refill landed while no deck could take the strongest cards first; the next one dealt does.
     private var refilledSinceDeal = false
@@ -554,6 +557,7 @@ final class FeedViewModel {
         // Admitting can credit a refill, which reorders the deck, so the card is only read after it.
         guard top.isAdminMock || admitSwipe(), let card = currentCard(matching: cardID), case .video(let item) = card else { return }
         commit([item.id: .keep], card: card, direction: .right, trims: [item.id: trim])
+        showTrimToast(savedBytes: trim.savedBytes(from: item.bytes))
     }
 
     /// Settles batch or similar-shots card `cardID` from a one-by-one review. Items left out
@@ -609,6 +613,7 @@ final class FeedViewModel {
         if last.charged { gate.refund() }
         returningCard = ReturningCard(cardID: last.cardID, direction: last.direction)
         dismissChip()
+        dismissTrimToast()
         phase = .feed
         saveProgress(with: last.stored)
         refreshTrims()
@@ -1032,6 +1037,7 @@ final class FeedViewModel {
         decisions.merge(outcome) { _, new in new }
         drafts[card.id] = nil
         returningCard = nil
+        dismissTrimToast()
 
         let decidedAt = now()
         let sessionNumber = session?.number ?? 0
@@ -1304,6 +1310,7 @@ final class FeedViewModel {
         refreshTrims()
         returningCard = nil
         dismissChip()
+        dismissTrimToast()
         enterDeckPhase(next.cards.isEmpty ? .caughtUp : .feed)
         saveProgress()
         fillIfNeeded()
@@ -1429,6 +1436,23 @@ final class FeedViewModel {
             guard !Task.isCancelled, self?.deleteChip == chip else { return }
             self?.deleteChip = nil
         }
+    }
+
+    private func showTrimToast(savedBytes: Int64) {
+        let toast = TrimToast(savedBytes: savedBytes)
+        trimToast = toast
+        trimToastTask?.cancel()
+        trimToastTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(4))
+            guard !Task.isCancelled, self?.trimToast == toast else { return }
+            self?.trimToast = nil
+        }
+    }
+
+    /// Hides the "Trim queued" toast now.
+    func dismissTrimToast() {
+        trimToastTask?.cancel()
+        trimToast = nil
     }
 
     /// Hides the "+3.4 MB" chip now.

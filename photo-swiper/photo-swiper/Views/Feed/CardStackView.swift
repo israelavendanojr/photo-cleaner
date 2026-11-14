@@ -24,7 +24,8 @@ struct CardStackView: View {
             dealsIn: dealsIn,
             canSwipe: canDecide,
             onRefused: refused,
-            waitingText: vm.isFindingMore ? "Finding more…" : nil
+            waitingText: vm.isFindingMore ? "Finding more…" : nil,
+            onTrim: trim
         )
         #if DEBUG
         .overlay(alignment: .top) { CurrentCardMarker() }
@@ -72,6 +73,12 @@ struct CardStackView: View {
             Haptics.delete()
         }
         vm.decide(direction, cardID: card.id)
+    }
+
+    /// A trim saved in the full-screen video keeps its card and queues the trim in the bin.
+    private func trim(_ trim: PendingTrim, card: FeedCard) {
+        hasSeenSwipeHint = true
+        vm.decideTrim(trim, cardID: card.id)
     }
 }
 

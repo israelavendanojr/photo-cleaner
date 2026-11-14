@@ -458,6 +458,12 @@ private struct PendingTile: View {
         .environment(FeedViewModel.mock(startingAt: .pending))
 }
 
+#Preview("XXL") {
+    PendingPileView(showsDone: true)
+        .environment(FeedViewModel.mock(startingAt: .pending))
+        .dynamicTypeSize(.xxLarge)
+}
+
 #Preview("Empty") {
     PendingPileView(showsDone: true)
         .environment(FeedViewModel.mock())

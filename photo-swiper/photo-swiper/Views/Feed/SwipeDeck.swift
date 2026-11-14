@@ -29,6 +29,9 @@ struct SwipeDeck: View {
     var onRefused: (SwipeDirection, FeedCard) -> Void = { _, _ in }
     /// Shown in place of the top card while the deck waits on more, e.g. "Finding more…".
     var waitingText: String?
+    /// A trim saved in the full-screen video. The card flies off right, as kept, and this is called in
+    /// place of `onDecide`. Nil offers no trimming.
+    var onTrim: ((PendingTrim, FeedCard) -> Void)?
 
     /// How far the top card is toward committing, 0...1.
     @State private var progress = 0.0
@@ -42,7 +45,9 @@ struct SwipeDeck: View {
     @State private var previewingPhoto: LibraryItem?
     /// A swipe made in full screen, and the item it was made on. The top card flies off that way once
     /// the preview closes, if it still holds that item.
-    @State private var previewDecision: (direction: SwipeDirection, itemID: LibraryItem.ID)?
+    @State private var previewDecision: (direction: SwipeDirection, itemID: LibraryItem.ID, trim: PendingTrim?)?
+    /// A trim from full screen waiting for its card to fly off, by card. It's handed to `onTrim` instead of a keep.
+    @State private var queuedTrim: (trim: PendingTrim, cardID: FeedCard.ID)?
     /// What was pre-cached before this deck appeared, handed back when it goes (a nested deck).
     @State private var outerPreheat: [String: CGSize]?
     @State private var hasDealt = false
@@ -109,14 +114,20 @@ struct SwipeDeck: View {
                 .modifier(DealIn(isDealt: isDealt, order: 2))
         }
         .fullScreenCover(item: $previewingVideo, onDismiss: flyOutPreviewDecision) { item in
-            VideoPreviewView(item: item, label: previewLabel) { direction in
-                previewDecision = (direction, item.id)
+            VideoPreviewView(item: item, label: previewLabel, onDecide: { direction in
+                previewDecision = (direction, item.id, nil)
                 previewingVideo = nil
-            }
+            }, onTrim: onTrim.map { _ in
+                { trim in
+                    // From the feed there's no saved trim, so saving always queues one.
+                    if let trim { previewDecision = (.right, item.id, trim) }
+                    previewingVideo = nil
+                }
+            })
         }
         .fullScreenCover(item: $previewingPhoto, onDismiss: flyOutPreviewDecision) { item in
             PhotoPreviewView(item: item, label: previewLabel) { direction in
-                previewDecision = (direction, item.id)
+                previewDecision = (direction, item.id, nil)
                 previewingPhoto = nil
             }
         }
@@ -173,7 +184,8 @@ struct SwipeDeck: View {
     private func flyOutPreviewDecision() {
         guard let decision = previewDecision else { return }
         previewDecision = nil
-        guard currentCard?.items.contains(where: { $0.id == decision.itemID }) == true else { return }
+        guard let card = currentCard, card.items.contains(where: { $0.id == decision.itemID }) else { return }
+        if let trim = decision.trim { queuedTrim = (trim, card.id) }
         request = decision.direction
     }
 
@@ -199,9 +211,15 @@ struct SwipeDeck: View {
     }
 
     private func commit(_ direction: SwipeDirection, card: FeedCard) {
+        let trim = queuedTrim.flatMap { direction == .right && $0.cardID == card.id ? $0.trim : nil }
+        queuedTrim = nil
         withAnimation(DS.Motion.calm) {
             progress = 0
-            onDecide(direction, card)
+            if let trim, let onTrim {
+                onTrim(trim, card)
+            } else {
+                onDecide(direction, card)
+            }
         }
     }
 }
