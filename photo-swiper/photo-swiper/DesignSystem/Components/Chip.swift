@@ -11,7 +11,7 @@ struct Chip: View {
         /// White text on frosted dark. Video duration.
         case frosted
         /// A label lying on a photo: a pale slip with dark text in both appearances, so it reads on
-        /// any picture. A card's flag, "Best pick", "Keep".
+        /// any picture. "Best pick", "Keep".
         case onPhoto
     }
 
@@ -20,18 +20,10 @@ struct Chip: View {
     var trailingSystemImage: String?
     var style: Style = .brick
     var size: Font.TextStyle = .subheadline
-    /// A brick dot before the text: this is a flag, a reason the item might go.
-    var showsDot = false
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         HStack(spacing: 6) {
-            if showsDot {
-                Circle()
-                    .fill(iconColor)
-                    .frame(width: DS.Control.dot, height: DS.Control.dot)
-                    .accessibilityHidden(true)
-            }
             if let systemImage {
                 Image(systemName: systemImage)
                     .imageScale(.small)

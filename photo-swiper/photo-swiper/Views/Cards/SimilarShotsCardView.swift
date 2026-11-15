@@ -126,6 +126,8 @@ private struct SimilarThumbnail: View {
 
     /// The corner mark's tap target, bigger than the circle drawn.
     private let markHitSize: CGFloat = 30
+    /// The most of a thumbnail's width the mark's target takes, so it stops short of the middle.
+    private let markHitShare: CGFloat = 0.45
 
     var body: some View {
         Button(action: onOpen) {
@@ -140,16 +142,21 @@ private struct SimilarThumbnail: View {
         }
         .buttonStyle(PressScaleStyle())
         .accessibilityLabel("Open shot \(number)")
-        .overlay(alignment: .topTrailing) {
-            Button(action: onToggle) {
-                MarkCircle(isMarked: isMarked)
-                    .frame(width: markHitSize, height: markHitSize)
-                    .contentShape(Rectangle())
+        .overlay {
+            GeometryReader { proxy in
+                // Never as far as the middle of a small thumbnail: a tap there opens the shot.
+                let side = min(markHitSize, proxy.size.width * markHitShare)
+                Button(action: onToggle) {
+                    MarkCircle(isMarked: isMarked)
+                        .frame(width: side, height: side)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Shot \(number)")
+                .accessibilityValue(isMarked ? "Marked to clear" : "Keeping")
+                .accessibilityHint("Double tap to toggle")
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Shot \(number)")
-            .accessibilityValue(isMarked ? "Marked to clear" : "Keeping")
-            .accessibilityHint("Double tap to toggle")
         }
         .animation(DS.Motion.calm, value: isMarked)
     }

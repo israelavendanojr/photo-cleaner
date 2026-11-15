@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Full-bleed single photo with date, place, and size, and why it's here if the analysis flagged it.
+/// Full-bleed single photo with date, place, and size.
 struct PhotoCardView: View {
     let item: LibraryItem
     var onOpen: () -> Void = {}
@@ -12,12 +12,6 @@ struct PhotoCardView: View {
                 CardCenterButton(accessibilityLabel: "View full screen", action: onOpen)
             }
             .overlay(alignment: .bottomLeading) { caption }
-            .overlay(alignment: .topLeading) {
-                if let flag = item.reviewFlag {
-                    Chip(text: flag.label, style: .onPhoto, size: .footnote, showsDot: true)
-                        .padding(DS.Spacing.m)
-                }
-            }
             .rankDebugBadge(for: item)
             .clipShape(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
             .cardShadow()
@@ -45,7 +39,7 @@ struct PhotoCardView: View {
     }
 
     private var accessibilityText: String {
-        var parts = ["Photo", item.reviewFlag?.label, Format.day(item.date), item.location, Format.size(item.bytes)].compactMap { $0 }
+        var parts = ["Photo", Format.day(item.date), item.location, Format.size(item.bytes)].compactMap { $0 }
         if item.isFavorite { parts.append("Favorite") }
         return parts.joined(separator: ", ")
     }
