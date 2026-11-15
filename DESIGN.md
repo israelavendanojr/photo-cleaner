@@ -49,7 +49,9 @@ Defined in `DS.Palette` ([`DesignSystem.swift`](photo-swiper/photo-swiper/Design
 | 48 | `.largeTitle` | regular | Big numbers: pile total, a video card's file size |
 | 46 | `.largeTitle` | medium | Welcome headline |
 | 40 | `.largeTitle` | medium | Onboarding page titles |
-| 34 | `.largeTitle` | medium | Screen titles (pile, Admin, `UpsellLayout`); regular on empty states ("Nothing cleared yet") |
+| 38 | `.largeTitle` | regular | A plan's price on the paywall |
+| 36 | `.largeTitle` | medium | The paywall's headline |
+| 34 | `.largeTitle` | medium | Screen titles (pile, Admin); regular on empty states ("Nothing cleared yet") |
 | 34 | `.title` | regular | `ToClearCounter` (brick) |
 | 28 | `.title` | regular | Photo card date |
 | 24 | `.title2` | medium | The wordmark, beside `BristleMark` |
@@ -74,7 +76,7 @@ Numbers that change use `.monospacedDigit()` and `.contentTransition(.numericTex
 - **Stack spacing:** `xs` inside a group, `s`–`m` between rows, `l`–`xl` between sections.
 - **Large text scrolls, it doesn't clip.** Put content in a `ScrollView` with `.scrollBounceBehavior(.basedOnSize)`, and pin the primary action below it. Two layouts already do this:
   - `onboardingLayout(footerOrder:footer:)` ([`OnboardingEntrance.swift`](photo-swiper/photo-swiper/Views/Onboarding/OnboardingEntrance.swift)) for onboarding pages;
-  - `UpsellLayout` ([`UpsellLayout.swift`](photo-swiper/photo-swiper/DesignSystem/Components/UpsellLayout.swift)) for every unlock screen: an eyebrow, a serif headline, a supporting sentence, an optional `UpsellCard`, then the offer.
+  - `PaywallView` ([`PaywallView.swift`](photo-swiper/photo-swiper/Views/Session/PaywallView.swift)) for the paywall: its content scrolls and the buy button, billing note and Restore stay under it.
 - Full-width buttons are `.frame(maxWidth: .infinity)`, which `PillButtonStyle` already applies. Side-by-side pills share an `HStack(spacing: DS.Spacing.s)`.
 
 ## Corner radius and elevation
@@ -84,7 +86,7 @@ Numbers that change use `.monospacedDigit()` and `.contentTransition(.numericTex
 | Radius | For |
 |---|---|
 | `card` | Feed cards and anything clipped to them (`SwipeOverlay`) |
-| `inner` | Panels inside a screen: `UpsellCard`, image areas inside a card |
+| `inner` | Panels inside a screen, image areas inside a card |
 | `tile` | Grid tiles and smaller grouped surfaces |
 | `thumb` | Thumbnails |
 
@@ -93,7 +95,7 @@ Numbers that change use `.monospacedDigit()` and `.contentTransition(.numericTex
 - `cardShadow()`: cards, photos and stamp discs.
 - `softShadow()`: chips and `PillTabBar`. `softShadow(raised: true)` is a touch firmer, for a surface that's a choice.
 
-Put the shadow on the background shape, not on the view that holds text, so the text doesn't get a halo (`UpsellCard` shows the pattern). The only material is `.ultraThinMaterial`, used for controls over media.
+Put the shadow on the background shape, not on the view that holds text, so the text doesn't get a halo (the paywall's plan cards show the pattern). The only material is `.ultraThinMaterial`, used for controls over media.
 
 ## Iconography
 
@@ -129,12 +131,14 @@ Put the shadow on the background shape, not on the view that holds text, so the 
 | `tab` | The tab bar's selection capsule |
 | `stackSettle` | The loose stack after a swipe: the next card straightening as it comes to the top |
 | `rowStagger` | The beat between one Library row fading up and the next, once per launch |
+| `fan` | The paywall's three photos fanning out from a squared pile as it appears |
+| `planSelect` | The paywall's selection moving between plans |
 | `tickFill` | `BristleTicks` sweeping to a new value, tick by tick |
 | `countUpDuration`, `countUpSteps` | The dashboard's space cleared counting up from zero, and its ticks filling from empty alongside: once per launch, in steps of `calm` changes, easing out |
 
 **Reduce Motion:** read `@Environment(\.accessibilityReduceMotion)` and show the end state at once, or swap movement for a fade. Examples: `OnboardingEntrance`, `DealIn`, `SwipeableCard` (no nudges), `ConfettiView` (a fading note instead of confetti), `StackedPhotosIllustration`.
 
-**Haptics** come from `Haptics` ([`Haptics.swift`](photo-swiper/photo-swiper/DesignSystem/Haptics.swift)), with one function per moment: `threshold`, `advance` (also a dashboard suggestion tapped), `accessGranted`, `delete`, `refused`, `confirm`, `unlocked`, `tabChange`, `refreshed` (pull to refresh finished). A new moment gets a new function there. Views don't create `UI*FeedbackGenerator`s or use `.sensoryFeedback` directly.
+**Haptics** come from `Haptics` ([`Haptics.swift`](photo-swiper/photo-swiper/DesignSystem/Haptics.swift)), with one function per moment: `threshold`, `advance` (also a dashboard suggestion tapped), `accessGranted`, `delete`, `refused`, `confirm`, `unlocked`, `tabChange`, `planChosen` (a different plan picked on the paywall), `refreshed` (pull to refresh finished). A new moment gets a new function there. Views don't create `UI*FeedbackGenerator`s or use `.sensoryFeedback` directly.
 
 ## Components
 
@@ -151,7 +155,7 @@ All of these are in [`DesignSystem/Components/`](photo-swiper/photo-swiper/Desig
 | `BristleTicks` | Any progress or proportion: upright 2pt strokes on a 5pt pitch (`DS.Ticks`), the filled part over an `outline` track, drawn in a `Canvas`. Ink by default, brick for amounts to clear. `showsTrack: false` for a bar that only compares sizes; `popsNew` lifts ticks as they fill. It fills tick by tick, from empty the first time it's seen (at once under Reduce Motion), scales its height with Dynamic Type, and reads its percentage to VoiceOver: give it a label where it's used. `BristleMark` is the glyph made from it, for the wordmark. |
 | `ToClearCounter` | The brick serif running total with its label on the same baseline ("184 MB of 1 GB"; the label drops under it where they don't fit), and a "+3.4 MB" chip that pops above it. Unlocked, it's the whole bin, edits included; with a free limit it's the deletes the limit counts. |
 | `Toast` | A short note in an ink `Capsule()` with an optional underlined action, announced to VoiceOver, e.g. the feed's "Edit queued · saves ~335 MB · Undo". The caller decides how long it stays. |
-| `UpsellLayout` / `UpsellCard` / `IncludedRow` | Every unlock surface (the wall and the sheets), so they read as one offer. |
+| `PaywallView` (in `Views/Session/`) | Every place the unlock is offered: the swipe wall, after a free user's delete, Settings and onboarding's last step show this one screen. See "The paywall" below. |
 | `ConfettiView` | The celebration after freeing space. It never takes touches, announces `message`, and falls back to a note under Reduce Motion. |
 | `OpenSettingsButton` | Any link to the app's page in iOS Settings (permissions). |
 | `SwipeStamp` (in `Views/Feed/`) | The Delete, Keep and Later wash over a card. It's also used in onboarding's demo. |
@@ -167,6 +171,19 @@ Formatting goes through `Format` (`size`, `signedSize`, `percent`, `signedPercen
 - **The loose stack** (`SwipeDeck`, `StackedBehind`, `DS.Stack`): the next two cards lie behind the top one as real cards, each tilted a few degrees and a step dimmer, the nearer one nudged out from under the top. A card's tilt comes from its ID (`StackPose.tilt`), so it never changes between renders or launches. As the top card is dragged, the cards behind move a step forward in proportion: the next straightens and brightens. On fly-out it settles to 0° (`DS.Motion.stackSettle`) and a new card fades in at the back; undo runs it backward. With Reduce Motion the cards behind hold still during the drag. It's drawing only: the deck's order and which card a swipe decides are the view model's. Only the top card is in the accessibility tree.
 - **Action bar:** Delete (brick on tint), Later (smaller, ringed), Keep (the filled ink disc).
 - **Photo card:** the date in serif over the scrim, place and size under it. A flagged photo shows no flag on its card (`testFlaggedPhotoCardShowsNoFlag`).
+
+### The paywall
+
+One screen (`PaywallView`, `DS.Paywall`), the same on every surface, so the offer never reads differently depending on how the user got there. Top to bottom:
+
+- **Close** (`xmark`), top left. Onboarding hides it: its own top bar has the way out.
+- **Hero:** three photos in a loose pile, each with `cardShadow()`. They start squared up and fan out as the screen appears (`DS.Motion.fan`); with Reduce Motion they're simply fanned.
+- **Headline** "Clear without limits." in serif 36, and one supporting sentence in `secondary`, both centred.
+- **Benefits:** ruled rows (`Rule`), each an icon, a title and a line. Every one must be true in code; `UnlockCopy.benefits` says how each was checked, and `UpsellCopyTests` holds them to it.
+- **Plans:** one card per plan the store lists (`vm.unlockPlans`), side by side, stacked at accessibility sizes: the plan's name, its price in serif 38, and how it's paid. The chosen card has an `ink` ring and a filled mark; the others an `outline` ring and an empty one. Choosing moves with `DS.Motion.planSelect` and `Haptics.planChosen`. Prices are the store's localized strings, never written in the app.
+- **Under the scroll:** the screen's one `.pill(.brick)`, naming the chosen plan and price ("Unlock for $9.99", "Subscribe for $4.99 / month"), then how that plan is billed with Restore beside it, then Privacy and Terms. A failed purchase or restore explains itself in one line under the button.
+
+It has no "Not now": Close is the way out. It says nothing about when free swipes come back.
 
 ### The full-screen video, its trim strip and compression
 

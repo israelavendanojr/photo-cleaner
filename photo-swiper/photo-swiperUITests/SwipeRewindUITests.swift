@@ -24,7 +24,7 @@ final class SwipeRewindUITests: XCTestCase {
         XCTAssertEqual(cardMarker(app).label, first, "The same card came back")
         XCTAssertTrue(emptyPile(app).exists, "Nothing went to the pile")
 
-        app.buttons["paywall.notNow"].tap()
+        app.buttons["paywall.close"].tap()
         XCTAssertTrue(unlock.waitForNonExistence(timeout: 3))
         XCTAssertEqual(cardMarker(app).label, first)
         XCTAssertTrue(waitForRest(app, rest), "The card is back in place")
@@ -54,7 +54,7 @@ final class SwipeRewindUITests: XCTestCase {
             XCTAssertEqual(cardMarker(app).label, first, "\(button) left the card on top")
             XCTAssertTrue(emptyPile(app).exists, "\(button) added nothing to the pile")
 
-            app.buttons["paywall.notNow"].tap()
+            app.buttons["paywall.close"].tap()
             XCTAssertTrue(unlock.waitForNonExistence(timeout: 3))
             XCTAssertTrue(waitForRest(app, rest), "Back in place after \(button)")
         }
@@ -91,7 +91,7 @@ final class SwipeRewindUITests: XCTestCase {
         XCTAssertEqual(cardMarker(app).label, first)
         XCTAssertTrue(emptyPile(app).exists)
 
-        app.buttons["paywall.notNow"].tap()
+        app.buttons["paywall.close"].tap()
         XCTAssertTrue(unlock.waitForNonExistence(timeout: 3))
         sleep(2)
         XCTAssertFalse(unlock.exists, "No second refusal was queued behind the first")

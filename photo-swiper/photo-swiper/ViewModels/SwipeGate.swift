@@ -65,8 +65,7 @@ final class SwipeGate {
     /// The pile can take `added` on top of `pending`. An empty pile takes anything, even one item
     /// (or group) bigger than the whole limit.
     func pileTakes(_ added: [LibraryItem], onto pending: [LibraryItem]) -> Bool {
-        guard let limit = pileLimitBytes, chargesSwipes else { return true }
-        guard !added.isEmpty, !pending.isEmpty else { return true }
+        guard let limit = pileLimitBytes, chargesSwipes, !added.isEmpty, !pending.isEmpty else { return true }
         return Self.countedBytes(pending) + Self.countedBytes(added) <= limit
     }
 
@@ -135,12 +134,12 @@ final class SwipeGate {
     /// A purchase or restore is running. The wall and the Settings unlock can't close meanwhile.
     var isPurchaseBusy: Bool { paywallStatus == .purchasing || paywallStatus == .restoring }
 
-    /// Buys the unlock, from the wall or Settings. Closes the wall, so the current card can be swiped
+    /// Buys the unlock on one of its plans, from any paywall. Closes the wall, so the current card can be swiped
     /// straight away. False if it didn't go through; a cancel says nothing.
-    func purchaseUnlock() async -> Bool {
+    func purchaseUnlock(_ plan: UnlockPlan.Kind = .once) async -> Bool {
         guard !isPurchaseBusy else { return false }
         paywallStatus = .purchasing
-        switch await entitlements.unlock() {
+        switch await entitlements.purchase(plan) {
         case .purchased where entitlements.isUnlocked:
             didUnlock()
             paywallStatus = .idle

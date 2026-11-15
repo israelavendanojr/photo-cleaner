@@ -64,7 +64,12 @@ final class TestEntitlements: EntitlementStore {
         self.isUnlocked = isUnlocked
     }
 
-    func unlock() async -> PurchaseOutcome {
+    var plans = [UnlockPlan(kind: .once, displayPrice: "$9.99"), UnlockPlan(kind: .monthly, displayPrice: "$4.99")]
+    /// The plan each purchase asked for, in order.
+    private(set) var purchasedPlans: [UnlockPlan.Kind] = []
+
+    func purchase(_ plan: UnlockPlan.Kind) async -> PurchaseOutcome {
+        purchasedPlans.append(plan)
         unlockCount += 1
         if unlockResult == .purchased { isUnlocked = true }
         return unlockResult

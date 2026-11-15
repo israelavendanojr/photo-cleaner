@@ -70,6 +70,10 @@ enum DS {
         /// The hero's progress bar fills alongside, in the same steps.
         static let countUpDuration: Duration = .milliseconds(900)
         static let countUpSteps = 16
+        /// The paywall's photos fanning out from a squared pile as it appears.
+        static let fan = Animation.spring(duration: 0.7, bounce: 0.25).delay(0.15)
+        /// The paywall's selection moving from one plan to the other.
+        static let planSelect = Animation.spring(duration: 0.35, bounce: 0.2)
         /// `BristleTicks` filling: the fill sweeps to its new value, and the ticks appear one by one
         /// as it passes them.
         static let tickFill = Animation.easeOut(duration: 0.6)
@@ -156,6 +160,21 @@ enum DS {
     /// The smallest tap target, from the HIG. Small visual marks reach it with a frame or content shape.
     enum Tap {
         static let minimum: CGFloat = 44
+    }
+
+    /// The paywall (`PaywallView`).
+    enum Paywall {
+        /// A hero photo's width at the default text size, and its height as a multiple of that.
+        static let heroWidth: CGFloat = 84
+        static let heroAspect: CGFloat = 108.0 / 84
+        static let heroRadius: CGFloat = 14
+        static let iconColumn: CGFloat = 28
+        static let benefitMinHeight: CGFloat = 54
+        static let planRadius: CGFloat = 18
+        static let planInset: CGFloat = 15
+        /// The chosen plan's ring, and the round mark in a plan's corner.
+        static let selectedRing: CGFloat = 2
+        static let mark: CGFloat = 24
     }
 
     /// A hairline (`Rule`).

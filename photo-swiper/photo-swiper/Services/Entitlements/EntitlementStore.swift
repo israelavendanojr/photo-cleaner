@@ -1,19 +1,27 @@
 import Foundation
 import Observation
 
-/// Whether the one-time unlock is owned, and the way to buy or restore it.
+/// Whether the unlock is owned, and the ways to buy or restore it.
 ///
 /// `StoreKitEntitlementStore` runs the real thing; mocks use `DebugEntitlementStore`. Views never ask
 /// this directly; `FeedViewModel` decides what's gated.
 @MainActor
 protocol EntitlementStore: AnyObject, Observable {
     var isUnlocked: Bool { get }
-    /// Localized price for the unlock button, e.g. "$9.99".
+    /// Localized price of the one-time unlock, e.g. "$9.99".
     var displayPrice: String { get }
-    /// Runs the purchase.
-    func unlock() async -> PurchaseOutcome
+    /// What's on sale right now, in the order the paywall shows it. A plan whose product hasn't loaded
+    /// isn't listed, so nothing is offered that can't be bought.
+    var plans: [UnlockPlan] { get }
+    /// Runs the purchase of one plan.
+    func purchase(_ plan: UnlockPlan.Kind) async -> PurchaseOutcome
     /// Looks for an earlier purchase.
     func restore() async -> RestoreOutcome
+}
+
+extension EntitlementStore {
+    /// Buys the one-time unlock.
+    func unlock() async -> PurchaseOutcome { await purchase(.once) }
 }
 
 /// How a purchase ended.

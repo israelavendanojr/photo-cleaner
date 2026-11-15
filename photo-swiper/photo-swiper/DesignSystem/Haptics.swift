@@ -38,6 +38,11 @@ enum Haptics {
         UINotificationFeedbackGenerator().notificationOccurred(.success)
     }
 
+    /// A different plan was picked on the paywall.
+    static func planChosen() {
+        UISelectionFeedbackGenerator().selectionChanged()
+    }
+
     /// A different tab was picked.
     static func tabChange() {
         UISelectionFeedbackGenerator().selectionChanged()

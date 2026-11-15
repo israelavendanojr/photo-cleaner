@@ -8,7 +8,7 @@ argument-hint: "[screen or JUN-NN]"
 
 `DESIGN.md` is the design system and `CLAUDE.md` holds the rules. Don't restate them; follow them.
 
-1. **Read first.** Read `DESIGN.md`, then the views you'll touch and their neighbors. Before writing a new view, look in `photo-swiper/photo-swiper/DesignSystem/Components/` and DESIGN.md → Components. Most needs are already covered (pills, chips, circle buttons, `UpsellLayout`, `onboardingLayout`).
+1. **Read first.** Read `DESIGN.md`, then the views you'll touch and their neighbors. Before writing a new view, look in `photo-swiper/photo-swiper/DesignSystem/Components/` and DESIGN.md → Components. Most needs are already covered (pills, chips, circle buttons, `PaywallView`, `onboardingLayout`).
 2. **Tokens, never literals.** Use `DS.Palette`, `DS.Spacing`, `DS.Radius` (with `.continuous`), `DS.Motion`, `.dsSerif(_:relativeTo:)`, `cardShadow()`/`softShadow()`, `Haptics.*` and `Format.*`. If a value you need doesn't exist, add the token to `DesignSystem.swift` and a line to `DESIGN.md` in the same change. Don't hardcode it once. Brick is only for deletion, amounts to clear and celebrations. Use at most one `.pill(.brick)` per screen.
 3. **HIG, as this app applies it.**
    - Use system alerts, confirmation dialogs and sheets, never custom alert UI.

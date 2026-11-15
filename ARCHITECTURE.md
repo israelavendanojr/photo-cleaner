@@ -40,6 +40,7 @@ FeedViewModel ──protocols──▶ Services
                                └─ GroupingCache  grouping work, kept until FeatureIndex.generation changes
    ProgressStoring        → SwiftDataProgressStore (main context) decisions + saved deck + cleanup history
    EntitlementStore       → StoreKitEntitlementStore (wrapped by DebugOverrideEntitlementStore)
+                               lists the `UnlockPlan`s on sale; the paywall (`PaywallView`) shows those and buys one by kind
    IndexScheduler → LibraryIndexer → IndexAssetSource (PhotoKitIndexSource) + ImageAnalyzing (VisionImageAnalyzer)
                                    → FeatureIndex (actor, own ModelContext)
 Pure core (no PhotoKit, no UI; unit-tested):
