@@ -151,6 +151,6 @@ private struct DuplicateThumbnail: View {
     DuplicatesCardView(group: group, marked: Set(group.others.map(\.id)), onOpen: { print("open", $0) })
         .frame(height: 560)
         .padding(14)
-        .background(DS.Palette.paper)
+        .paperBackground()
 }
 #endif

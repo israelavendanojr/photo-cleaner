@@ -44,6 +44,6 @@ struct PendingThumbnailGrid: View {
 #Preview {
     PendingThumbnailGrid(items: Array(PreviewSamples.session.items.prefix(37)))
         .padding(26)
-        .background(DS.Palette.paper)
+        .paperBackground()
 }
 #endif

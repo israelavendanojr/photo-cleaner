@@ -212,14 +212,14 @@ private struct NotificationBannerPreview: View {
 #if DEBUG
 #Preview {
     NotificationsPrimerView(onContinue: {})
-        .background(DS.Palette.paper)
+        .paperBackground()
         .environment(FeedViewModel.mock(startingAt: .onboarding))
 }
 
 #Preview("Reminders on") {
     let vm = FeedViewModel.mock(startingAt: .onboarding)
     return NotificationsPrimerView(onContinue: {})
-        .background(DS.Palette.paper)
+        .paperBackground()
         .environment(vm)
         .task { await vm.remindWhenSwipesAreBack() }
 }
@@ -227,6 +227,6 @@ private struct NotificationBannerPreview: View {
 #Preview("Banner") {
     NotificationBannerPreview(message: "10 swipes are back")
         .padding()
-        .background(DS.Palette.paper)
+        .paperBackground()
 }
 #endif

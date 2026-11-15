@@ -45,5 +45,5 @@ struct Toast: View {
             .dynamicTypeSize(.xxLarge)
     }
     .padding()
-    .background(DS.Palette.paper)
+    .paperBackground()
 }

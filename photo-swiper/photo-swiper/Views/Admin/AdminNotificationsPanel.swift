@@ -100,7 +100,7 @@ struct AdminNotificationsPanel: View {
         AdminNotificationsPanel()
             .padding()
     }
-    .background(DS.Palette.paper)
+    .paperBackground()
     .environment(FeedViewModel.mock())
 }
 #endif

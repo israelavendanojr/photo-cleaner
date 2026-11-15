@@ -42,6 +42,6 @@ enum SwipeNudge {
             .padding(14)
         SwipeHint()
     }
-    .background(DS.Palette.paper)
+    .paperBackground()
 }
 #endif

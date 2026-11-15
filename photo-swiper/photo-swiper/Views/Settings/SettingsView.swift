@@ -80,7 +80,7 @@ struct SettingsView: View {
             }
             .scrollBounceBehavior(.basedOnSize)
             .scrollDismissesKeyboard(.interactively)
-            .background(DS.Palette.paper)
+            .paperBackground()
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .principal) {
@@ -127,7 +127,7 @@ struct SettingsView: View {
         .sheet(isPresented: $isUnlockPresented) {
             UnlockSheet()
                 .presentationDragIndicator(.visible)
-                .presentationBackground(DS.Palette.paper)
+                .presentationBackground { PaperBackground() }
                 .presentationCornerRadius(DS.Radius.card)
         }
         .manageSubscriptionsSheet(isPresented: $isManagingSubscription)

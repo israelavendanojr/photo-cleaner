@@ -123,6 +123,6 @@ private struct Piece {
 #if DEBUG
 #Preview {
     ConfettiView(message: "Every photo reviewed", duration: 4)
-        .background(DS.Palette.paper)
+        .paperBackground()
 }
 #endif

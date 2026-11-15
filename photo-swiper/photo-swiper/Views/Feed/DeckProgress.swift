@@ -39,5 +39,5 @@ extension DeckProgress where Footer == EmptyView {
 #Preview {
     DeckProgress(title: "Screenshots", position: 3, total: 14, value: 2 / 14)
         .padding()
-        .background(DS.Palette.paper)
+        .paperBackground()
 }

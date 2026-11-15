@@ -57,7 +57,7 @@ struct OnboardingView: View {
             .simultaneousGesture(swipe(width: width))
             .accessibilityAction(.escape) { request(.back) }
         }
-        .background(DS.Palette.paper)
+        .paperBackground()
         // The steps after access change in the view model, often after an await, so they animate here.
         .animation(pageAnimation, value: vm.onboardingStep)
         .onChange(of: current, initial: true) { _, page in
@@ -141,9 +141,8 @@ struct OnboardingView: View {
                 .opacity(canGoBack ? 1 : 0.4)
                 .disabled(!canGoBack)
                 .accessibilityIdentifier("onboarding.back")
+            // The ticks fill one at a time on their own, during a swipe and after it.
             OnboardingProgressBar(fraction: progressFraction(width: width))
-                // Follows the finger exactly; settles with a spring otherwise.
-                .animation(isSwiping == true ? nil : DS.Motion.calm, value: progressFraction(width: width))
                 .accessibilityLabel("Step \(index(of: current) + 1) of \(pages.count)")
                 .accessibilityIdentifier("onboarding.progress")
             // The same width either way, so the bar never changes length.
@@ -321,29 +320,14 @@ struct OnboardingView: View {
     }
 }
 
-/// How far through onboarding the user is, as a bar that fills toward the last step.
+/// How far through onboarding the user is, in the app's ticks, filling toward the last step.
 private struct OnboardingProgressBar: View {
     /// 0 to 1.
     let fraction: Double
 
-    @ScaledMetric(relativeTo: .body) private var height: CGFloat = 6
-
     var body: some View {
-        Capsule()
-            .fill(DS.Palette.line)
-            .frame(height: height)
-            .overlay(alignment: .leading) {
-                GeometryReader { proxy in
-                    Capsule()
-                        .fill(DS.Palette.ink)
-                        // Never narrower than it is tall, so the rounded ends keep their shape.
-                        .frame(width: max(height, proxy.size.width * fraction))
-                        .opacity(fraction > 0 ? 1 : 0)
-                }
-            }
+        BristleTicks(value: fraction, height: DS.Ticks.rowHeight)
             .frame(maxWidth: .infinity)
-            .accessibilityElement(children: .ignore)
-            .accessibilityValue(Text(fraction, format: .percent.precision(.fractionLength(0))))
     }
 }
 
@@ -357,10 +341,10 @@ private struct OnboardingProgressBar: View {
 }
 
 #Preview("Progress bar") {
-    VStack(spacing: 20) {
+    VStack(spacing: DS.Spacing.l) {
         ForEach([0, 1.0 / 3, 2.0 / 3, 1], id: \.self) { OnboardingProgressBar(fraction: $0) }
     }
-    .padding()
-    .background(DS.Palette.paper)
+    .padding(DS.Spacing.l)
+    .paperBackground()
 }
 #endif

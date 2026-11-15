@@ -57,7 +57,7 @@ struct LibraryView: View {
         .sheet(isPresented: $isSettingsPresented) {
             SettingsView()
                 .presentationDragIndicator(.visible)
-                .presentationBackground(DS.Palette.paper)
+                .presentationBackground { PaperBackground() }
                 .presentationCornerRadius(DS.Radius.card)
         }
         .task(id: isActive) {

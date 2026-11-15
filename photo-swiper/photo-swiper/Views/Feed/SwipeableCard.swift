@@ -329,6 +329,6 @@ enum SwipeThresholds {
             Button("Keep") { request = .right }
         }
     }
-    .background(DS.Palette.paper)
+    .paperBackground()
 }
 #endif

@@ -41,7 +41,7 @@ struct AdminToolsView: View {
         }
         .scrollBounceBehavior(.basedOnSize)
         .scrollDismissesKeyboard(.interactively)
-        .background(DS.Palette.paper)
+        .paperBackground()
     }
 
     private var debugSection: some View {

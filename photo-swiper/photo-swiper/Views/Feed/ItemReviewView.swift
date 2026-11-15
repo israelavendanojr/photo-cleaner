@@ -50,7 +50,7 @@ struct ItemReviewView: View {
         #if DEBUG
         .overlay(alignment: .top) { BestPickMarker(isBestPick: isOnBestPick) }
         #endif
-        .background(DS.Palette.paper)
+        .paperBackground()
     }
 
     /// Whether the top card is the set's suggested keeper.

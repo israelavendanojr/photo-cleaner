@@ -166,5 +166,5 @@ private struct Drift: ViewModifier {
 #Preview {
     StackedPhotosIllustration()
         .padding(40)
-        .background(DS.Palette.paper)
+        .paperBackground()
 }

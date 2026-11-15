@@ -193,6 +193,6 @@ private struct MarkCircle: View {
     }, onOpen: { print("open", $0) })
         .frame(height: 560)
         .padding(14)
-        .background(DS.Palette.paper)
+        .paperBackground()
 }
 #endif

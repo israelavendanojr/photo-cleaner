@@ -89,6 +89,6 @@ private struct FannedThumbnails: View {
     ScreenshotBatchCardView(batch: PreviewSamples.screenshotBatch, onOpen: {})
         .frame(height: 600)
         .padding(14)
-        .background(DS.Palette.paper)
+        .paperBackground()
 }
 #endif

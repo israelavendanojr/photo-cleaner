@@ -58,13 +58,13 @@ struct AdminUpsellPanel: View {
         .sheet(isPresented: isRaised(.postDelete)) {
             UnlockSheet()
                 .presentationDragIndicator(.visible)
-                .presentationBackground(DS.Palette.paper)
+                .presentationBackground { PaperBackground() }
                 .presentationCornerRadius(DS.Radius.card)
         }
         .sheet(isPresented: isRaised(.unlockSheet)) {
             UnlockSheet()
                 .presentationDragIndicator(.visible)
-                .presentationBackground(DS.Palette.paper)
+                .presentationBackground { PaperBackground() }
                 .presentationCornerRadius(DS.Radius.card)
         }
         .fullScreenCover(isPresented: isRaised(.onboarding)) {
@@ -135,7 +135,7 @@ struct AdminMockCardsPanel: View {
         }
         .padding()
     }
-    .background(DS.Palette.paper)
+    .paperBackground()
     .environment(FeedViewModel.mock())
 }
 #endif

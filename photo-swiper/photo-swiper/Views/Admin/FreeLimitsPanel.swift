@@ -58,7 +58,7 @@ struct FreeLimitsPanel: View {
         FreeLimitsPanel()
             .padding()
     }
-    .background(DS.Palette.paper)
+    .paperBackground()
     .environment(FeedViewModel.mock())
 }
 #endif

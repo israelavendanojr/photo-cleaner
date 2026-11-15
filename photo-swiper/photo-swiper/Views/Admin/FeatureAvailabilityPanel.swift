@@ -94,7 +94,7 @@ private struct FeatureRow: View {
         FeatureAvailabilityPanel()
             .padding()
     }
-    .background(DS.Palette.paper)
+    .paperBackground()
     .environment(FeedViewModel.mock())
 }
 #endif
