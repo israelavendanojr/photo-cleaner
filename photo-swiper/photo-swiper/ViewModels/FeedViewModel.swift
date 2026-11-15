@@ -66,6 +66,8 @@ final class FeedViewModel {
     private(set) var isPileFullNoticePresented = false
     /// Something about the last delete the user should know, e.g. items the system refused.
     private(set) var deleteNotice: String?
+    /// Clearing the bin is making the edited copies. Nil otherwise.
+    private(set) var editProgress: EditProgress?
     /// Saved progress couldn't be opened at launch, so this launch runs on a throwaway store.
     /// RootView says so once.
     private(set) var isProgressLoadNoticePresented = false
@@ -81,9 +83,9 @@ final class FeedViewModel {
     private var history: [Snapshot] = []
     /// Pending deletes that are no longer in the deck: from earlier decks, or trimmed from behind this one.
     private var carriedPending: [LibraryItem] = []
-    /// Kept videos waiting to be trimmed, as saved. Read again from the store after anything that can
-    /// add, change or drop a trim, since the trim lives with the saved decision.
-    private var savedTrims: [TrimmedItem] = []
+    /// Kept videos waiting to be trimmed or compressed, as saved. Read again from the store after anything
+    /// that can add, change or drop an edit, since the edit lives with the saved decision.
+    private var savedEdits: [EditedItem] = []
     /// Items deleted, gone from the library, or undeletable. They stay decided but are no longer pending.
     private var settledIDs: Set<LibraryItem.ID> = []
     /// Of those, the ones no longer in the library (deleted or gone), for the dashboard: the index drops
@@ -119,6 +121,8 @@ final class FeedViewModel {
     private var savedCardsRevision: Int?
 
     private let library: any PhotoLibraryProviding
+    /// Makes the bin's edited copies. Nil in tests that don't need one.
+    private let editor: (any VideoEditing)?
     private let builder: any FeedBuilding
     private let store: any ProgressStoring
     private let entitlements: any EntitlementStore
@@ -135,6 +139,8 @@ final class FeedViewModel {
     let freeTier: FreeTierTunables
     /// Which bundle cards free and unlocked users get.
     let features: FeatureAvailabilityTunables
+    /// The compression levels' settings, for the viewer's estimates and previews and the bin's exports.
+    let compression: CompressionTunables
     /// The allowance, the wall and the unlock purchase, and the free pile limit.
     let gate: SwipeGate
     /// The review prompt or unlock offer a delete earns.
@@ -154,6 +160,8 @@ final class FeedViewModel {
     ///   - freeTier: The live free-tier limits. Nil fixes them at `allowanceTunables` and the standard pile limit.
     ///   - features: Live feature availability. Nil gives everyone every feature.
     ///   - progressLoadFailed: Saved progress couldn't be opened, so `store` is a stand-in. The user is told once.
+    ///   - editor: Makes the bin's edited copies. Nil leaves edits waiting in the bin when it's cleared.
+    ///   - compression: Live compression settings. Nil fixes them at the standard levels.
     init(
         library: any PhotoLibraryProviding,
         builder: any FeedBuilding,
@@ -169,8 +177,12 @@ final class FeedViewModel {
         notifier: RefillNotifier? = nil,
         progressLoadFailed: Bool = false,
         dashboardCache: URL? = nil,
+        editor: (any VideoEditing)? = nil,
+        compression: CompressionTunables? = nil,
         now: @escaping () -> Date = Date.init
     ) {
+        self.editor = editor
+        self.compression = compression ?? .fixed()
         self.library = library
         self.builder = builder
         self.store = store
@@ -205,10 +217,13 @@ final class FeedViewModel {
         allowanceTunables: SwipeAllowance.Tunables = .standard,
         freeTier: FreeTierTunables? = nil,
         features: FeatureAvailabilityTunables? = nil,
-        notifier: RefillNotifier? = nil
+        notifier: RefillNotifier? = nil,
+        editor: (any VideoEditing)? = nil,
+        compression: CompressionTunables? = nil
     ) {
         self.init(library: library, builder: builder, store: store, entitlements: entitlements, allowanceStore: allowanceStore,
-                  allowanceTunables: allowanceTunables, freeTier: freeTier, features: features, notifier: notifier)
+                  allowanceTunables: allowanceTunables, freeTier: freeTier, features: features, notifier: notifier, editor: editor,
+                  compression: compression)
         libraryStats = stats
         apply(session)
         refreshTotals()
@@ -295,20 +310,27 @@ final class FeedViewModel {
         return (carriedPending + current).filter { !settledIDs.contains($0.id) && !outOfReachIDs.contains($0.id) }
     }
     var pendingBytes: Int64 { pendingItems.reduce(0) { $0 + $1.bytes } }
-    /// The bin's Trims section, oldest first. Items the app can't see under limited access are hidden, as in the pile.
-    var pendingTrims: [TrimmedItem] {
-        savedTrims.filter { !settledIDs.contains($0.id) && !outOfReachIDs.contains($0.id) }
+    /// The bin's Edits section, oldest first. Items the app can't see under limited access are hidden, as in the pile.
+    var pendingEdits: [EditedItem] {
+        savedEdits.filter { !settledIDs.contains($0.id) && !outOfReachIDs.contains($0.id) }
     }
-    /// Space the pending trims give back, estimated.
-    var trimSavedBytes: Int64 { pendingTrims.reduce(0) { $0 + $1.savedBytes } }
-    /// What confirming the bin frees: the deletes plus what the trims save. The free pile limit counts
+    /// Space the pending edits give back, estimated.
+    var editSavedBytes: Int64 { pendingEdits.reduce(0) { $0 + $1.savedBytes } }
+    /// What confirming the bin frees: the deletes plus what the edits save. The free pile limit counts
     /// only the deletes (`pileCountedBytes`).
-    var binBytes: Int64 { pendingBytes + trimSavedBytes }
-    /// Deletes and trims together.
-    var binCount: Int { pendingItems.count + pendingTrims.count }
-    /// The trim waiting for this video, if there is one.
-    func pendingTrim(for itemID: LibraryItem.ID) -> PendingTrim? {
-        pendingTrims.first { $0.id == itemID }?.trim
+    var binBytes: Int64 { pendingBytes + editSavedBytes }
+    /// Deletes and edits together.
+    var binCount: Int { pendingItems.count + pendingEdits.count }
+    /// What the full-screen video offers: trimming and compressing as the feature toggles allow, at the
+    /// current compression settings.
+    var videoEditOptions: VideoEditOptions {
+        VideoEditOptions(canTrim: features.availability(.videoTrimmer).allows(isUnlocked: isUnlocked),
+                         canCompress: features.availability(.videoCompression).allows(isUnlocked: isUnlocked),
+                         levels: compression.levels)
+    }
+    /// The edit waiting for this video, if there is one.
+    func pendingEdit(for itemID: LibraryItem.ID) -> PendingEdit? {
+        pendingEdits.first { $0.id == itemID }?.edit
     }
     /// Admin Tools' mock items are left out: they aren't in the library.
     var keptCount: Int { decisions.filter { $0.value == .keep && !LibraryItem.isAdminMock(id: $0.key) }.count }
@@ -549,15 +571,15 @@ final class FeedViewModel {
         commit(outcome, card: card, direction: direction)
     }
 
-    /// Keeps video card `cardID` and queues `trim` for it in the bin, as a right swipe would keep it.
-    /// It costs a swipe like any keep, and undo takes the trim back with the decision. If that card is
-    /// no longer the current one, or isn't a video, nothing happens.
-    func decideTrim(_ trim: PendingTrim, cardID: FeedCard.ID) {
-        guard phase == .feed, let top = currentCard else { return }
+    /// Keeps video card `cardID` and queues `edit` for it in the bin, as a right swipe would keep it.
+    /// It costs a swipe like any keep, and undo takes the edit back with the decision. If that card is
+    /// no longer the current one, or isn't a video, or the edit is empty, nothing happens.
+    func decideEdit(_ edit: PendingEdit, cardID: FeedCard.ID) {
+        guard !edit.isEmpty, phase == .feed, let top = currentCard else { return }
         // Admitting can credit a refill, which reorders the deck, so the card is only read after it.
         guard top.isAdminMock || admitSwipe(), let card = currentCard(matching: cardID), case .video(let item) = card else { return }
-        commit([item.id: .keep], card: card, direction: .right, trims: [item.id: trim])
-        showTrimToast(savedBytes: trim.savedBytes(from: item.bytes))
+        commit([item.id: .keep], card: card, direction: .right, edits: [item.id: edit])
+        showTrimToast(savedBytes: edit.savedBytes(from: item.bytes))
     }
 
     /// Settles batch or similar-shots card `cardID` from a one-by-one review. Items left out
@@ -616,34 +638,35 @@ final class FeedViewModel {
         dismissTrimToast()
         phase = .feed
         saveProgress(with: last.stored)
-        refreshTrims()
+        refreshEdits()
         refreshTotals(includingFreed: false)
     }
 
     /// Takes items out of the pile by keeping them instead, here, in the store, and in undo history.
     /// Admin Tools' mock items are kept here only; `saveProgress` never writes them.
     func keep(_ items: [LibraryItem]) {
-        keep(items, trims: [:])
+        keep(items, edits: [:])
     }
 
-    /// Sets, changes or cancels the trim waiting for `item`, from the bin. A video in the deletes moves to
-    /// the trims, kept, as `keep` would keep it. A trim already waiting is replaced, and nil cancels it:
-    /// the video stays kept, whole. Costs no swipe. Anything else is left alone.
-    func setTrim(_ trim: PendingTrim?, for item: LibraryItem) {
+    /// Sets, changes or cancels the edit waiting for `item`, from the bin. A video in the deletes moves to
+    /// the edits, kept, as `keep` would keep it. An edit already waiting is replaced, and nil (or an empty
+    /// edit) cancels it: the video stays kept, as it is. Costs no swipe. Anything else is left alone.
+    func setEdit(_ edit: PendingEdit?, for item: LibraryItem) {
         guard item.isVideo else { return }
+        let edit = edit.flatMap { $0.isEmpty ? nil : $0 }
         if pendingItems.contains(where: { $0.id == item.id }) {
-            guard let trim else { return }
-            keep([item], trims: [item.id: trim])
-        } else if pendingTrim(for: item.id) != nil, var record = store.decisions(for: [item.id])[item.id] {
-            record.trim = trim
+            guard let edit else { return }
+            keep([item], edits: [item.id: edit])
+        } else if pendingEdit(for: item.id) != nil, var record = store.decisions(for: [item.id])[item.id] {
+            record.edit = edit
             record.decidedAt = now()
             saveProgress(with: [item.id: record])
-            refreshTrims()
+            refreshEdits()
         }
     }
 
-    /// `keep`, with a trim queued for any of `items` in `trims`, in the same write.
-    private func keep(_ items: [LibraryItem], trims: [LibraryItem.ID: PendingTrim]) {
+    /// `keep`, with an edit queued for any of `items` in `edits`, in the same write.
+    private func keep(_ items: [LibraryItem], edits: [LibraryItem.ID: PendingEdit]) {
         let pending = Set(pendingItems.map(\.id))
         let items = items.filter { pending.contains($0.id) }
         guard !items.isEmpty else { return }
@@ -656,7 +679,7 @@ final class FeedViewModel {
         let kept = Dictionary(uniqueKeysWithValues: items.map { item in
             let sessionNumber = saved[item.id]?.sessionNumber ?? session?.number ?? 0
             return (item.id, Optional(StoredDecision(decision: .keep, decidedAt: decidedAt, sessionNumber: sessionNumber, item: item,
-                                                     trim: trims[item.id])))
+                                                     edit: edits[item.id])))
         })
 
         // Undoing a later swipe must not put them back in the pile.
@@ -672,13 +695,20 @@ final class FeedViewModel {
         }
         for group in marks.keys { marks[group]?.subtract(ids) }
         saveProgress(with: kept)
-        if !trims.isEmpty { refreshTrims() }
+        if !edits.isEmpty { refreshEdits() }
         refreshTotals(includingFreed: false)
     }
 
-    /// Deletes some of the pile, from the pending screen. The deck carries on,
-    /// and the rest stays pending. Returns the bytes freed, or nil if nothing was deleted,
+    /// Clears the bin, from the pending screen: makes every pending edit's copy, then deletes `items`
+    /// (chosen from the deletes) and the edited originals together, in one system prompt. The deck
+    /// carries on, and the rest stays pending. Returns the bytes freed, or nil if nothing was deleted,
     /// including when the user cancels the system prompt.
+    ///
+    /// Each copy is saved and checked before anything is deleted (`makeEditedCopies`). An original whose
+    /// copy failed isn't deleted: it stays in the bin with its edit, and the user is told which. A copy
+    /// that's saved stays in the library even if the delete is then cancelled; its edit remembers it
+    /// (`PendingEdit.copyID`), so the next clear goes straight to the delete. Once its original is
+    /// deleted, the copy is saved as kept, so the feed never offers it.
     ///
     /// Admin Tools' mock items never reach the library: they're only dropped from the pile, here and not
     /// in the store, and their bytes count as freed so the post-delete offer can show. Deleting only mocks
@@ -689,9 +719,18 @@ final class FeedViewModel {
         let pending = Set(pendingItems.map(\.id))
         let chosen = items.filter { pending.contains($0.id) }
         let real = chosen.filter { !$0.isAdminMock }
+        let copies = await makeEditedCopies()
+        // Still waiting after the exports' awaits, and with a saved copy.
+        let edited = pendingEdits.filter { copies[$0.id] != nil }
         var deletedItems: [LibraryItem] = []
-        if !real.isEmpty {
-            guard let deleted = await delete(real) else { return nil }
+        if !real.isEmpty || !edited.isEmpty {
+            guard let deleted = await delete(real + edited.map(\.item)) else {
+                if !edited.isEmpty, deleteNotice == nil {
+                    deleteNotice = "Your edited videos are saved. The originals stay in the bin until you clear it again."
+                }
+                refreshEdits()
+                return nil
+            }
             deletedItems = deleted
         }
         // Still pending after the system prompt's await.
@@ -700,8 +739,15 @@ final class FeedViewModel {
         guard !deletedItems.isEmpty || !mocks.isEmpty else { return nil }
         let ids = Set(deletedItems.map(\.id))
         let mockIDs = Set(mocks.map(\.id))
+        // An edited original frees what its copy saves, not its whole size.
+        let replaced = edited.filter { ids.contains($0.id) }
+        var freedBytes = Dictionary(uniqueKeysWithValues: deletedItems.map { ($0.id, $0.bytes) })
+        for original in replaced {
+            freedBytes[original.id] = max(original.item.bytes - (copies[original.id]?.bytes ?? original.newBytes), 0)
+        }
         // Before settling: the store's first history write fills in older deletes, and these must not be among them.
-        recordCleanup(deletedItems)
+        recordCleanup(deletedItems, freed: freedBytes)
+        keepCopies(of: replaced, copies: copies)
         settle(ids, as: .deleted)
         settledIDs.formUnion(mockIDs)
         carriedPending.removeAll { ids.contains($0.id) || mockIDs.contains($0.id) }
@@ -710,20 +756,93 @@ final class FeedViewModel {
             history.removeAll()
         }
         saveProgress()
+        refreshEdits()
         if !deletedItems.isEmpty { await refreshLibraryTotal() }
-        let freed = (deletedItems + mocks).reduce(0) { $0 + $1.bytes }
+        let freed = freedBytes.values.reduce(0, +) + mocks.reduce(0) { $0 + $1.bytes }
         followUps.queueFollowUp(freed: freed, isUnlocked: isUnlocked, isWallPresented: isWallPresented,
                                 purchasedThisLaunch: purchasedThisLaunch, isMockOnly: deletedItems.isEmpty)
         if !deletedItems.isEmpty { Task { await refreshDashboard() } }
         return freed
     }
 
+    /// Makes the copy of every pending edit, one video at a time, and returns them by original. Each
+    /// video is exported once, by `editor`. A copy saved by an earlier clear that didn't finish is used as
+    /// it is. Each new copy is remembered with its edit as soon as it's saved (write-through), so it's
+    /// never made twice. Failures are left out and told to the user; their originals stay in the bin.
+    private func makeEditedCopies() async -> [LibraryItem.ID: EditedCopy] {
+        let edits = pendingEdits
+        guard let editor, !edits.isEmpty else { return [:] }
+        var copies: [LibraryItem.ID: EditedCopy] = [:]
+        var failed: [EditedItem] = []
+        let saved = await editor.existingCopies(Set(edits.compactMap(\.edit.copyID)))
+        for (offset, edited) in edits.enumerated() {
+            if let copyID = edited.edit.copyID, saved.contains(copyID) {
+                copies[edited.id] = EditedCopy(id: copyID, bytes: edited.newBytes)
+                continue
+            }
+            let index = offset + 1
+            editProgress = EditProgress(index: index, count: edits.count, fraction: 0)
+            do {
+                let copy = try await editor.makeCopy(of: edited.item, edit: edited.edit, levels: compression.levels) { fraction in
+                    Task { @MainActor [weak self] in
+                        guard let self, editProgress?.index == index else { return }
+                        editProgress?.fraction = fraction
+                    }
+                }
+                rememberCopy(copy.id, for: edited.id)
+                copies[edited.id] = copy
+            } catch {
+                Self.log.error("Couldn't make an edited copy: \(error)")
+                failed.append(edited)
+            }
+        }
+        editProgress = nil
+        if !failed.isEmpty { deleteNotice = Self.copyFailureNotice(failed) }
+        return copies
+    }
+
+    /// "Couldn't save the edited video from Mar 3, so it stays as it is in the bin."
+    private static func copyFailureNotice(_ failed: [EditedItem]) -> String {
+        let days = failed.map { Format.day($0.item.date) }
+        if days.count == 1 { return "Couldn't save the edited video from \(days[0]), so it stays as it is in the bin." }
+        return "Couldn't save \(days.count) edited videos (from \(days.joined(separator: ", "))), so they stay as they are in the bin."
+    }
+
+    /// Saves `copyID` with the edit for `itemID`, so the copy is used again if this clear doesn't finish.
+    private func rememberCopy(_ copyID: LibraryItem.ID, for itemID: LibraryItem.ID) {
+        guard var record = store.decisions(for: [itemID])[itemID], var edit = record.edit else { return }
+        edit.copyID = copyID
+        record.edit = edit
+        store.save([itemID: record])
+    }
+
+    /// Saves each copy whose original was deleted as kept, with the original's category, so the feed
+    /// never offers it and the library counts as reviewed as before.
+    private func keepCopies(of originals: [EditedItem], copies: [LibraryItem.ID: EditedCopy]) {
+        let saved = store.decisions(for: Set(originals.map(\.id)))
+        let decidedAt = now()
+        let kept: [LibraryItem.ID: StoredDecision?] = Dictionary(uniqueKeysWithValues: originals.compactMap { original in
+            guard let copy = copies[original.id] else { return nil }
+            let item = original.item
+            let image: ImageReference = if case .photoKit = item.image { .photoKit(localIdentifier: copy.id) } else { item.image }
+            let copyItem = LibraryItem(id: copy.id, kind: .video(duration: original.edit.newDuration), date: item.date,
+                                       location: item.location, bytes: copy.bytes, isFavorite: item.isFavorite, image: image)
+            return (copy.id, StoredDecision(decision: .keep, decidedAt: decidedAt, sessionNumber: session?.number ?? 0, item: copyItem,
+                                            category: saved[original.id]?.category))
+        })
+        if !kept.isEmpty { store.save(kept) }
+    }
+
     /// Adds a delete to the cleanup history, one entry per category, at the time it happened.
     /// Each item's category is the one saved with its decision; older decisions fall back to a guess.
-    private func recordCleanup(_ deleted: [LibraryItem]) {
+    /// `freed` gives what each item freed, when that isn't its whole size (an edited original).
+    private func recordCleanup(_ deleted: [LibraryItem], freed: [LibraryItem.ID: Int64] = [:]) {
         guard !deleted.isEmpty else { return }
         let saved = store.decisions(for: Set(deleted.map(\.id)))
-        store.recordCleanup(CleanupEntry.entries(for: deleted, at: now()) { saved[$0.id]?.category ?? .inferred(from: $0) })
+        let counted = deleted.map { item in
+            freed[item.id].map { LibraryItem(id: item.id, kind: item.kind, date: item.date, location: item.location, bytes: $0, image: item.image) } ?? item
+        }
+        store.recordCleanup(CleanupEntry.entries(for: counted, at: now()) { saved[$0.id]?.category ?? .inferred(from: $0) })
     }
 
     // MARK: Dashboard
@@ -1024,10 +1143,10 @@ final class FeedViewModel {
     /// `direction` is the side the card left from, so undo brings it back the same way.
     /// An Admin Tools mock card is never saved or charged: its decisions live only in memory, where a
     /// delete puts it in the pile like any other (see `deleteNow` for what deleting it does).
-    /// `trims` queues a trim with a keep (`decideTrim`). Any other decision is saved without one, so
-    /// binning a video that was waiting to be trimmed drops the trim: the delete wins.
+    /// `edits` queues an edit with a keep (`decideEdit`). Any other decision is saved without one, so
+    /// binning a video that was waiting to be edited drops the edit: the delete wins.
     private func commit(_ outcome: [LibraryItem.ID: Decision], card: FeedCard, direction: SwipeDirection,
-                        trims: [LibraryItem.ID: PendingTrim] = [:]) {
+                        edits: [LibraryItem.ID: PendingEdit] = [:]) {
         let isMock = card.isAdminMock
         let ids = card.items.map(\.id)
         let before = isMock ? [:] : store.decisions(for: Set(ids))
@@ -1044,7 +1163,7 @@ final class FeedViewModel {
         let changes: [LibraryItem.ID: StoredDecision?] = isMock ? [:] : Dictionary(uniqueKeysWithValues: card.items.compactMap { item in
             outcome[item.id].map {
                 (item.id, StoredDecision(decision: $0, decidedAt: decidedAt, sessionNumber: sessionNumber, item: item,
-                                         category: category(of: item, on: card), trim: trims[item.id]))
+                                         category: category(of: item, on: card), edit: edits[item.id]))
             }
         })
 
@@ -1054,8 +1173,8 @@ final class FeedViewModel {
         index += 1
         // The decisions and the deck's new position, in one save, before returning.
         saveProgress(with: changes)
-        // A trim was added, or a decision replaced one that had a trim.
-        if !trims.isEmpty || savedTrims.contains(where: { outcome[$0.id] != nil }) { refreshTrims() }
+        // An edit was added, or a decision replaced one that had an edit.
+        if !edits.isEmpty || savedEdits.contains(where: { outcome[$0.id] != nil }) { refreshEdits() }
         refreshTotals(includingFreed: false)
         fillIfNeeded()
     }
@@ -1194,7 +1313,7 @@ final class FeedViewModel {
         } catch DeletionError.cancelled {
             return nil
         } catch {
-            deleteNotice = "Couldn't delete right now. Nothing was removed."
+            deleteNotice = [deleteNotice, "Couldn't delete right now. Nothing was removed."].compactMap { $0 }.joined(separator: " ")
             return nil
         }
 
@@ -1213,7 +1332,7 @@ final class FeedViewModel {
             let n = outcome.undeletable.count
             notices.append("\(n) \(n == 1 ? "item" : "items") can't be deleted from this app and stayed in your library.")
         }
-        if !notices.isEmpty { deleteNotice = notices.joined(separator: " ") }
+        if !notices.isEmpty { deleteNotice = ([deleteNotice].compactMap { $0 } + notices).joined(separator: " ") }
 
         let deleted = Set(outcome.deleted)
         let deletedItems = items.filter { deleted.contains($0.id) }
@@ -1307,7 +1426,7 @@ final class FeedViewModel {
         let ids = Set(next.items.map(\.id))
         if feedFocus != nil { dealtWhileFocused.formUnion(ids) }
         carriedPending = store.pile().filter { !ids.contains($0.id) }
-        refreshTrims()
+        refreshEdits()
         returningCard = nil
         dismissChip()
         dismissTrimToast()
@@ -1318,7 +1437,7 @@ final class FeedViewModel {
 
     /// Picks up the saved deck on the card the user left it at, dropping anything deleted outside
     /// the app while it was closed. Under limited access, items outside the selection leave the deck
-    /// and are hidden from the bin (deletes and trims), but stay pending in the store.
+    /// and are hidden from the bin (deletes and edits), but stay pending in the store.
     private func restore(_ saved: SavedSession) async {
         var restored = saved.session
         var position = saved.index
@@ -1326,7 +1445,7 @@ final class FeedViewModel {
         position -= restored.cards.prefix(position).filter(\.isAdminMock).count
         restored.cards.removeAll(where: \.isAdminMock)
         let savedIndex = position
-        let waiting = store.pile().map(\.id) + store.pendingTrims().map(\.id)
+        let waiting = store.pile().map(\.id) + store.pendingEdits().map(\.id)
         let unseen = await library.missing(from: Set(restored.items.map(\.id)).union(waiting))
         // Only full access proves an item is gone; a limited selection just hides the rest.
         let gone = library.currentAccess() == .full ? unseen : []
@@ -1360,7 +1479,7 @@ final class FeedViewModel {
         decisions = records.mapValues(\.decision)
         settledIDs = Set(records.filter { $0.value.settlement != nil }.keys).union(gone)
         carriedPending = store.pile().filter { !ids.contains($0.id) }
-        refreshTrims()
+        refreshEdits()
         history = []
         returningCard = nil
         enterDeckPhase(cards.isEmpty ? .caughtUp : .feed)
@@ -1399,9 +1518,9 @@ final class FeedViewModel {
         savedCardsRevision = cardsRevision
     }
 
-    /// Reads the waiting trims again from the store, where they live with their keep decisions.
-    private func refreshTrims() {
-        savedTrims = store.pendingTrims()
+    /// Reads the waiting edits again from the store, where they live with their keep decisions.
+    private func refreshEdits() {
+        savedEdits = store.pendingEdits()
     }
 
     /// Recomputes library totals from saved progress. The freed sum only changes on confirm.
@@ -1449,7 +1568,7 @@ final class FeedViewModel {
         }
     }
 
-    /// Hides the "Trim queued" toast now.
+    /// Hides the "Edit queued" toast now.
     func dismissTrimToast() {
         trimToastTask?.cancel()
         trimToast = nil

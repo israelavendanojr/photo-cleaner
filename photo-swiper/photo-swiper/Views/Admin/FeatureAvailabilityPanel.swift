@@ -46,15 +46,15 @@ struct FeatureAvailabilityPanel: View {
         }
     }
 
-    /// "Similar shots, Duplicates", or "No bundles".
+    /// "Similar shots, Duplicates", or "Nothing".
     private var enabledSummary: String {
         let enabled = vm.features.enabled(isUnlocked: vm.isUnlocked)
         let titles = TierFeature.allCases.filter(enabled.contains).map(\.title)
-        return titles.isEmpty ? "No bundles" : titles.joined(separator: ", ")
+        return titles.isEmpty ? "Nothing" : titles.joined(separator: ", ")
     }
 }
 
-/// One feature: its title, the default under it, and a Free only / Paid only / Universal menu.
+/// One feature: its title, the default under it, and a Free only / Paid only / Universal / Off menu.
 private struct FeatureRow: View {
     let feature: TierFeature
     let availability: FeatureAvailability

@@ -23,7 +23,7 @@ struct FreeTierLimits: Equatable, Sendable {
 
 /// One value Developer mode can tune. Adding one is a case here plus its arms below; the
 /// Settings panel lists every case on its own.
-enum FreeTierTunable: String, CaseIterable, Identifiable, Sendable {
+enum FreeTierTunable: String, CaseIterable, Identifiable, Sendable, AdminTunable {
     case swipeCap
     case refillAmount
     case refillIntervalMinutes

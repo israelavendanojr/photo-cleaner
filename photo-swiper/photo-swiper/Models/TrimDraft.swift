@@ -43,8 +43,8 @@ struct TrimDraft: Equatable {
 
     /// What saving gives: the trim to queue, or nil when the handles are at the ends, which keeps the
     /// whole video and removes any pending trim.
-    var result: PendingTrim? {
-        isTrimmed ? PendingTrim(range: range, originalDuration: duration) : nil
+    var result: PendingEdit? {
+        isTrimmed ? PendingEdit(range: range, originalDuration: duration) : nil
     }
 
     /// Moves the start handle, never past the end handle less `minimumSelection`.

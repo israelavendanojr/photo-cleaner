@@ -20,7 +20,9 @@ final class ItemProgress {
     var itemData: Data
     /// `CleanupCategory.rawValue`, from the card the decision was made on. Nil in rows saved before V2.
     var categoryRaw: String?
-    /// JSON `PendingTrim`, for a video kept on the way to being trimmed. Nil otherwise, and in rows saved before V3.
+    /// JSON `PendingEdit` (a trim, a compression level or both), for a video kept on the way to being edited.
+    /// Nil otherwise, and in rows saved before V3. Named for the trims it first held (JUN-7); the JSON is
+    /// unchanged since, so renaming the column would only cost a schema version.
     var trimData: Data?
 
     init(itemID: String, decisionRaw: String, decidedAt: Date, sessionNumber: Int, bytes: Int64, itemData: Data) {

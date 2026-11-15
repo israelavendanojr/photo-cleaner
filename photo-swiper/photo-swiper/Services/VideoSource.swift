@@ -18,6 +18,18 @@ enum VideoSource {
         }
     }
 
+    /// Whether the video can be trimmed or compressed. Slow-motion and Cinematic videos can't: PhotoKit
+    /// hands them over as compositions, and a copy would lose what makes them special.
+    static func canEdit(_ item: LibraryItem) -> Bool {
+        switch item.image {
+        case .bundled:
+            return true
+        case .photoKit(let id):
+            guard let asset = PHAsset.byID([id])[id] else { return false }
+            return asset.mediaSubtypes.isDisjoint(with: [.videoHighFrameRate, .videoCinematic])
+        }
+    }
+
     private static func photoKitItem(for asset: PHAsset) async -> AVPlayerItem? {
         let options = PHVideoRequestOptions()
         options.isNetworkAccessAllowed = true

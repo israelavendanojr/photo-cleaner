@@ -88,6 +88,12 @@ enum DS {
         static let playheadWidth: CGFloat = 3
     }
 
+    /// A frosted popup over the full-screen video (`CompressionPopup`): narrow enough to read as a popup on
+    /// the largest phones, with the video showing around it.
+    enum Popup {
+        static let maxWidth: CGFloat = 340
+    }
+
     /// The dashboard hero's progress through the whole library: a thicker `ProgressLine` than the feed's,
     /// since it's the card's one visual.
     enum Progress {

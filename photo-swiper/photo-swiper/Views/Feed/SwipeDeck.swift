@@ -31,7 +31,9 @@ struct SwipeDeck: View {
     var waitingText: String?
     /// A trim saved in the full-screen video. The card flies off right, as kept, and this is called in
     /// place of `onDecide`. Nil offers no trimming.
-    var onTrim: ((PendingTrim, FeedCard) -> Void)?
+    var onEdit: ((PendingEdit, FeedCard) -> Void)?
+    /// What the full-screen video offers for editing.
+    var videoEditOptions = VideoEditOptions()
 
     /// How far the top card is toward committing, 0...1.
     @State private var progress = 0.0
@@ -45,10 +47,10 @@ struct SwipeDeck: View {
     @State private var previewingPhoto: LibraryItem?
     /// A swipe made in full screen, and the item it was made on. The top card flies off that way once
     /// the preview closes, if it still holds that item.
-    @State private var previewDecision: (direction: SwipeDirection, itemID: LibraryItem.ID, trim: PendingTrim?)?
-    /// A trim from full screen waiting for its card to fly off, by card. It's handed to `onTrim` instead of a keep.
+    @State private var previewDecision: (direction: SwipeDirection, itemID: LibraryItem.ID, edit: PendingEdit?)?
+    /// An edit from full screen waiting for its card to fly off, by card. It's handed to `onEdit` instead of a keep.
     /// A refused swipe drops it, so it can't ride along on a later plain keep of the same card.
-    @State private var queuedTrim: (trim: PendingTrim, cardID: FeedCard.ID)?
+    @State private var queuedEdit: (edit: PendingEdit, cardID: FeedCard.ID)?
     /// What was pre-cached before this deck appeared, handed back when it goes (a nested deck).
     @State private var outerPreheat: [String: CGSize]?
     @State private var hasDealt = false
@@ -81,7 +83,7 @@ struct SwipeDeck: View {
                         onSwipe: { finish($0, card: card) },
                         nudges: isTop && showsHint,
                         canCommit: { !isTop || canSwipe($0, card) },
-                        onRefused: { queuedTrim = nil; onRefused($0, card) }
+                        onRefused: { queuedEdit = nil; onRefused($0, card) }
                     ) {
                         CardContentView(
                             card: card,
@@ -118,13 +120,13 @@ struct SwipeDeck: View {
             VideoPreviewView(item: item, label: previewLabel, onDecide: { direction in
                 previewDecision = (direction, item.id, nil)
                 previewingVideo = nil
-            }, onTrim: onTrim.map { _ in
-                { trim in
-                    // From the feed there's no saved trim, so saving always queues one.
-                    if let trim { previewDecision = (.right, item.id, trim) }
+            }, onEdit: onEdit.map { _ in
+                { edit in
+                    // From the feed there's no saved edit, so saving always queues one.
+                    if let edit { previewDecision = (.right, item.id, edit) }
                     previewingVideo = nil
                 }
-            })
+            }, options: videoEditOptions)
         }
         .fullScreenCover(item: $previewingPhoto, onDismiss: flyOutPreviewDecision) { item in
             PhotoPreviewView(item: item, label: previewLabel) { direction in
@@ -186,7 +188,7 @@ struct SwipeDeck: View {
         guard let decision = previewDecision else { return }
         previewDecision = nil
         guard let card = currentCard, card.items.contains(where: { $0.id == decision.itemID }) else { return }
-        queuedTrim = decision.trim.map { ($0, card.id) }
+        queuedEdit = decision.edit.map { ($0, card.id) }
         request = decision.direction
     }
 
@@ -212,12 +214,12 @@ struct SwipeDeck: View {
     }
 
     private func commit(_ direction: SwipeDirection, card: FeedCard) {
-        let trim = queuedTrim.flatMap { direction == .right && $0.cardID == card.id ? $0.trim : nil }
-        queuedTrim = nil
+        let edit = queuedEdit.flatMap { direction == .right && $0.cardID == card.id ? $0.edit : nil }
+        queuedEdit = nil
         withAnimation(DS.Motion.calm) {
             progress = 0
-            if let trim, let onTrim {
-                onTrim(trim, card)
+            if let edit, let onEdit {
+                onEdit(edit, card)
             } else {
                 onDecide(direction, card)
             }

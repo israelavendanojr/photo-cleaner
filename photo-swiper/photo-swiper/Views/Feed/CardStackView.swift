@@ -25,7 +25,8 @@ struct CardStackView: View {
             canSwipe: canDecide,
             onRefused: refused,
             waitingText: vm.isFindingMore ? "Finding more…" : nil,
-            onTrim: trim
+            onEdit: edit,
+            videoEditOptions: vm.videoEditOptions
         )
         #if DEBUG
         .overlay(alignment: .top) { CurrentCardMarker() }
@@ -75,10 +76,10 @@ struct CardStackView: View {
         vm.decide(direction, cardID: card.id)
     }
 
-    /// A trim saved in the full-screen video keeps its card and queues the trim in the bin.
-    private func trim(_ trim: PendingTrim, card: FeedCard) {
+    /// An edit saved in the full-screen video keeps its card and queues the edit in the bin.
+    private func edit(_ edit: PendingEdit, card: FeedCard) {
         hasSeenSwipeHint = true
-        vm.decideTrim(trim, cardID: card.id)
+        vm.decideEdit(edit, cardID: card.id)
     }
 }
 

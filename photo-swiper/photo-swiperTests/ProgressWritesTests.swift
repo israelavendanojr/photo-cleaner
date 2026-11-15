@@ -185,7 +185,7 @@ private final class CountingStore: ProgressStoring {
     func goneIDs() -> Set<LibraryItem.ID> { base.goneIDs() }
     func reopen(_ ids: Set<LibraryItem.ID>) { base.reopen(ids) }
     func pile() -> [LibraryItem] { base.pile() }
-    func pendingTrims() -> [TrimmedItem] { base.pendingTrims() }
+    func pendingEdits() -> [EditedItem] { base.pendingEdits() }
     func excludedFromNewSession(asOf now: Date) -> Set<LibraryItem.ID> { base.excludedFromNewSession(asOf: now) }
     func reviewedCount() -> Int { base.reviewedCount() }
     func laterIDs() -> Set<LibraryItem.ID> { base.laterIDs() }

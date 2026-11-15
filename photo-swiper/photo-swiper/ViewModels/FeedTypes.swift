@@ -40,10 +40,25 @@ struct DeleteChip: Equatable {
     let bytes: Int64
 }
 
-/// "Trim queued · saves ~335 MB · Undo", shown for a few seconds after a trim from the feed.
+/// "Edit queued · saves ~335 MB · Undo", shown for a few seconds after an edit from the feed.
 struct TrimToast: Equatable {
     let id = UUID()
     let savedBytes: Int64
+}
+
+/// Where clearing the bin is in making the edited copies: video `index` of `count`, `fraction` of the way through it.
+struct EditProgress: Equatable {
+    let index: Int
+    let count: Int
+    var fraction: Double
+}
+
+/// What the full-screen video offers for editing: trimming and compressing (each a feature that can be
+/// off), and the compression levels' current settings.
+struct VideoEditOptions: Equatable {
+    var canTrim = true
+    var canCompress = true
+    var levels = CompressionLevels.standard
 }
 
 /// The card an undo just restored, and the side it left from.

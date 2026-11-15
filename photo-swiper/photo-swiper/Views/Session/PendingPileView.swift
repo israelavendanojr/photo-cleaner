@@ -1,9 +1,12 @@
 import SwiftUI
 
 /// Everything waiting to be cleared, all marked to delete. Tap the ones worth saving to unmark
-/// them, then Keep sends those back to the library and Delete clears the marked ones now.
-/// After a delete it says how much was freed, then closes. Videos waiting to be trimmed are listed
-/// under Trims, with the space each saves; swiping one away cancels the trim and keeps the video whole.
+/// them, then Keep sends those back to the library and Delete clears the marked ones now. With edits
+/// waiting, the button clears the bin instead: it saves every edited copy, then deletes the marked
+/// photos and the edited originals in one system prompt, keeping the screen awake while copies are made.
+/// After a delete it says how much was freed, then closes. Videos waiting to be trimmed or compressed are
+/// listed under Edits, with the space each saves; swiping one away cancels the edit and keeps the video
+/// as it is.
 ///
 /// Opens as a sheet from the feed's "to clear" counter, or pushed from the overview's Pending row.
 /// Admin Tools' mock items can be in the pile too; deleting them only drops them, and never reaches the
@@ -60,8 +63,8 @@ struct PendingPileView: View {
                         .foregroundStyle(DS.Palette.secondary)
                         .padding(.top, DS.Spacing.l)
                 }
-                if !vm.pendingTrims.isEmpty {
-                    trims
+                if !vm.pendingEdits.isEmpty {
+                    edits
                 }
             }
             .padding(.horizontal, DS.Spacing.l)
@@ -72,7 +75,7 @@ struct PendingPileView: View {
             if let freed {
                 FreedConfirmation(bytes: freed)
                     .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
-            } else if !vm.pendingItems.isEmpty {
+            } else if !vm.pendingItems.isEmpty || !vm.pendingEdits.isEmpty {
                 actions.transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
@@ -88,12 +91,17 @@ struct PendingPileView: View {
         .onChange(of: vm.pendingItems.map(\.id)) { _, ids in
             selected.formIntersection(ids)
         }
-        .alert("Delete \(selected.count) \(selected.count == 1 ? "photo" : "photos")?", isPresented: $isConfirming) {
-            Button("Delete", role: .destructive, action: deleteSelected)
+        .alert(confirmTitle, isPresented: $isConfirming) {
+            Button(vm.pendingEdits.isEmpty ? "Delete" : "Clear", role: .destructive, action: deleteSelected)
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("This frees \(Format.size(selectedBytes)). They'll stay in Recently Deleted for 30 days.")
+            Text(confirmMessage)
         }
+        // Making copies can take minutes; the screen stays on meanwhile.
+        .onChange(of: vm.editProgress != nil) { _, isEditing in
+            UIApplication.shared.isIdleTimerDisabled = isEditing
+        }
+        .onDisappear { UIApplication.shared.isIdleTimerDisabled = false }
         .alert(vm.deleteNotice ?? "", isPresented: hasDeleteNotice) {
             Button("OK", role: .cancel) {}
         }
@@ -137,9 +145,31 @@ struct PendingPileView: View {
         .padding(.top, showsDone ? DS.Spacing.xl : DS.Spacing.xs)
     }
 
+    /// What clearing frees: the marked photos, plus what the edits save.
+    private var clearBytes: Int64 { selectedBytes + vm.editSavedBytes }
+
+    private var confirmTitle: String {
+        guard !vm.pendingEdits.isEmpty else { return "Delete \(selected.count) \(selected.count == 1 ? "photo" : "photos")?" }
+        return "Clear the bin?"
+    }
+
+    /// "Saves 2 edited videos, then deletes their originals and 12 photos. This frees about 1.2 GB. …"
+    private var confirmMessage: String {
+        let edits = vm.pendingEdits.count
+        guard edits > 0 else { return "This frees \(Format.size(selectedBytes)). They'll stay in Recently Deleted for 30 days." }
+        let videos = "\(edits) edited \(edits == 1 ? "video" : "videos")"
+        let photos = selected.isEmpty ? "" : " and \(selected.count) \(selected.count == 1 ? "photo" : "photos")"
+        return "Saves \(videos), then deletes \(edits == 1 ? "its original" : "their originals")\(photos). "
+            + "This frees about \(Format.size(clearBytes)). Deleted items stay in Recently Deleted for 30 days."
+    }
+
     /// Keep for the unmarked photos, above the bin the marked ones go to.
     private var actions: some View {
         VStack(spacing: DS.Spacing.s) {
+            if let progress = vm.editProgress {
+                EditProgressRow(progress: progress)
+                    .transition(.opacity)
+            }
             if !keptItems.isEmpty {
                 Button("Keep \(keptItems.count)", action: keepUnmarked)
                     .buttonStyle(.pill(.outline))
@@ -148,7 +178,7 @@ struct PendingPileView: View {
                     .accessibilityIdentifier("keepButton")
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
-            if !selected.isEmpty {
+            if !selected.isEmpty || !vm.pendingEdits.isEmpty {
                 binRow.transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
@@ -158,55 +188,60 @@ struct PendingPileView: View {
         .background(DS.Palette.paper)
     }
 
+    /// The marked photos plus the edits, as the bin's badge counts them.
+    private var binCount: Int { selected.count + vm.pendingEdits.count }
+
     /// The bin the marked photos go to: how many, and the button that deletes them now.
     private var binRow: some View {
         HStack(spacing: DS.Spacing.s) {
             Image(systemName: "trash.fill")
                 .font(.system(size: 20, weight: .medium))
                 .foregroundStyle(DS.Palette.brick)
-                .symbolEffect(.bounce, value: selected.count)
+                .symbolEffect(.bounce, value: binCount)
                 .frame(width: 52, height: 52)
                 .background(DS.Palette.brickTint, in: Circle())
                 .overlay(alignment: .topTrailing) {
-                    Text("\(selected.count)")
+                    Text("\(binCount)")
                         .font(.caption2.weight(.bold))
                         .monospacedDigit()
                         .foregroundStyle(.white)
                         .padding(.horizontal, 6)
                         .frame(minWidth: 20, minHeight: 20)
                         .background(DS.Palette.brick, in: Capsule())
-                        .contentTransition(.numericText(value: Double(selected.count)))
+                        .contentTransition(.numericText(value: Double(binCount)))
                         .offset(x: 4, y: -4)
                 }
                 .accessibilityHidden(true)
-            Button("Delete \(selected.count) · \(Format.size(selectedBytes))") { isConfirming = true }
-                .buttonStyle(.pill(.brick))
-                .disabled(isDeleting)
-                .accessibilityIdentifier("binButton")
+            Button(vm.pendingEdits.isEmpty ? "Delete \(selected.count) · \(Format.size(selectedBytes))" : "Clear bin · \(Format.size(clearBytes))") {
+                isConfirming = true
+            }
+            .buttonStyle(.pill(.brick))
+            .disabled(isDeleting)
+            .accessibilityIdentifier("binButton")
         }
     }
 
-    /// "to clear from 12 photos and 2 trims"
+    /// "to clear from 12 photos and 2 edits"
     private var summary: String {
         var parts: [String] = []
-        if count > 0 || vm.pendingTrims.isEmpty { parts.append("\(count) \(count == 1 ? "photo" : "photos")") }
-        let trimCount = vm.pendingTrims.count
-        if trimCount > 0 { parts.append("\(trimCount) \(trimCount == 1 ? "trim" : "trims")") }
+        if count > 0 || vm.pendingEdits.isEmpty { parts.append("\(count) \(count == 1 ? "photo" : "photos")") }
+        let editCount = vm.pendingEdits.count
+        if editCount > 0 { parts.append("\(editCount) \(editCount == 1 ? "edit" : "edits")") }
         return "to clear from " + parts.joined(separator: " and ")
     }
 
-    /// Videos waiting to be trimmed. Swiping one away cancels it.
-    private var trims: some View {
+    /// Videos waiting to be trimmed or compressed. Swiping one away cancels its edit.
+    private var edits: some View {
         VStack(alignment: .leading, spacing: DS.Spacing.s) {
-            Text("Trims")
+            Text("Edits")
                 .font(.headline)
                 .foregroundStyle(DS.Palette.ink)
                 .accessibilityAddTraits(.isHeader)
-            ForEach(vm.pendingTrims) { trimmed in
-                TrimRow(trimmed: trimmed) { cancelTrim(trimmed) }
+            ForEach(vm.pendingEdits) { edited in
+                EditRow(edited: edited) { cancelEdit(edited) }
                     .transition(reduceMotion ? .opacity : .move(edge: .leading).combined(with: .opacity))
             }
-            Text("Each video is replaced by its trimmed copy when you clear the bin. Swipe one away to keep it whole.")
+            Text("Each video is replaced by its edited copy when you clear the bin. Swipe one away to keep it as it is.")
                 .font(.footnote)
                 .foregroundStyle(DS.Palette.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -214,9 +249,9 @@ struct PendingPileView: View {
         .padding(.top, DS.Spacing.xl)
     }
 
-    private func cancelTrim(_ trimmed: TrimmedItem) {
-        withAnimation(DS.Motion.calm) { vm.setTrim(nil, for: trimmed.item) }
-        AccessibilityNotification.Announcement("Trim cancelled. The video stays whole.").post()
+    private func cancelEdit(_ edited: EditedItem) {
+        withAnimation(DS.Motion.calm) { vm.setEdit(nil, for: edited.item) }
+        AccessibilityNotification.Announcement("Edit cancelled. The video stays as it is.").post()
     }
 
     private var hasDeleteNotice: Binding<Bool> {
@@ -293,6 +328,22 @@ private struct PileLimit: View {
     }
 }
 
+/// "Saving edited video 1 of 2", with how far along it is.
+private struct EditProgressRow: View {
+    let progress: EditProgress
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: DS.Spacing.xs) {
+            Text("Saving edited video \(progress.index) of \(progress.count)")
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(DS.Palette.ink)
+            ProgressLine(value: progress.fraction, tint: DS.Palette.ink, height: 4)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("pile.editProgress")
+    }
+}
+
 /// "Freed 412 MB", and where the photos went.
 private struct FreedConfirmation: View {
     let bytes: Int64
@@ -315,10 +366,11 @@ private struct FreedConfirmation: View {
     }
 }
 
-/// A video waiting to be trimmed: its thumbnail, the length it's trimmed to, and the space that saves.
-/// Swiping it left past a threshold cancels the trim; VoiceOver and the context menu offer the same.
-private struct TrimRow: View {
-    let trimmed: TrimmedItem
+/// A video waiting to be edited: its thumbnail, what's done to it (trimmed, compressed or both), its new
+/// length and size, and the space that saves. Swiping it left past a threshold cancels the edit; VoiceOver
+/// and the context menu offer the same.
+private struct EditRow: View {
+    let edited: EditedItem
     let onCancel: () -> Void
 
     @State private var offset: CGFloat = 0
@@ -328,19 +380,23 @@ private struct TrimRow: View {
     /// How far left a swipe has to go to cancel.
     private let threshold: CGFloat = 96
 
+    private var edit: PendingEdit { edited.edit }
+
     var body: some View {
         HStack(spacing: DS.Spacing.s) {
             Color.clear
                 .frame(width: thumbSize, height: thumbSize)
-                .overlay { ItemImage(trimmed.item.image) }
+                .overlay { ItemImage(edited.item.image) }
                 .clipShape(RoundedRectangle(cornerRadius: DS.Radius.thumb, style: .continuous))
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: DS.Spacing.xxs) {
-                Text("\(Format.duration(trimmed.trim.originalDuration)) → \(Format.duration(trimmed.trim.range.length))")
+                marks
+                Text(change)
                     .font(.subheadline.weight(.semibold))
                     .monospacedDigit()
                     .foregroundStyle(DS.Palette.ink)
-                Text("saves ~\(Format.size(trimmed.savedBytes))")
+                    .fixedSize(horizontal: false, vertical: true)
+                Text("saves ~\(Format.size(edited.savedBytes))")
                     .font(.footnote.weight(.semibold))
                     .monospacedDigit()
                     .foregroundStyle(DS.Palette.brick)
@@ -372,16 +428,45 @@ private struct TrimRow: View {
                 }
         )
         .contextMenu {
-            Button("Cancel trim", systemImage: "xmark", action: onCancel)
+            Button("Cancel edit", systemImage: "xmark", action: onCancel)
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityText)
-        .accessibilityAction(named: "Cancel trim", onCancel)
-        .accessibilityIdentifier("pile.trimRow")
+        .accessibilityAction(named: "Cancel edit", onCancel)
+        .accessibilityIdentifier("pile.editRow")
+    }
+
+    /// "Trimmed · Compressed · Balanced", each with its symbol.
+    private var marks: some View {
+        HStack(spacing: DS.Spacing.s) {
+            if edit.isTrimmed {
+                Label("Trimmed", systemImage: "scissors")
+            }
+            if let level = edit.compression {
+                Label("Compressed · \(level.title)", systemImage: "arrow.down.right.and.arrow.up.left")
+            }
+        }
+        .labelStyle(.titleAndIcon)
+        .font(.caption.weight(.semibold))
+        .foregroundStyle(DS.Palette.ink)
+        .accessibilityIdentifier("pile.editMarks")
+    }
+
+    /// "1:42 → 0:12 · 380 MB → ~45 MB", or "1:42 · 380 MB → ~120 MB" when the length doesn't change.
+    private var change: String {
+        let length = edit.isTrimmed
+            ? "\(Format.duration(edit.originalDuration)) → \(Format.duration(edit.newDuration))"
+            : Format.duration(edit.originalDuration)
+        return "\(length) · \(Format.size(edited.item.bytes)) → ~\(Format.size(edited.newBytes))"
     }
 
     private var accessibilityText: String {
-        "Video trimmed from \(Format.duration(trimmed.trim.originalDuration)) to \(Format.duration(trimmed.trim.range.length)), saves about \(Format.size(trimmed.savedBytes))"
+        var what: [String] = []
+        if edit.isTrimmed {
+            what.append("trimmed from \(Format.duration(edit.originalDuration)) to \(Format.duration(edit.newDuration))")
+        }
+        if let level = edit.compression { what.append("compressed, \(level.title)") }
+        return "Video \(what.joined(separator: " and ")), \(Format.size(edited.item.bytes)) to about \(Format.size(edited.newBytes)), saves about \(Format.size(edited.savedBytes))"
     }
 }
 

@@ -19,6 +19,8 @@ struct FeatureAvailabilityTests {
         #expect(FeatureAvailability.paidOnly.allows(isUnlocked: true))
         #expect(FeatureAvailability.freeOnly.allows(isUnlocked: false))
         #expect(!FeatureAvailability.freeOnly.allows(isUnlocked: true))
+        #expect(!FeatureAvailability.off.allows(isUnlocked: false))
+        #expect(!FeatureAvailability.off.allows(isUnlocked: true))
     }
 
     // MARK: Tunables
@@ -37,8 +39,9 @@ struct FeatureAvailabilityTests {
         features.set(.similarShots, .paidOnly)
         features.set(.duplicates, .freeOnly)
 
-        #expect(features.enabled(isUnlocked: false) == [.duplicates, .screenshotBatches])
-        #expect(features.enabled(isUnlocked: true) == [.similarShots, .screenshotBatches])
+        let video: Set<TierFeature> = [.videoTrimmer, .videoCompression]
+        #expect(features.enabled(isUnlocked: false) == Set<TierFeature>([.duplicates, .screenshotBatches]).union(video))
+        #expect(features.enabled(isUnlocked: true) == Set<TierFeature>([.similarShots, .screenshotBatches]).union(video))
         #expect(features.isCustomized)
         #expect(tunables(defaults: defaults).availability(.similarShots) == .paidOnly, "Remembered across launches")
     }
@@ -83,7 +86,7 @@ struct FeatureAvailabilityTests {
         #expect(cards.filter { $0.items.count == 1 }.allSatisfy { $0.feature == nil })
     }
 
-    @Test(arguments: TierFeature.allCases)
+    @Test(arguments: [TierFeature.similarShots, .duplicates, .screenshotBatches])
     func aBundleWithoutItsFeatureSplitsIntoSingles(_ feature: TierFeature) throws {
         let card = try #require(MockFeedBuilder().makeSessionNow(number: 1).cards.first { $0.feature == feature })
         let split = card.unbundled(unless: Set(TierFeature.allCases).subtracting([feature]))
@@ -91,6 +94,37 @@ struct FeatureAvailabilityTests {
         #expect(split.map(\.items) == card.items.map { [$0] }, "Same items, same order")
         #expect(split.allSatisfy { $0.feature == nil })
         #expect(card.unbundled(unless: [feature]) == [card])
+    }
+
+    // MARK: Video editing (JUN-7, JUN-50)
+
+    /// Trimming and compression are separate toggles. With the trimmer off and compression on, the
+    /// viewer offers compression over a plain seek bar (`EditDraft` with `canTrim` false).
+    @Test func theVideoTogglesAreSeparate() async {
+        let features = tunables(defaults: freshDefaults())
+        let vm = FeedViewModel(library: FakeLibrary(), builder: MockFeedBuilder(), entitlements: TestEntitlements(),
+                               defaults: freshDefaults(), features: features)
+        #expect(vm.videoEditOptions.canTrim && vm.videoEditOptions.canCompress)
+
+        features.set(.videoTrimmer, .off)
+        #expect(!vm.videoEditOptions.canTrim)
+        #expect(vm.videoEditOptions.canCompress)
+
+        features.set(.videoTrimmer, .universal)
+        features.set(.videoCompression, .off)
+        #expect(vm.videoEditOptions.canTrim)
+        #expect(!vm.videoEditOptions.canCompress)
+    }
+
+    @Test func compressionCanBeLimitedToATier() async {
+        let features = tunables(defaults: freshDefaults())
+        features.set(.videoCompression, .paidOnly)
+        let free = FeedViewModel(library: FakeLibrary(), builder: MockFeedBuilder(), entitlements: TestEntitlements(isUnlocked: false),
+                                 defaults: freshDefaults(), features: features)
+        let paid = FeedViewModel(library: FakeLibrary(), builder: MockFeedBuilder(), entitlements: TestEntitlements(isUnlocked: true),
+                                 defaults: freshDefaults(), features: features)
+        #expect(!free.videoEditOptions.canCompress)
+        #expect(paid.videoEditOptions.canCompress)
     }
 
     @Test func singlesNeverChange() throws {

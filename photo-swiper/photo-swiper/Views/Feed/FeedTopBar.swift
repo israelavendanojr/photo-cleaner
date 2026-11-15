@@ -32,7 +32,7 @@ struct FeedTopBar: View {
     }
 
     /// Free users see how full the pile is, e.g. "320 MB" over "of 1 GB", instead of "to clear". The
-    /// limit counts only deletes, so that's what they see; otherwise it's the bin, trims included.
+    /// limit counts only deletes, so that's what they see; otherwise it's the bin, edits included.
     private var counter: some View {
         let limit = vm.pileLimitBytes.map(Format.limit)
         return ToClearCounter(
