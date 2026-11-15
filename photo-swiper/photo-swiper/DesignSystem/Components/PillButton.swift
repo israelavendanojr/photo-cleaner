@@ -27,7 +27,8 @@ struct PillButtonStyle: ButtonStyle {
 
     private var foreground: Color {
         switch variant {
-        case .ink, .brick: .white
+        case .ink: DS.Palette.onInk
+        case .brick: .white
         case .outline: DS.Palette.ink
         case .ghost: DS.Palette.secondary
         }
@@ -36,7 +37,7 @@ struct PillButtonStyle: ButtonStyle {
     private var background: Color {
         switch variant {
         case .ink: DS.Palette.ink
-        case .brick: DS.Palette.brick
+        case .brick: DS.Palette.brickFill
         case .outline, .ghost: .clear
         }
     }

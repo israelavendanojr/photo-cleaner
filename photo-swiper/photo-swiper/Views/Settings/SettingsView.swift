@@ -100,7 +100,7 @@ struct SettingsView: View {
                 if copiedNotice {
                     Text("Email address copied")
                         .font(.footnote.weight(.semibold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(DS.Palette.onInk)
                         .padding(.horizontal, DS.Spacing.m)
                         .padding(.vertical, DS.Spacing.s)
                         .background(DS.Palette.ink, in: Capsule())
@@ -110,7 +110,7 @@ struct SettingsView: View {
                 } else if let devModeToast {
                     Text(devModeToast)
                         .font(.footnote.weight(.semibold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(DS.Palette.onInk)
                         .padding(.horizontal, DS.Spacing.m)
                         .padding(.vertical, DS.Spacing.s)
                         .background(DS.Palette.ink, in: Capsule())

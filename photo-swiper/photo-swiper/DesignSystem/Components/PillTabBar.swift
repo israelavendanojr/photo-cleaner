@@ -42,7 +42,7 @@ struct PillTabBar<Tab: Hashable>: View {
                     .font(.subheadline.weight(.semibold))
                     .lineLimit(1)
             }
-            .foregroundStyle(isSelected ? Color.white : DS.Palette.secondary)
+            .foregroundStyle(isSelected ? DS.Palette.onInk : DS.Palette.secondary)
             .padding(.horizontal, DS.Spacing.l)
             .frame(minHeight: 48)
             .background {

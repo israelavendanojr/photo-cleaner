@@ -82,7 +82,7 @@ struct NotificationsPrimerView: View {
                     .opacity(isAsking ? 0 : 1)
                 if isAsking {
                     ProgressView()
-                        .tint(.white)
+                        .tint(DS.Palette.onInk)
                 }
             }
         }

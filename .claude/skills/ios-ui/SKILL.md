@@ -21,12 +21,12 @@ argument-hint: "[screen or JUN-NN]"
    - Tap targets are at least 44×44pt.
    - VoiceOver: label icon-only buttons, combine compound values, `.isHeader` on titles, hide decoration, announce async results.
    - Reduce Motion: every movement has a still or fade fallback.
-   - Contrast: no essential small text in `secondary` or brick-on-tint (DESIGN.md → Accessibility).
+   - Contrast: the pairs in DESIGN.md → Accessibility pass AA in both modes. `line` and `outline` are decoration; don't carry meaning with them.
    - Add `accessibilityIdentifier("screen.element")` for anything a UI test will tap.
 5. **Previews.** Give each view a `#Preview` on mock data (`PreviewSamples`, `FeedViewModel.mock()`) and a second preview at `.dynamicTypeSize(.xxLarge)`. Put previews that use mocks inside `#if DEBUG`.
 6. **Look at it.** Run the app on the mock library (`-mockLibrary YES -startAt <screen>`, list in CLAUDE.md) with XcodeBuildMCP or `make` plus `DEST=`:
    - on a small iPhone (SE or mini class) and a Pro Max;
-   - in light and dark appearance (`xcrun simctl ui booted appearance dark`). Dark mode isn't designed yet; check that nothing becomes unreadable and that system chrome still makes sense;
+   - in light and dark appearance (`xcrun simctl ui booted appearance dark`). Every token has a dark value; check both against DESIGN.md, and that nothing sits on a fixed white or black outside media;
    - at an accessibility text size (`xcrun simctl ui booted content_size accessibility-large`).
 7. **Layering.** Views read `FeedViewModel` and call its intents. They never touch PhotoKit, SwiftData or a collaborator directly.
 8. **Finish.** Run `ui-review` on your diff and fix its blockers. Then run `make verify`, and `make test-ui` alone since views changed. Then run `pre-pr`.
