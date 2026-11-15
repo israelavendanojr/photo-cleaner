@@ -32,7 +32,7 @@ struct BristleTicks: View {
     private var clamped: Double { min(max(value, 0), 1) }
 
     var body: some View {
-        TickRow(filled: shown, tint: tint, showsTrack: showsTrack, pops: popsNew && !reduceMotion)
+        TickRow(filled: shown, goal: clamped, tint: tint, showsTrack: showsTrack, pops: popsNew && !reduceMotion)
             .frame(height: height)
             .onAppear { fill(to: clamped) }
             .onChange(of: clamped) { _, new in fill(to: new) }
@@ -52,6 +52,8 @@ struct BristleTicks: View {
 /// The strokes themselves. `filled` animates, and each tick fills as the sweep passes it.
 private struct TickRow: View, Animatable {
     var filled: Double
+    /// Where `filled` is heading. The sweep lands on a whole number of ticks, so none is left half drawn.
+    let goal: Double
     let tint: Color
     let showsTrack: Bool
     let pops: Bool
@@ -65,12 +67,14 @@ private struct TickRow: View, Animatable {
         Canvas { context, size in
             let count = Self.count(in: size.width)
             guard count > 0 else { return }
-            // At least one tick for any amount at all, so a small share doesn't read as none.
-            let target = filled > 0 ? max(filled * Double(count), 0.5) : 0
+            // Whole ticks at rest, and at least one for any amount at all, so a small share doesn't read as none.
+            let whole = goal > 0 ? max((goal * Double(count)).rounded(), 1) : 0
+            // The sweep, in ticks: `whole` once `filled` reaches `goal`.
+            let swept = goal > 0 ? filled / goal * whole : filled * Double(count)
             for index in 0..<count {
                 let x = CGFloat(index) * DS.Ticks.pitch
                 // How far the sweep is through this tick, 0...1.
-                let reach = target > 0 ? min(max(target - Double(index) + 0.5, 0), 1) : 0
+                let reach = min(max(swept - Double(index), 0), 1)
                 if showsTrack, reach < 1 {
                     context.fill(Path(CGRect(x: x, y: 0, width: DS.Ticks.stroke, height: size.height)), with: .color(DS.Palette.outline))
                 }

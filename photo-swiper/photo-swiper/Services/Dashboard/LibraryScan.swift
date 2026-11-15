@@ -35,6 +35,10 @@ struct LibraryScan: Equatable, Codable, Sendable {
     var indexedBytes: Int64 = 0
     /// How far the index has got, 0...100. Nil once it's complete.
     var scanPercent: Int?
+    /// Everything in the rows that count as amounts to clear (`FocusTarget.isAmountToClear`), each item
+    /// once. The rows overlap (a blurry shot can also be a similar one), so their sizes can't be added up;
+    /// this can be shown as their total. Optional: scans made before it existed don't have it.
+    var toClear: Bucket?
 
     /// The counts behind a row.
     func bucket(for focus: FocusTarget) -> Bucket? {
@@ -60,12 +64,14 @@ struct LibraryScan: Equatable, Codable, Sendable {
         var scan = LibraryScan(scanPercent: scanPercent)
         var members: [FocusTarget: [Int64]] = [:]
         var grouped: Set<LibraryItem.ID> = []
+        var toClear: [LibraryItem.ID: Int64] = [:]
         for (category, groups) in [(CleanupCategory.duplicate, duplicates), (.similar, similar)] {
             for group in groups {
                 for id in group.ids where id != group.bestID && !excluding.contains(id) && !grouped.contains(id) {
                     guard let bytes = features[id]?.bytes else { continue }
                     grouped.insert(id)
                     members[.category(category), default: []].append(bytes)
+                    toClear[id] = bytes
                 }
             }
         }
@@ -76,10 +82,16 @@ struct LibraryScan: Equatable, Codable, Sendable {
             if item.isVideo { members[.allVideos, default: []].append(item.bytes) }
             if livePhotos.contains(id), !item.isVideo { members[.livePhotos, default: []].append(item.bytes) }
             if CleanupCategory.inferred(from: item) == .photo { members[.category(.photo), default: []].append(item.bytes) }
-            for focus in findings(item) { members[focus, default: []].append(item.bytes) }
+            for focus in findings(item) {
+                members[focus, default: []].append(item.bytes)
+                if focus.isAmountToClear { toClear[id] = item.bytes }
+            }
             guard !grouped.contains(id), let category = suggested(item) else { continue }
             members[.category(category), default: []].append(item.bytes)
+            // Large videos have no row (Videos covers them), so they're not in the rows' total either.
+            if category != .video { toClear[id] = item.bytes }
         }
+        scan.toClear = Bucket(count: toClear.count, bytes: toClear.values.reduce(0, +))
         for id in later {
             guard let item = features[id] else { continue }
             members[.savedForLater, default: []].append(item.bytes)

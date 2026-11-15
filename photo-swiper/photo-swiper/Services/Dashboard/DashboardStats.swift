@@ -33,6 +33,14 @@ struct DashboardSnapshot: Equatable, Codable, Sendable {
     // `activity` and `reviews`, the old heatmaps) are ignored when decoding.
     /// Biggest first, saved for later last, only those with something in them (`DashboardStats.rows`).
     var rows: [Row]?
+    /// What the amount-to-clear rows come to, each item counted once (`LibraryScan.toClear`). Nil when the
+    /// scan didn't say, so no total is shown rather than a sum that counts some photos twice.
+    var toClearBytes: Int64?
+
+    /// The rows that are amounts to clear, and the rest: kinds of thing in the library, and what's saved
+    /// for later. Each keeps the order of `rows`.
+    var toClearRows: [Row] { (rows ?? []).filter(\.focus.isAmountToClear) }
+    var otherRows: [Row] { (rows ?? []).filter { !$0.focus.isAmountToClear } }
 
     var weeklyChange: WeeklyChange? { DashboardStats.weeklyChange(this: clearedThisWeek, last: clearedLastWeek) }
 }
@@ -48,6 +56,7 @@ enum DashboardStats {
         snapshot.clearedLastWeek = history.filter { $0.at > twoWeeksAgo && $0.at <= weekAgo }.reduce(0) { $0 + $1.bytes }
         if let scan {
             snapshot.rows = rows(scan)
+            snapshot.toClearBytes = scan.toClear?.bytes
             snapshot.scanPercent = scan.scanPercent
         }
         return snapshot
@@ -73,5 +82,19 @@ enum DashboardStats {
             if first.row.bytes != second.row.bytes { return first.row.bytes > second.row.bytes }
             return first.offset < second.offset
         }.map(\.row)
+    }
+}
+
+extension FocusTarget {
+    /// Whether this row's size is space that clearing it would free: the extras of duplicate and similar
+    /// sets, screenshots, burst leftovers, accidental and blurry shots. The library's own kinds (videos,
+    /// Live Photos, documents, photos) and what's saved for later are things to look through, not amounts
+    /// to clear, though large videos, which have no row of their own, would be.
+    var isAmountToClear: Bool {
+        switch self {
+        case .category(let category): category != .photo
+        case .accidental, .blurry: true
+        case .allVideos, .livePhotos, .documents, .savedForLater: false
+        }
     }
 }

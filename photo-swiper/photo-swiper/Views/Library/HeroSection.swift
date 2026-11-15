@@ -1,15 +1,16 @@
 import SwiftUI
 
-/// The top of the dashboard, one card: total space cleared, with this week against last, then how far
-/// through the whole library the user is, as a progress bar. Before anything is cleared the number is an
-/// invitation to start instead, and the bar sits under it as the goal.
+/// The top of the dashboard, straight on the paper: total space cleared as one big number, with this week
+/// against last, then how far through the whole library the user is, in ticks. Before anything is cleared
+/// the number is an invitation to start instead, and the ticks sit under it as the goal.
 ///
-/// The first time the tab is seen each launch, the number counts up from zero while the bar fills from
-/// empty, and the change and the count under the bar fade up once they land. Later visits, and Reduce
-/// Motion, show it still.
+/// The first time the tab is seen each launch, the number counts up from zero while the ticks fill from
+/// empty, and the change and the count fade up once they land. Later visits, and Reduce Motion, show it
+/// still.
 struct HeroSection: View {
     @Environment(FeedViewModel.self) private var vm
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var typeSize
     /// The dashboard's numbers, or a stand-in while they load.
     let snapshot: DashboardSnapshot
     /// The snapshot is a stand-in: the parts drawn from it are redacted. The rest is live.
@@ -26,18 +27,17 @@ struct HeroSection: View {
     @State private var isChangeShown = true
 
     var body: some View {
-        DashboardCard {
+        VStack(alignment: .leading, spacing: DS.Spacing.l) {
             if clearedBytes > 0 {
                 cleared
             } else {
                 firstCleanup
             }
-        } content: {
             if vm.stats.totalItems > 0 {
                 reviewed
-                    .padding(.top, DS.Spacing.xs)
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .animation(reduceMotion ? nil : DS.Motion.calm, value: clearedBytes)
         .animation(reduceMotion ? nil : DS.Motion.calm, value: vm.libraryReviewedFraction)
         .task(id: isActive && !isLoading && hasSomethingToShow) { await playEntranceIfDue() }
@@ -66,21 +66,29 @@ struct HeroSection: View {
 
     private var cleared: some View {
         let shown = countingBytes ?? (isEntranceDue ? 0 : clearedBytes)
+        let parts = Format.sizeParts(shown)
         return VStack(alignment: .leading, spacing: DS.Spacing.xxs) {
-            Text(Format.size(shown))
-                .dsSerif(48, relativeTo: .largeTitle)
-                .monospacedDigit()
-                .foregroundStyle(DS.Palette.brick)
-                .contentTransition(.numericText(value: Double(shown)))
-                .lineLimit(1)
-                .minimumScaleFactor(0.6)
+            Text("Cleared so far")
+                .font(.footnote)
+                .foregroundStyle(DS.Palette.secondary)
+            HStack(alignment: .firstTextBaseline, spacing: DS.Spacing.xs) {
+                Text(parts.number)
+                    .dsSerif(84, relativeTo: .largeTitle)
+                    .tracking(-3)
+                    .monospacedDigit()
+                    .contentTransition(.numericText(value: Double(shown)))
+                Text(parts.unit)
+                    .dsSerif(34, relativeTo: .largeTitle)
+            }
+            .foregroundStyle(DS.Palette.brick)
+            .lineLimit(1)
+            .minimumScaleFactor(0.5)
             if let change = snapshot.weeklyChange {
-                // Brick only when more was cleared: brick means space freed, and a drop isn't that. Ink, not
-                // secondary, for a drop: it's essential small text, and secondary is below AA at this size.
+                // Ink, up or down: the brick belongs to the number above it.
                 Text(Format.weeklyChange(change))
                     .font(.subheadline.weight(.semibold))
                     .monospacedDigit()
-                    .foregroundStyle(change.isDown ? DS.Palette.ink : DS.Palette.brick)
+                    .foregroundStyle(DS.Palette.ink)
                     .fixedSize(horizontal: false, vertical: true)
                     .redacted(reason: isLoading ? .placeholder : [])
                     .opacity(isSettled ? 1 : 0)
@@ -137,24 +145,27 @@ struct HeroSection: View {
     /// under the bar fades up with the week's change, once the bar has filled.
     private var reviewed: some View {
         let fraction = fillingFraction ?? (isFillDue ? 0 : vm.libraryReviewedFraction)
+        // Side by side on one baseline; one under the other where they don't fit.
+        let layout = typeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: DS.Spacing.xxs))
+            : AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: DS.Spacing.xs))
         return VStack(alignment: .leading, spacing: DS.Spacing.xs) {
-            HStack(alignment: .firstTextBaseline, spacing: DS.Spacing.xs) {
-                Text(Format.percent(fraction))
-                    .font(.title3.weight(.semibold))
+            layout {
+                Text("\(Format.percent(fraction)) reviewed")
+                    .font(.subheadline.weight(.semibold))
                     .monospacedDigit()
+                    .foregroundStyle(DS.Palette.ink)
                     .contentTransition(.numericText(value: fraction))
-                Text("reviewed")
-                    .font(.callout)
+                if !typeSize.isAccessibilitySize { Spacer(minLength: 0) }
+                Text("\(Format.count(vm.libraryReviewedCount)) of \(Format.count(vm.stats.totalItems)) photos")
+                    .font(.footnote)
+                    .monospacedDigit()
+                    .foregroundStyle(DS.Palette.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .opacity(isFillSettled ? 1 : 0)
             }
-            .foregroundStyle(DS.Palette.ink)
             BristleTicks(value: fraction, height: DS.Ticks.heroHeight)
-            Text("\(Format.count(vm.libraryReviewedCount)) of \(Format.count(vm.stats.totalItems)) photos reviewed")
-                .font(.footnote)
-                .monospacedDigit()
-                .foregroundStyle(DS.Palette.ink)
-                .fixedSize(horizontal: false, vertical: true)
-                .opacity(isFillSettled ? 1 : 0)
-                .offset(y: isFillSettled ? 0 : DS.Spacing.xs)
+                .accessibilityHidden(true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         // One sentence from the live numbers, not the ones mid-entrance.
@@ -195,21 +206,21 @@ private extension DashboardSnapshot {
 #Preview("Up on last week") {
     HeroSection(snapshot: .preview(thisWeek: 1_620_000_000, lastWeek: 1_200_000_000), clearedBytes: DashboardSnapshot.preview.totalCleared)
         .padding(DS.Spacing.l)
-        .background(DS.Palette.paper)
+        .paperBackground()
         .environment(FeedViewModel.mock(startingAt: .batch))
 }
 
 #Preview("Down on last week") {
     HeroSection(snapshot: .preview(thisWeek: 1_200_000_000, lastWeek: 1_600_000_000), clearedBytes: DashboardSnapshot.preview.totalCleared)
         .padding(DS.Spacing.l)
-        .background(DS.Palette.paper)
+        .paperBackground()
         .environment(FeedViewModel.mock(startingAt: .batch))
 }
 
 #Preview("Nothing last week") {
     HeroSection(snapshot: .preview(thisWeek: 1_200_000_000, lastWeek: 0), clearedBytes: DashboardSnapshot.preview.totalCleared)
         .padding(DS.Spacing.l)
-        .background(DS.Palette.paper)
+        .paperBackground()
         .environment(FeedViewModel.mock(startingAt: .batch))
 }
 
@@ -218,22 +229,30 @@ private extension DashboardSnapshot {
         HeroSection(snapshot: .preview, clearedBytes: DashboardSnapshot.preview.totalCleared)
             .padding(DS.Spacing.l)
     }
-    .background(DS.Palette.paper)
+    .paperBackground()
     .environment(FeedViewModel.mock(startingAt: .batch))
     .dynamicTypeSize(.accessibility5)
+}
+
+#Preview("Dark") {
+    HeroSection(snapshot: .preview(thisWeek: 1_620_000_000, lastWeek: 1_200_000_000), clearedBytes: DashboardSnapshot.preview.totalCleared)
+        .padding(DS.Spacing.l)
+        .paperBackground()
+        .environment(FeedViewModel.mock(startingAt: .batch))
+        .preferredColorScheme(.dark)
 }
 
 #Preview("First cleanup") {
     HeroSection(snapshot: .preview, clearedBytes: 0)
         .padding(DS.Spacing.l)
-        .background(DS.Palette.paper)
+        .paperBackground()
         .environment(FeedViewModel.mock())
 }
 
 #Preview("Loading") {
     HeroSection(snapshot: .placeholder(), isLoading: true, clearedBytes: 2_000_000_000)
         .padding(DS.Spacing.l)
-        .background(DS.Palette.paper)
+        .paperBackground()
         .environment(FeedViewModel.mock())
 }
 #endif

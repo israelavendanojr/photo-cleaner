@@ -45,13 +45,15 @@ Defined in `DS.Palette` ([`DesignSystem.swift`](photo-swiper/photo-swiper/Design
 
 | Size | `relativeTo` | Weight | Where |
 |---|---|---|---|
-| 48 | `.largeTitle` | regular | Big numbers: pile total, a video card's file size, the dashboard's space cleared (brick) |
+| 84 | `.largeTitle` | regular | The dashboard's space cleared (brick), its unit beside it at 34 |
+| 48 | `.largeTitle` | regular | Big numbers: pile total, a video card's file size |
 | 46 | `.largeTitle` | medium | Welcome headline |
 | 40 | `.largeTitle` | medium | Onboarding page titles |
-| 34 | `.largeTitle` | medium | Screen titles (Library, pile, Admin, `UpsellLayout`); regular on empty states ("Nothing cleared yet") |
+| 34 | `.largeTitle` | medium | Screen titles (pile, Admin, `UpsellLayout`); regular on empty states ("Nothing cleared yet") |
 | 34 | `.title` | regular | `ToClearCounter` (brick) |
 | 28 | `.title` | regular | Photo card date |
-| 22 | `.title3` | regular, *italic* for group cards | Similar and duplicate card titles, the unlock offer's "One-time purchase." |
+| 24 | `.title2` | medium | The wordmark, beside `BristleMark` |
+| 22 | `.title3` | regular, *italic* for group cards; medium for the Library's list headers | Similar and duplicate card titles, the unlock offer's "One-time purchase." |
 | 20 | `.title3` | regular | Video card date |
 | 19 | `.headline` | medium | Navigation-bar title (Settings) |
 
@@ -126,6 +128,7 @@ Put the shadow on the background shape, not on the view that holds text, so the 
 | `page` | Moving between onboarding pages |
 | `tab` | The tab bar's selection capsule |
 | `stackSettle` | The loose stack after a swipe: the next card straightening as it comes to the top |
+| `rowStagger` | The beat between one Library row fading up and the next, once per launch |
 | `tickFill` | `BristleTicks` sweeping to a new value, tick by tick |
 | `countUpDuration`, `countUpSteps` | The dashboard's space cleared counting up from zero, and its ticks filling from empty alongside: once per launch, in steps of `calm` changes, easing out |
 
@@ -152,8 +155,9 @@ All of these are in [`DesignSystem/Components/`](photo-swiper/photo-swiper/Desig
 | `ConfettiView` | The celebration after freeing space. It never takes touches, announces `message`, and falls back to a note under Reduce Motion. |
 | `OpenSettingsButton` | Any link to the app's page in iOS Settings (permissions). |
 | `SwipeStamp` (in `Views/Feed/`) | The Delete, Keep and Later wash over a card. It's also used in onboarding's demo. |
-| `DashboardCard` | A dashboard panel: a header view, then content, on a `card` panel at `Radius.inner` with `softShadow()` on the shape. The hero and the library card use it. |
-| `BinCard` | The pile on the dashboard: `trash` in brick on a `brickTint` circle (`DS.Bin.iconDiameter`, scaled), like the feed's Delete, then "Bin" and "N to clear · size" in brick. With a free limit, brick `BristleTicks` of the pile against it and "56.6 MB of 64 MB" ("Full at …" when full). Empty, it looks the same with zeros and an empty track. Wrap it in the link to the pile only when there's something in it: a disabled link would dim its text. One VoiceOver sentence. |
+| `Rule` | A hairline in `line`. Lists on the paper are ruled, not boxed: a `Rule` above each row and one after the last. |
+| `TallyRow` | A ruled row that tallies one thing: name and count, a short run of ticks for its share (`DS.Tally`), its size, a chevron. Brick when the size is an amount to clear, ink otherwise. At accessibility sizes the count, size and ticks go under the name. |
+| `BinRow` (in `Views/Library/`) | The pile on the dashboard, one `TallyRow` between rules: "Bin", how many, their size, in brick. With a free limit its ticks show the pile against it, over a track, and once full it says "Full at 1 GB. Delete these to keep clearing." Empty, it looks the same with zeros and no chevron. Wrap it in the link to the pile only when there's something in it: a disabled link would dim its text. One VoiceOver sentence. |
 
 Formatting goes through `Format` (`size`, `signedSize`, `percent`, `signedPercent`, `weeklyChange`, `day`, `shortDay`, `range`, `duration`, `countdown`, `roughDays`, `spelled`, `count`). `size` uses `ByteCountFormatter` in decimal units from MB up, as Photos and Settings do ("1.2 GB", "0.1 MB"), and reads "0 MB" for nothing. `signedPercent` has one decimal ("+34.5%", "−25.0%"); `weeklyChange` reads "+1.2 GB (+34.5%) vs last week", or "+1.2 GB this week" when last week cleared nothing.
 
@@ -182,11 +186,14 @@ Formatting goes through `Format` (`size`, `signedSize`, `percent`, `signedPercen
 
 ### The Library dashboard
 
-Three parts, top to bottom, and nothing else: the hero, the bin, the library card. Each says one thing; no number appears twice.
+Straight on the paper, no cards. Top to bottom: the wordmark, the hero, the bin, two ruled lists. Each says one thing.
 
-- **Hero** (`HeroSection`), one `DashboardCard`. Space cleared as the brick serif 48 number, with no label over it. Under it, this week against last (`Format.weeklyChange`): brick when more was cleared, ink when less, since brick only means space freed and a drop isn't that (not `secondary`: it's essential small text); hidden when neither week cleared anything. The first time the tab is seen each launch, the number counts up from zero (`DS.Motion.countUpDuration` in `countUpSteps` numeric-text steps) and the change fades up once it lands; under Reduce Motion, and on later visits, both show at once. Then, as the card's content and its one visual, how far through the whole library the user is: the share reviewed in `title3` semibold with "reviewed" after it, `BristleTicks` in ink at `DS.Ticks.heroHeight`, and "11,050 of 17,820 photos reviewed" in footnote, all ink. It reads as one VoiceOver sentence. It shows whenever the library has anything in it, 0% included, so the goal is always there. On the entrance the bar fills from empty and the percent counts up in the same steps as the number, and the count under the bar fades up with the change. Before anything is cleared it's "Nothing cleared yet" with "Start reviewing", with the bar under it; the entrance still fills the bar once anything is reviewed.
-- **Bin** (`BinCard`), right under the hero. Under limited access only, "Add more photos" and "Photo access" rows follow it.
-- **Library card** (`LibraryCard`), "Review by type". A plain list, one row per focus with something in it: icon (`DS.LibraryList.iconWidth` column, hidden at accessibility sizes) · title · "count · size" · chevron, with `line` dividers, each row at least `DS.Tap.minimum` tall. The rows cover the library's kinds and what the analysis finds: duplicates, similar, accidental shots, blurry, screenshots, bursts and documents. Large videos aren't a row: they're already in Videos. Rows are biggest first, ties in `FocusTarget.listOrder`, and Saved for later always last. Tapping a row focuses the feed on it and does nothing else. A size is brick only when it's an amount to clear (duplicates and similar count only their extras, accidental shots, blurry, screenshots, bursts); the library's own kinds (videos, Live Photos, documents, photos) and what's saved for later are ink. While the library is still being analyzed the header says "Analyzing · 86%". At accessibility sizes the count and size stack under the title instead of truncating.
+- **Header:** `BristleMark` and the app's name in serif 24, with Settings (`gearshape`) on the right.
+- **Hero** (`HeroSection`): "Cleared so far", then space cleared as the brick serif 84 number with its unit at 34. Under it, this week against last (`Format.weeklyChange`) in ink, up or down; hidden when neither week cleared anything. The first time the tab is seen each launch, the number counts up from zero (`DS.Motion.countUpDuration` in `countUpSteps` numeric-text steps) and the change fades up once it lands; under Reduce Motion, and on later visits, both show at once. Then how far through the whole library the user is: "21% reviewed" and "3,740 of 17,820 photos" on one baseline, over `BristleTicks` in ink at `DS.Ticks.heroHeight`. It reads as one VoiceOver sentence, and shows whenever the library has anything in it, 0% included. On the entrance the ticks fill from empty with the number. Before anything is cleared it's "Nothing cleared yet" with "Start reviewing".
+- **Bin** (`BinRow`), under the hero. Under limited access only, "Add more photos" and "Photo access" follow it as ruled rows.
+- **"Ready to clear"** (`LibraryList`): a serif header with the total in brick, then one `TallyRow` per kind that's an amount to clear (`FocusTarget.isAmountToClear`): the extras of duplicates and similar sets, accidental shots, blurry, screenshots, bursts. Biggest first. A row's ticks are its size against the biggest row. The total is `DashboardSnapshot.toClearBytes`, which counts each photo once: a blurry shot can also be a similar one, so the rows don't add up to it, and a snapshot without it shows no total. While the library is still being analyzed, "Analyzing · 86%" sits under the header.
+- **"Also in your library":** the same rows in ink for what isn't an amount to clear: videos, Live Photos, documents, photos, and saved for later, always last. No total. Large videos aren't a row: they're already in Videos.
+- Tapping a row focuses the feed on it and does nothing else. The first time the lists are seen each launch their rows fade up one after another (`DS.Motion.rowStagger`); still under Reduce Motion.
 
 ## Accessibility
 
@@ -239,7 +246,7 @@ These are known gaps in the code as of this file's first version. They're docume
 - **`AccentColor` asset is empty.** Tint is set view by view instead (`.tint(DS.Palette.ink)` in Settings, Library and Admin; `.tint(DS.Palette.secondary)` on progress views).
 - **Literal paddings instead of `DS.Spacing`:**
   - 14, 18, 22 and 24 in the cards (`VideoCardView`, `DuplicatesCardView`, `SimilarShotsCardView`, `ScreenshotBatchCardView`, `CardContentView`, `SwipeableCard`, `SwipeHint`);
-  - a list-row leading inset of 52 (`LibraryView`, `SettingsView`);
+  - a list-row leading inset of 52 (`SettingsView`);
   - 26 in `PendingThumbnailGrid`, a top inset of 76 in `VideoPreviewView`, 28 in `PhotoAccessPrimerView`;
   - 14/8 in `Chip`, and 6 in `PendingPileView` badges.
 - **58 literal `spacing:` values** in stacks across `Views/` and `DesignSystem/`.
@@ -250,6 +257,7 @@ These are known gaps in the code as of this file's first version. They're docume
 - **Haptic outside `Haptics`:** `PendingPileView` uses `.sensoryFeedback(.selection, trigger:)`.
 - **Duplicated toast:** `SettingsView` builds the same ink capsule toast twice instead of using `Toast`.
 - **Press styles differ:** `PressScaleStyle` dims to 0.4 when disabled, and the tab bar's private `TabPressStyle` doesn't.
+- **The pushed pile screen** still fills itself with `paper`.
 - **Two screen gutters:** 20 (`l`) in most screens and 28 (`xl`) in onboarding. The reason isn't written down.
 - **`Chip` has no XXL preview.**
 - **Debug-only exceptions:** `RankDebugBadge` uses a fixed font, black, and a radius of 6. It's Debug-only and can stay.

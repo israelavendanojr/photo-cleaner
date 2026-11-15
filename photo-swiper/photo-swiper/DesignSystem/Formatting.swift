@@ -13,6 +13,13 @@ enum Format {
         return formatter.string(fromByteCount: bytes)
     }
 
+    /// `size` in two parts, ("8.12", "GB"), for a number set larger than its unit.
+    static func sizeParts(_ bytes: Int64) -> (number: String, unit: String) {
+        let text = size(bytes)
+        guard let space = text.lastIndex(where: \.isWhitespace) else { return (text, "") }
+        return (String(text[..<space]), String(text[text.index(after: space)...]))
+    }
+
     /// "21%", for a 0...1 fraction.
     static func percent(_ fraction: Double) -> String {
         "\(Int((fraction * 100).rounded()))%"
