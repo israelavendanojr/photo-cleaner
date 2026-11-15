@@ -54,7 +54,7 @@ struct SimilarShotsCardView: View {
                 CardCenterButton(accessibilityLabel: "Go one by one") { onOpen(group.bestID) }
             }
             .overlay(alignment: .topLeading) {
-                Chip(text: "Best pick", systemImage: "star.fill", style: .plain)
+                Chip(text: "Best pick", systemImage: "star.fill", style: .onPhoto)
                     .padding(DS.Spacing.s)
             }
             .overlay(alignment: .topTrailing) {
@@ -99,6 +99,8 @@ struct SimilarShotsCardView: View {
             }
             .font(.subheadline.weight(.semibold))
             .foregroundStyle(markedItems.isEmpty ? DS.Palette.secondary : DS.Palette.brick)
+            // What a swipe will clear is the line that must stay whole; the hint gives way.
+            .layoutPriority(1)
             .contentTransition(.numericText())
             Spacer(minLength: DS.Spacing.xs)
             Button { onOpen(group.bestID) } label: {

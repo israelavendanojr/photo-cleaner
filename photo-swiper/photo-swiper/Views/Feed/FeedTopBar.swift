@@ -1,6 +1,7 @@
 import SwiftUI
 
 /// Undo, the free swipes left, the feed's focus or the scanning note, and the running "to clear" total.
+/// For a free user, the pile's meter runs under them: how full the free pile is, in ticks.
 struct FeedTopBar: View {
     /// Free users see how many swipes are left from here down.
     static let lowSwipes = 5
@@ -10,24 +11,28 @@ struct FeedTopBar: View {
     var onOpenPile: () -> Void = {}
 
     var body: some View {
-        HStack(alignment: .center, spacing: DS.Spacing.xs) {
-            undoButton
-                .frame(maxWidth: .infinity, alignment: .leading)
-            // One line when it fits; otherwise it wraps. Never wider than the bar: every tab shares
-            // RootView's ZStack, so a wider feed would widen the Library tab too.
-            ViewThatFits(in: .horizontal) {
-                status.fixedSize()
-                status.fixedSize(horizontal: false, vertical: true)
+        VStack(spacing: DS.Spacing.s) {
+            HStack(alignment: .center, spacing: DS.Spacing.xs) {
+                undoButton
+                // Beside Undo, and never wider than the bar: every tab shares RootView's ZStack, so
+                // a wider feed would widen the Library tab too.
+                status
+                    .lineLimit(2)
+                    .layoutPriority(-1)
+                Spacer(minLength: 0)
+                Button(action: onOpenPile) {
+                    counter
+                        .animation(DS.Motion.calm, value: vm.deleteChip)
+                        .frame(minHeight: DS.Tap.minimum)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(PressScaleStyle())
+                .accessibilityAddTraits(.isButton)
+                .accessibilityHint("Shows what's waiting to be cleared")
             }
-            Button(action: onOpenPile) {
-                counter
-                    .animation(DS.Motion.calm, value: vm.deleteChip)
-                    .contentShape(Rectangle())
+            if let limit = vm.pileLimitBytes {
+                FreePileMeter(counted: vm.pileCountedBytes, limit: limit, waiting: vm.pendingItems.count)
             }
-            .buttonStyle(PressScaleStyle())
-            .accessibilityAddTraits(.isButton)
-            .accessibilityHint("Shows what's waiting to be cleared")
-            .frame(maxWidth: .infinity, alignment: .trailing)
         }
     }
 
@@ -63,16 +68,45 @@ struct FeedTopBar: View {
             FeedFocusChip(focus: focus)
                 .transition(.opacity)
         } else if let percent = vm.scanningPercent {
-            HStack(spacing: 6) {
+            HStack(spacing: DS.Spacing.xs) {
                 Circle()
                     .fill(DS.Palette.brick)
-                    .frame(width: 6, height: 6)
+                    .frame(width: DS.Control.dot, height: DS.Control.dot)
                 Text("Still scanning · \(percent)%")
             }
             .font(.caption)
             .foregroundStyle(DS.Palette.secondary)
             .transition(.opacity)
         }
+    }
+}
+
+/// How full the free pile is, as brick ticks, with what's waiting in it. New ticks pop as a photo
+/// is piled. Only free users have a limit, so only they see it.
+private struct FreePileMeter: View {
+    let counted: Int64
+    let limit: Int64
+    let waiting: Int
+
+    private var fill: Double { min(1, Double(counted) / Double(max(limit, 1))) }
+    private var waitingText: String { "\(Format.count(waiting)) \(waiting == 1 ? "photo" : "photos") waiting" }
+
+    var body: some View {
+        VStack(spacing: DS.Spacing.xs) {
+            BristleTicks(value: fill, tint: DS.Palette.brick, popsNew: true)
+            HStack(alignment: .firstTextBaseline) {
+                Text("Free pile")
+                Spacer(minLength: DS.Spacing.xs)
+                Text(waitingText)
+                    .monospacedDigit()
+                    .contentTransition(.numericText(value: Double(waiting)))
+            }
+            .font(.caption)
+            .foregroundStyle(DS.Palette.secondary)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Free pile, \(Format.percent(fill)) full, \(waitingText)")
+        .accessibilityIdentifier("feed.pileMeter")
     }
 }
 
@@ -103,7 +137,7 @@ struct FeedFocusChip: View {
         } label: {
             Chip(text: focus.focusTitle, trailingSystemImage: "xmark", style: .plain, size: .caption)
                 .softShadow()
-                .frame(minHeight: 44)
+                .frame(minHeight: DS.Tap.minimum)
                 .contentShape(Rectangle())
         }
         .buttonStyle(PressScaleStyle())
@@ -117,7 +151,7 @@ struct FeedFocusChip: View {
 #Preview {
     FeedTopBar(onUndo: {})
         .environment(FeedViewModel.mock())
-        .padding(20)
-        .background(DS.Palette.paper)
+        .padding(DS.Spacing.l)
+        .paperBackground()
 }
 #endif

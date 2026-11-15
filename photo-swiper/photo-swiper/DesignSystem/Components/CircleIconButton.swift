@@ -9,10 +9,11 @@ struct CircleIconButton: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: systemImage)
-                .font(.system(size: 18, weight: .medium))
-                .foregroundStyle(DS.Palette.secondary)
-                .frame(width: 44, height: 44)
-                .overlay { Circle().strokeBorder(DS.Palette.line, lineWidth: 1.5) }
+                .font(.body.weight(.medium))
+                .foregroundStyle(DS.Palette.ink)
+                .frame(width: DS.Tap.minimum, height: DS.Tap.minimum)
+                .background(DS.Palette.card, in: Circle())
+                .overlay { Circle().strokeBorder(DS.Palette.outline, lineWidth: DS.Control.ring) }
                 .contentShape(Circle())
         }
         .buttonStyle(PressScaleStyle())
@@ -26,5 +27,5 @@ struct CircleIconButton: View {
         CircleIconButton(systemImage: "arrow.uturn.backward", accessibilityLabel: "Undo") {}
     }
     .padding()
-    .background(DS.Palette.paper)
+    .paperBackground()
 }

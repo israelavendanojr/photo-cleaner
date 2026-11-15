@@ -31,6 +31,7 @@ Defined in `DS.Palette` ([`DesignSystem.swift`](photo-swiper/photo-swiper/Design
 | `outline` | `#CFC6B9` | `#453D36` | The empty part of a tick track, and the ring of an outlined control. |
 | `muted` | `#EEE8E0` | `#2C2723` | Placeholder fill behind images while they load. |
 | `shadow` | `#4A382B` | `#000000` | Shadow color only, through `cardShadow()` and `softShadow()`. |
+| `scrim` | `#1F1B18` | `#1F1B18` | The dark wash under a caption on a photo (`BottomScrim`). The same in both modes: it sits on the picture. |
 
 **Fixed white and black** are allowed in only two places: over photos and video (preview chrome, card captions, scrims, `Chip(.frosted)`), and white on `brickFill`. On an `ink` fill use `onInk`.
 
@@ -48,8 +49,8 @@ Defined in `DS.Palette` ([`DesignSystem.swift`](photo-swiper/photo-swiper/Design
 | 46 | `.largeTitle` | medium | Welcome headline |
 | 40 | `.largeTitle` | medium | Onboarding page titles |
 | 34 | `.largeTitle` | medium | Screen titles (Library, pile, Admin, `UpsellLayout`); regular on empty states ("Nothing cleared yet") |
-| 28 | `.title2` | regular | `ToClearCounter` |
-| 26 | `.title` | regular | Photo card date |
+| 34 | `.title` | regular | `ToClearCounter` (brick) |
+| 28 | `.title` | regular | Photo card date |
 | 22 | `.title3` | regular, *italic* for group cards | Similar and duplicate card titles, the unlock offer's "One-time purchase." |
 | 20 | `.title3` | regular | Video card date |
 | 19 | `.headline` | medium | Navigation-bar title (Settings) |
@@ -65,7 +66,7 @@ Numbers that change use `.monospacedDigit()` and `.contentTransition(.numericTex
 
 ## Spacing and layout
 
-`DS.Spacing`: `xxs` 4 · `xs` 8 · `s` 12 · `m` 16 · `l` 20 · `xl` 28 · `xxl` 40, plus `cardInset` 14, which is the card stack's inset from the screen edge.
+`DS.Spacing`: `xxs` 4 · `xs` 8 · `s` 12 · `m` 16 · `l` 20 · `xl` 28 · `xxl` 40, plus `cardInset` 28, which is the card stack's inset from the screen edge: wide enough that the tilted cards behind the top one stay on screen.
 
 - **Screen gutter:** `l` (20) horizontally on most screens. Onboarding uses `xl` (28) through `onboardingLayout`.
 - **Stack spacing:** `xs` inside a group, `s`–`m` between rows, `l`–`xl` between sections.
@@ -76,7 +77,7 @@ Numbers that change use `.monospacedDigit()` and `.contentTransition(.numericTex
 
 ## Corner radius and elevation
 
-`DS.Radius`: `card` 32 · `inner` 24 · `tile` 16 · `thumb` 12. Always use `RoundedRectangle(cornerRadius:style: .continuous)`. Pills, chips, toasts and tab bars are `Capsule()`, and round buttons are `Circle()`.
+`DS.Radius`: `card` 28 · `inner` 24 · `tile` 16 · `thumb` 12. Always use `RoundedRectangle(cornerRadius:style: .continuous)`. Pills, chips, toasts and tab bars are `Capsule()`, and round buttons are `Circle()`.
 
 | Radius | For |
 |---|---|
@@ -124,6 +125,7 @@ Put the shadow on the background shape, not on the view that holds text, so the 
 | `gentle` | Screen-level transitions, big reveals, onboarding entrances |
 | `page` | Moving between onboarding pages |
 | `tab` | The tab bar's selection capsule |
+| `stackSettle` | The loose stack after a swipe: the next card straightening as it comes to the top |
 | `tickFill` | `BristleTicks` sweeping to a new value, tick by tick |
 | `countUpDuration`, `countUpSteps` | The dashboard's space cleared counting up from zero, and its ticks filling from empty alongside: once per launch, in steps of `calm` changes, easing out |
 
@@ -138,13 +140,13 @@ All of these are in [`DesignSystem/Components/`](photo-swiper/photo-swiper/Desig
 | Component | Use when |
 |---|---|
 | `PillButtonStyle`, applied as `.buttonStyle(.pill(_:))` | Any full-width action. `.ink` is the primary action, `.brick` is reserved for the destructive or paid primary (Delete N, Unlock), `.outline` is secondary, `.ghost` is tertiary ("Not now"). One brick button per screen at most. |
-| `CircleActionButton` | The feed's round action-bar buttons with a caption. `.destructive` for Delete, `.neutral` for Keep and Later. |
-| `CircleIconButton` | The outlined 44pt icon button in top bars (Undo, Close). Requires `accessibilityLabel`. |
+| `CircleActionButton` | The feed's round action-bar buttons with a caption. `.destructive` (brick on tint) for Delete, `.neutral` (card with an `outline` ring) for Later, `.primary` (a filled `ink` disc with an `onInk` icon) for Keep. |
+| `CircleIconButton` | The 44pt icon button in top bars (Undo, Close, Settings): an ink icon on `card` with an `outline` ring. Requires `accessibilityLabel`. |
 | `PressScaleStyle` | The press-down scale for custom icon buttons. It also dims the button when disabled. |
-| `Chip` | Small rounded labels. `.brick` for counts tied to clearing (swipes left), `.plain` for neutral markers over imagery (Best pick, Keep) and the feed's focus ("Only large videos ×", with `trailingSystemImage: "xmark"`, which takes the text color), `.frosted` for text over video. |
-| `PillTabBar` | The floating tab bar. Its selection animates with `DS.Motion.tab` and fires `Haptics.tabChange`. |
+| `Chip` | Small rounded labels. `.brick` for counts tied to clearing (swipes left), `.plain` for the feed's focus ("Only large videos ×", with `trailingSystemImage: "xmark"`, which takes the text color), `.onPhoto` for a label lying on a picture (a card's flag with `showsDot`, Best pick, Keep): a pale slip with dark text in both appearances. `.frosted` for text over video. |
+| `PillTabBar` | The floating tab bar: text-only tabs (`DS.TabBar`), the selected one on an ink capsule. Its selection animates with `DS.Motion.tab` and fires `Haptics.tabChange`. |
 | `BristleTicks` | Any progress or proportion: upright 2pt strokes on a 5pt pitch (`DS.Ticks`), the filled part over an `outline` track, drawn in a `Canvas`. Ink by default, brick for amounts to clear. `showsTrack: false` for a bar that only compares sizes; `popsNew` lifts ticks as they fill. It fills tick by tick, from empty the first time it's seen (at once under Reduce Motion), scales its height with Dynamic Type, and reads its percentage to VoiceOver: give it a label where it's used. `BristleMark` is the glyph made from it, for the wordmark. |
-| `ToClearCounter` | The brick serif running total, with a "+3.4 MB" chip that pops above it. Unlocked, it's the whole bin, edits included; with a free limit it's the deletes the limit counts. |
+| `ToClearCounter` | The brick serif running total with its label on the same baseline ("184 MB of 1 GB"; the label drops under it where they don't fit), and a "+3.4 MB" chip that pops above it. Unlocked, it's the whole bin, edits included; with a free limit it's the deletes the limit counts. |
 | `Toast` | A short note in an ink `Capsule()` with an optional underlined action, announced to VoiceOver, e.g. the feed's "Edit queued · saves ~335 MB · Undo". The caller decides how long it stays. |
 | `UpsellLayout` / `UpsellCard` / `IncludedRow` | Every unlock surface (the wall and the sheets), so they read as one offer. |
 | `ConfettiView` | The celebration after freeing space. It never takes touches, announces `message`, and falls back to a note under Reduce Motion. |
@@ -154,6 +156,13 @@ All of these are in [`DesignSystem/Components/`](photo-swiper/photo-swiper/Desig
 | `BinCard` | The pile on the dashboard: `trash` in brick on a `brickTint` circle (`DS.Bin.iconDiameter`, scaled), like the feed's Delete, then "Bin" and "N to clear · size" in brick. With a free limit, brick `BristleTicks` of the pile against it and "56.6 MB of 64 MB" ("Full at …" when full). Empty, it looks the same with zeros and an empty track. Wrap it in the link to the pile only when there's something in it: a disabled link would dim its text. One VoiceOver sentence. |
 
 Formatting goes through `Format` (`size`, `signedSize`, `percent`, `signedPercent`, `weeklyChange`, `day`, `shortDay`, `range`, `duration`, `countdown`, `roughDays`, `spelled`, `count`). `size` uses `ByteCountFormatter` in decimal units from MB up, as Photos and Settings do ("1.2 GB", "0.1 MB"), and reads "0 MB" for nothing. `signedPercent` has one decimal ("+34.5%", "−25.0%"); `weeklyChange` reads "+1.2 GB (+34.5%) vs last week", or "+1.2 GB this week" when last week cleared nothing.
+
+### The feed
+
+- **Top bar** (`FeedTopBar`): Undo on the left, then whatever there is to say (swipes left, the focus, "Still scanning"), and the `ToClearCounter` on the right, which opens the pile. For a free user the pile's meter runs under it: brick `BristleTicks` at the pile's share of the free limit, with "Free pile" and "12 photos waiting" beneath, one VoiceOver sentence. The new ticks pop when a photo is piled. Unlocked, there's no limit and no meter.
+- **The loose stack** (`SwipeDeck`, `StackedBehind`, `DS.Stack`): the next two cards lie behind the top one as real cards, each tilted a few degrees and a step dimmer, the nearer one nudged out from under the top. A card's tilt comes from its ID (`StackPose.tilt`), so it never changes between renders or launches. As the top card is dragged, the cards behind move a step forward in proportion: the next straightens and brightens. On fly-out it settles to 0° (`DS.Motion.stackSettle`) and a new card fades in at the back; undo runs it backward. With Reduce Motion the cards behind hold still during the drag. It's drawing only: the deck's order and which card a swipe decides are the view model's. Only the top card is in the accessibility tree.
+- **Action bar:** Delete (brick on tint), Later (smaller, ringed), Keep (the filled ink disc).
+- **Photo card:** the date in serif over the scrim, place and size under it, and the analysis's flag ("Possibly blurry") as an `.onPhoto` chip with a dot, top left, when there is one.
 
 ### The full-screen video, its trim strip and compression
 
@@ -229,19 +238,18 @@ These are known gaps in the code as of this file's first version. They're docume
 - **The paper isn't behind every screen yet.** `RootView` has it; screens that still fill themselves with `paper` cover it. The A5 redesign moves them over screen by screen.
 - **`AccentColor` asset is empty.** Tint is set view by view instead (`.tint(DS.Palette.ink)` in Settings, Library and Admin; `.tint(DS.Palette.secondary)` on progress views).
 - **Literal paddings instead of `DS.Spacing`:**
-  - 14, 18, 22 and 24 in the cards (`PhotoCardView`, `VideoCardView`, `DuplicatesCardView`, `SimilarShotsCardView`, `ScreenshotBatchCardView`, `CardContentView`, `SwipeableCard`, `SwipeHint`);
+  - 14, 18, 22 and 24 in the cards (`VideoCardView`, `DuplicatesCardView`, `SimilarShotsCardView`, `ScreenshotBatchCardView`, `CardContentView`, `SwipeableCard`, `SwipeHint`);
   - a list-row leading inset of 52 (`LibraryView`, `SettingsView`);
-  - 26 in `PendingThumbnailGrid`, 20 in `FeedTopBar`, a top inset of 76 in `VideoPreviewView`, 28 in `PhotoAccessPrimerView`;
-  - 14/8 in `Chip`, 10/3 in `ToClearCounter`'s pop chip, and 6 in `PendingPileView` badges.
+  - 26 in `PendingThumbnailGrid`, a top inset of 76 in `VideoPreviewView`, 28 in `PhotoAccessPrimerView`;
+  - 14/8 in `Chip`, and 6 in `PendingPileView` badges.
 - **58 literal `spacing:` values** in stacks across `Views/` and `DesignSystem/`.
 - **A radius with no token:** 8 in `PendingThumbnailGrid` (`thumb` is 12).
-- **Fixed-size fonts that don't scale with Dynamic Type:** 34 light in `LibraryAccessView`, 8 black in `SimilarShotsCardView`, 9 black and 20 in `PendingPileView`, 18 and 26 on the preview buttons (`PhotoPreviewView`, `VideoPreviewView`), and 18 in `CircleIconButton`.
+- **Fixed-size fonts that don't scale with Dynamic Type:** 34 light in `LibraryAccessView`, 8 black in `SimilarShotsCardView`, 9 black and 20 in `PendingPileView`, and 18 and 26 on the preview buttons (`PhotoPreviewView`, `VideoPreviewView`).
 - **Raw shadows outside the two modifiers:** black legibility shadows over media in `PendingPileView` and `VideoPreviewView`.
 - **Raw animations outside `DS.Motion`:** `RootView` (2), `PhotoAccessPrimerView` (2), `OnboardingView`, `NotificationsPrimerView` and `SwipeableCard` (2).
 - **Haptic outside `Haptics`:** `PendingPileView` uses `.sensoryFeedback(.selection, trigger:)`.
 - **Duplicated toast:** `SettingsView` builds the same ink capsule toast twice instead of using `Toast`.
 - **Press styles differ:** `PressScaleStyle` dims to 0.4 when disabled, and the tab bar's private `TabPressStyle` doesn't.
 - **Two screen gutters:** 20 (`l`) in most screens and 28 (`xl`) in onboarding. The reason isn't written down.
-- **Literal 44pt tap target:** `.frame(minHeight: 44)` in `FeedFocusChip`, where `DS.Tap.minimum` now exists.
 - **`Chip` has no XXL preview.**
 - **Debug-only exceptions:** `RankDebugBadge` uses a fixed font, black, and a radius of 6. It's Debug-only and can stay.

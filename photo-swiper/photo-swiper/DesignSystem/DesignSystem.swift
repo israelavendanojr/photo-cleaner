@@ -28,6 +28,9 @@ enum DS {
         /// Placeholder fill behind images.
         static let muted = Color("Palette/muted")
         static let shadow = Color("Palette/shadow")
+        /// The dark wash under a caption on a photo. The same in both appearances: it sits on the
+        /// picture, not the paper.
+        static let scrim = Color("Palette/scrim")
     }
 
     enum Spacing {
@@ -39,11 +42,11 @@ enum DS {
         static let xl: CGFloat = 28
         static let xxl: CGFloat = 40
         /// Horizontal inset of the card stack from the screen edge.
-        static let cardInset: CGFloat = 14
+        static let cardInset: CGFloat = 28
     }
 
     enum Radius {
-        static let card: CGFloat = 32
+        static let card: CGFloat = 28
         static let inner: CGFloat = 24
         static let tile: CGFloat = 16
         static let thumb: CGFloat = 12
@@ -70,6 +73,38 @@ enum DS {
         /// `BristleTicks` filling: the fill sweeps to its new value, and the ticks appear one by one
         /// as it passes them.
         static let tickFill = Animation.easeOut(duration: 0.6)
+        /// The loose stack: a card behind straightening as it comes to the top, and the next one
+        /// taking its place at the back.
+        static let stackSettle = Animation.spring(duration: 0.5, bounce: 0.12)
+    }
+
+    /// The feed's loose stack: the cards waiting behind the top one lie at a slight angle, a little
+    /// dimmed, as photos dropped on a table.
+    enum Stack {
+        /// How many cards show behind the top one.
+        static let depth = 2
+        /// A waiting card's tilt, either way, in degrees. Each card's own angle comes from its ID.
+        static let tilt: ClosedRange<Double> = 3...5
+        /// The card right behind the top one sits this far down and across.
+        static let nudge: CGFloat = 4
+        /// How much darker each step back is.
+        static let dimStep = 0.04
+    }
+
+    /// The floating tab bar (`PillTabBar`).
+    enum TabBar {
+        static let padding: CGFloat = 6
+        static let itemInset: CGFloat = 22
+        static let itemHeight: CGFloat = 48
+    }
+
+    /// The feed's round buttons (`CircleActionButton`, `CircleIconButton`).
+    enum Control {
+        static let action: CGFloat = 68
+        static let minorAction: CGFloat = 52
+        static let ring: CGFloat = 1.5
+        /// A 6pt dot before a label: a card's flag, the scanning note.
+        static let dot: CGFloat = 6
     }
 
     /// The tick motif (`BristleTicks`): upright strokes on a fixed pitch.

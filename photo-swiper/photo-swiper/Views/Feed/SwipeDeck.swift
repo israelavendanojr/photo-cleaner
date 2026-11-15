@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// The swipeable stack every feed is built on: the top card, the card peeking behind it,
+/// The swipeable stack every feed is built on: the top card, the next two lying loose behind it,
 /// the action buttons, full-screen previews, and image pre-caching.
 ///
 /// It only shows cards and reports swipes. What a swipe means is up to the caller, so the
@@ -58,6 +58,8 @@ struct SwipeDeck: View {
 
     private var currentCard: FeedCard? { cards.indices.contains(index) ? cards[index] : nil }
     private var nextCard: FeedCard? { cards.indices.contains(index + 1) ? cards[index + 1] : nil }
+    /// The cards waiting behind the top one, nearest first. Only shown: the deck's order is the caller's.
+    private var waiting: [FeedCard] { Array(cards.dropFirst(index + 1).prefix(DS.Stack.depth)) }
     private var isDealt: Bool { hasDealt || !dealsIn }
 
     var body: some View {
@@ -73,6 +75,7 @@ struct SwipeDeck: View {
                     let isTop = card.id == currentCard?.id
                     let isDeparting = !isTop && departing.contains { $0.id == card.id }
                     let isFront = isTop || isDeparting
+                    let depth = isFront ? 0 : (waiting.firstIndex { $0.id == card.id } ?? 0) + 1
                     SwipeableCard(
                         isEnabled: isTop,
                         entrance: entrance(for: card),
@@ -92,11 +95,12 @@ struct SwipeDeck: View {
                             onOpenPhoto: { previewingPhoto = $0 }
                         )
                     }
-                    .scaleEffect(isFront ? 1 : 0.95 + 0.05 * progress)
-                    .offset(y: isFront ? 0 : 12 * (1 - progress))
-                    .modifier(DealIn(isDealt: isDealt, order: isTop ? 1 : 0))
+                    .modifier(StackedBehind(depth: depth, tilt: StackPose.tilt(for: card.id), progress: progress))
+                    .modifier(DealIn(isDealt: isDealt, order: DS.Stack.depth - depth))
                     .allowsHitTesting(isTop)
-                    .zIndex(isDeparting ? 2 : isTop ? 1 : 0)
+                    // Only the top card is there to act on; the ones behind are scenery.
+                    .accessibilityHidden(!isTop)
+                    .zIndex(Double(isDeparting ? DS.Stack.depth + 2 : DS.Stack.depth + 1 - depth))
                     .transition(isFront ? .identity : .opacity.combined(with: .scale(scale: 0.92)))
                 }
             }
@@ -114,7 +118,7 @@ struct SwipeDeck: View {
                             .transition(.opacity)
                     }
                 }
-                .modifier(DealIn(isDealt: isDealt, order: 2))
+                .modifier(DealIn(isDealt: isDealt, order: DS.Stack.depth + 1))
         }
         .fullScreenCover(item: $previewingVideo, onDismiss: flyOutPreviewDecision) { item in
             VideoPreviewView(item: item, label: previewLabel, onDecide: { direction in
@@ -174,7 +178,7 @@ struct SwipeDeck: View {
     }
 
     private var visibleCards: [FeedCard] {
-        let stack = [currentCard, nextCard].compactMap { $0 }
+        let stack = [currentCard].compactMap { $0 } + waiting
         return departing.filter { card in !stack.contains { $0.id == card.id } } + stack
     }
 
@@ -216,7 +220,7 @@ struct SwipeDeck: View {
     private func commit(_ direction: SwipeDirection, card: FeedCard) {
         let edit = queuedEdit.flatMap { direction == .right && $0.cardID == card.id ? $0.edit : nil }
         queuedEdit = nil
-        withAnimation(DS.Motion.calm) {
+        withAnimation(DS.Motion.stackSettle) {
             progress = 0
             if let edit, let onEdit {
                 onEdit(edit, card)
@@ -264,6 +268,6 @@ private struct WaitingCard: View {
         request: $request
     )
     .environment(FeedViewModel.mock())
-    .background(DS.Palette.paper)
+    .paperBackground()
 }
 #endif

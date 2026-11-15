@@ -5,14 +5,13 @@ struct PillTabBar<Tab: Hashable>: View {
     struct Item {
         let tab: Tab
         let title: String
-        let systemImage: String
-        let selectedSystemImage: String
     }
 
     let items: [Item]
     @Binding var selection: Tab
 
     @Namespace private var namespace
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
         HStack(spacing: DS.Spacing.xxs) {
@@ -20,10 +19,13 @@ struct PillTabBar<Tab: Hashable>: View {
                 tabButton(item)
             }
         }
-        .padding(DS.Spacing.xxs + 2)
-        .background(DS.Palette.card, in: Capsule())
+        .padding(DS.TabBar.padding)
+        .background {
+            Capsule()
+                .fill(DS.Palette.card)
+                .softShadow()
+        }
         .overlay { Capsule().strokeBorder(DS.Palette.line, lineWidth: 1) }
-        .softShadow()
     }
 
     private func tabButton(_ item: Item) -> some View {
@@ -33,26 +35,22 @@ struct PillTabBar<Tab: Hashable>: View {
             Haptics.tabChange()
             withAnimation(DS.Motion.tab) { selection = item.tab }
         } label: {
-            HStack(spacing: DS.Spacing.xs) {
-                Image(systemName: isSelected ? item.selectedSystemImage : item.systemImage)
-                    .font(.body.weight(.semibold))
-                    .symbolEffect(.bounce, value: isSelected)
-                    .frame(width: 24)
-                Text(item.title)
-                    .font(.subheadline.weight(.semibold))
-                    .lineLimit(1)
-            }
-            .foregroundStyle(isSelected ? DS.Palette.onInk : DS.Palette.secondary)
-            .padding(.horizontal, DS.Spacing.l)
-            .frame(minHeight: 48)
-            .background {
-                if isSelected {
-                    Capsule()
-                        .fill(DS.Palette.ink)
-                        .matchedGeometryEffect(id: "selection", in: namespace)
+            Text(item.title)
+                .font(.subheadline.weight(.semibold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+                .foregroundStyle(isSelected ? DS.Palette.onInk : DS.Palette.secondary)
+                // Three tabs at the largest sizes: the labels need the room more than the air.
+                .padding(.horizontal, typeSize.isAccessibilitySize ? DS.Spacing.s : DS.TabBar.itemInset)
+                .frame(minHeight: DS.TabBar.itemHeight)
+                .background {
+                    if isSelected {
+                        Capsule()
+                            .fill(DS.Palette.ink)
+                            .matchedGeometryEffect(id: "selection", in: namespace)
+                    }
                 }
-            }
-            .contentShape(Capsule())
+                .contentShape(Capsule())
         }
         .buttonStyle(TabPressStyle())
         .accessibilityAddTraits(isSelected ? .isSelected : [])
@@ -73,12 +71,12 @@ private struct TabPressStyle: ButtonStyle {
         Spacer()
         PillTabBar(
             items: [
-                .init(tab: 0, title: "Feed", systemImage: "square.stack", selectedSystemImage: "square.stack.fill"),
-                .init(tab: 1, title: "Library", systemImage: "photo.on.rectangle", selectedSystemImage: "photo.fill.on.rectangle.fill"),
+                .init(tab: 0, title: "Feed"),
+                .init(tab: 1, title: "Library"),
             ],
             selection: $selection
         )
     }
     .frame(maxWidth: .infinity)
-    .background(DS.Palette.paper)
+    .paperBackground()
 }

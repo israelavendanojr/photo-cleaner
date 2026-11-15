@@ -33,7 +33,7 @@ struct SwipeStamp: View {
     private var wash: Color {
         switch kind {
         case .delete: DS.Palette.brick.opacity(0.25)
-        case .keep: DS.Palette.ink.opacity(0.1)
+        case .keep: DS.Palette.scrim.opacity(0.1)
         case .later: DS.Palette.card.opacity(0.3)
         }
     }

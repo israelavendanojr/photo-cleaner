@@ -1052,7 +1052,8 @@ final class photo_swiperUITests: XCTestCase {
         XCTAssertTrue(bin.waitForExistence(timeout: 5))
         XCTAssertTrue(bin.isHittable, "The Delete button is clear of the home indicator")
         bin.tap()
-        let confirm = app.alerts.buttons["Delete"]
+        // The mock pile carries a pending video edit, so the alert offers "Clear"; "Delete" without one.
+        let confirm = app.alerts.buttons.matching(NSPredicate(format: "label IN %@", ["Clear", "Delete"])).firstMatch
         XCTAssertTrue(confirm.waitForExistence(timeout: 5))
         confirm.tap()
         XCTAssertTrue(element(app, containing: "they stay in Recently Deleted").waitForExistence(timeout: 5))
