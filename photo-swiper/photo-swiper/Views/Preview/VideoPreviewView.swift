@@ -6,7 +6,7 @@ import SwiftUI
 /// the trim strip (`TrimStrip`).
 ///
 /// The strip is the timeline. Moving either handle plays the selection on a loop. The compression button
-/// opens `CompressionSheet`: choosing a level previews a few seconds of it (`CompressionPreviewer`) over
+/// opens `CompressionPopup`: choosing a level previews a few seconds of it (`CompressionPreviewer`) over
 /// the video, and pressing and holding the video shows the original meanwhile; Apply keeps the level.
 /// Once trimmed or compressed, a line shows what the edit saves, with Reset and Save. Save hands the
 /// edit to `onEdit`; nothing is exported until the bin is confirmed. Leaving with unsaved changes
@@ -50,7 +50,7 @@ struct VideoPreviewView: View {
     @State private var previewer = CompressionPreviewer()
     @State private var sample = SampleLoop()
     @State private var isChoosingLevel = false
-    /// The level highlighted in the sheet, previewed but not yet applied.
+    /// The level highlighted in the popup, previewed but not yet applied.
     @State private var levelChoice: CompressionLevel?
     /// The original shows in place of the preview while the video is held.
     @State private var isComparing = false
@@ -73,6 +73,8 @@ struct VideoPreviewView: View {
                 .onGeometryChange(for: CGSize.self, of: \.size) { size = $0 }
                 // The controls sit above, unzoomed, so their buttons and the strip's own drags keep working.
                 .zoomable($zoom, content: videoSize, container: size, swipe: swipe, onSwipe: finish, onHold: hold) {
+                    // A tap outside the compression popup closes it, as outside a sheet would.
+                    if isChoosingLevel { return closeLevels() }
                     withAnimation(DS.Motion.calm) { showsControls.toggle() }
                 }
                 .accessibilityActions {
@@ -115,6 +117,7 @@ struct VideoPreviewView: View {
             if showsControls {
                 topBar
                     .opacity(swipe.chromeOpacity)
+                    .accessibilityHidden(isChoosingLevel)
                     .transition(.opacity)
             }
         }
@@ -122,6 +125,7 @@ struct VideoPreviewView: View {
             if showsControls {
                 controls
                     .opacity(swipe.chromeOpacity)
+                    .accessibilityHidden(isChoosingLevel)
                     .transition(.opacity)
             }
         }
@@ -132,14 +136,16 @@ struct VideoPreviewView: View {
         } message: { _ in
             Text("You changed this video's trim or compression. Nothing changes in your library until you clear the bin.")
         }
-        .sheet(isPresented: $isChoosingLevel, onDismiss: endChoosingLevel) {
-            CompressionSheet(trimmedBytes: trimmedBytes, estimates: estimates, choice: levelChoice,
-                             onChoose: chooseLevel, onApply: applyLevel)
-                .presentationDetents([.medium])
-                .presentationDragIndicator(.visible)
-                // The video stays live above the sheet, for the preview and press-and-hold.
-                .presentationBackgroundInteraction(.enabled(upThrough: .medium))
+        .overlay {
+            // No scrim: the video stays live around the popup, for the preview and press-and-hold.
+            if isChoosingLevel {
+                CompressionPopup(trimmedBytes: trimmedBytes, estimates: estimates, choice: levelChoice,
+                                 onChoose: chooseLevel, onApply: applyLevel, onClose: closeLevels)
+                    .transition(reduceMotion ? .opacity : .scale(scale: 0.9).combined(with: .opacity))
+            }
         }
+        .animation(reduceMotion ? nil : DS.Motion.calm, value: isChoosingLevel)
+        .onChange(of: isChoosingLevel) { _, choosing in if !choosing { endChoosingLevel() } }
         .environment(\.colorScheme, .dark)
         .presentationBackground(.clear)
         .task { await playback.load(item) }
@@ -210,7 +216,7 @@ struct VideoPreviewView: View {
     }
 
     private func finish(_ outcome: PreviewDrag.Outcome) {
-        // While the level sheet is up, the video only previews: no closing or deciding underneath it.
+        // While the level popup is up, the video only previews: no closing or deciding underneath it.
         guard !isChoosingLevel else { return swipe.cancel() }
         switch outcome {
         case .dismiss: requestExit(.close)
@@ -313,6 +319,11 @@ struct VideoPreviewView: View {
 
     private func applyLevel() {
         draft?.setCompression(levelChoice)
+        isChoosingLevel = false
+    }
+
+    /// Closes the popup without applying: the level stays as it was.
+    private func closeLevels() {
         isChoosingLevel = false
     }
 
@@ -498,9 +509,9 @@ struct VideoPreviewView: View {
     }
 }
 
-/// A round frosted button over the video: close, volume, compression. Active (a level set) fills it brick,
-/// as trimming turns the strip brick: space to clear.
-private struct FrostedIconButton: View {
+/// A round frosted button over the video: close, volume, compression, and the compression popup's close.
+/// Active (a level set) fills it brick, as trimming turns the strip brick: space to clear.
+struct FrostedIconButton: View {
     let systemImage: String
     let accessibilityLabel: String
     var isActive = false
@@ -521,8 +532,9 @@ private struct FrostedIconButton: View {
     }
 }
 
-/// Reset and Trim beside the trim summary: a frosted capsule, or brick for Trim, the space it clears.
-private struct TrimButtonStyle: ButtonStyle {
+/// Reset and Save beside the edit summary, and the compression popup's Apply: a frosted capsule, or brick
+/// for the primary one, the space it clears.
+struct TrimButtonStyle: ButtonStyle {
     let isPrimary: Bool
     @Environment(\.isEnabled) private var isEnabled
 

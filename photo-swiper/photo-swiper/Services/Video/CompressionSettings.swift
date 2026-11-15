@@ -99,7 +99,7 @@ struct CompressionSettings: Equatable, Sendable {
     }
 }
 
-/// What a level would make of a video, for the level sheet and the bin.
+/// What a level would make of a video, for the level popup and the bin.
 struct CompressionEstimate: Equatable, Sendable {
     /// The size after trimming, before compressing.
     var trimmedBytes: Int64

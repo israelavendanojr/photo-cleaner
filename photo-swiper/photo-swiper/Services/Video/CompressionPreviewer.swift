@@ -2,7 +2,7 @@ import AVFoundation
 import Observation
 import OSLog
 
-/// Short samples of a video at each compression level, for the full-screen viewer's level sheet (JUN-50).
+/// Short samples of a video at each compression level, for the full-screen viewer's level popup (JUN-50).
 ///
 /// A sample is about `sampleLength` seconds around the playhead, kept inside the trim, encoded with the
 /// level's real settings by the same `VideoEncoder` the bin uses, so it looks like the copy will. Samples
