@@ -65,6 +65,7 @@ final class TestEntitlements: EntitlementStore {
     }
 
     var plans = [UnlockPlan(kind: .once, displayPrice: "$9.99"), UnlockPlan(kind: .monthly, displayPrice: "$4.99")]
+    var activePlan: UnlockPlan.Kind?
     /// The plan each purchase asked for, in order.
     private(set) var purchasedPlans: [UnlockPlan.Kind] = []
 

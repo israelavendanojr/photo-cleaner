@@ -181,7 +181,7 @@ One screen (`PaywallView`, `DS.Paywall`), the same on every surface, so the offe
 - **Headline** "Clear without limits." in serif 36, and one supporting sentence in `secondary`, both centred.
 - **Benefits:** ruled rows (`Rule`), each an icon, a title and a line. Every one must be true in code; `UnlockCopy.benefits` says how each was checked, and `UpsellCopyTests` holds them to it.
 - **Plans:** one card per plan the store lists (`vm.unlockPlans`), side by side, stacked at accessibility sizes: the plan's name, its price in serif 38, and how it's paid. The chosen card has an `ink` ring and a filled mark; the others an `outline` ring and an empty one. Choosing moves with `DS.Motion.planSelect` and `Haptics.planChosen`. Prices are the store's localized strings, never written in the app.
-- **Under the scroll:** the screen's one `.pill(.brick)`, naming the chosen plan and price ("Unlock for $9.99", "Subscribe for $4.99 / month"), then how that plan is billed with Restore beside it, then Privacy and Terms. A failed purchase or restore explains itself in one line under the button.
+- **Under the scroll:** the screen's one `.pill(.brick)`, naming the chosen plan and price ("Unlock for $9.99", "Subscribe for $4.99 / month"), then how that plan is billed with Restore beside it (for the subscription: its name, price, period, that it renews, and where to cancel), then Privacy and Terms. A failed purchase or restore explains itself in one line under the button.
 
 It has no "Not now": Close is the way out. It says nothing about when free swipes come back.
 

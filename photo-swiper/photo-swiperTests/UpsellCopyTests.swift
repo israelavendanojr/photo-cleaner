@@ -37,7 +37,8 @@ struct UpsellCopyTests {
 
     @Test func theBillingNoteSaysHowTheChosenPlanIsBilled() {
         #expect(UnlockCopy.billingNote(for: once) == "One-time purchase. No renewals.")
-        #expect(UnlockCopy.billingNote(for: monthly) == "$4.99 a month until you cancel.")
+        #expect(UnlockCopy.billingNote(for: monthly)
+            == "\(AppInfo.name) Monthly: $4.99 per month, renewing automatically until you cancel in your Apple Account settings.")
     }
 
     @Test func eachPlanCardSaysHowItIsPaid() {
@@ -54,6 +55,25 @@ struct UpsellCopyTests {
         let odd = UnlockPlan(kind: .monthly, displayPrice: "€3,49")
         #expect(UnlockCopy.buttonTitle(for: odd).contains("€3,49"))
         #expect(UnlockCopy.billingNote(for: odd).contains("€3,49"))
+    }
+
+    /// App Review (3.1.2) wants a subscription's name, length, price and how to cancel where it's sold.
+    @Test func theSubscriptionTermsAreAllInTheBillingNote() {
+        let note = UnlockCopy.billingNote(for: monthly)
+        for part in [UnlockCopy.subscriptionName, "$4.99", "per month", "renewing automatically", "cancel"] {
+            #expect(note.contains(part), "Missing: \(part)")
+        }
+        #expect(AppInfo.privacyPolicyURL != nil, "The paywall links the privacy policy beside the terms")
+    }
+
+    @Test func settingsSaysWhichPlanUnlocked() {
+        #expect(UnlockCopy.unlockedTitle(subscribed: false).hasPrefix("Unlocked"))
+        #expect(UnlockCopy.unlockedTitle(subscribed: true).hasPrefix("Subscribed monthly"))
+        let entitlements = TestEntitlements(isUnlocked: true)
+        entitlements.activePlan = .monthly
+        #expect(FeedViewModel.mock(entitlements: entitlements).isSubscribed)
+        entitlements.activePlan = .once
+        #expect(!FeedViewModel.mock(entitlements: entitlements).isSubscribed, "The lifetime unlock has nothing to manage")
     }
 
     // MARK: Buying a plan

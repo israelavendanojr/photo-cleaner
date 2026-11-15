@@ -3,37 +3,68 @@ import Observation
 import os
 import StoreKit
 
-/// What the App Store sells.
+/// What the App Store sells. Either one unlocks everything.
 enum StoreProducts {
     /// The lifetime unlock, a non-consumable.
     static let unlock = "com.israelavendanojr.photo-swiper.unlock"
+    /// The same unlock as an auto-renewing monthly subscription.
+    static let monthly = "com.israelavendanojr.photo-swiper.monthly"
+
+    static let all = [unlock, monthly]
+
+    static func id(for plan: UnlockPlan.Kind) -> String {
+        switch plan {
+        case .once: unlock
+        case .monthly: monthly
+        }
+    }
+
+    static func plan(for productID: String) -> UnlockPlan.Kind? {
+        switch productID {
+        case unlock: .once
+        case monthly: .monthly
+        default: nil
+        }
+    }
 }
 
-/// The unlock, bought and restored through StoreKit 2.
+/// The unlock, bought and restored through StoreKit 2: the lifetime product, or the monthly subscription
+/// while it runs.
 ///
 /// `isUnlocked` starts from the last known state so the app doesn't flash locked at launch, then
-/// `Transaction.currentEntitlements` corrects it. Only verified, unrevoked transactions count.
+/// `Transaction.currentEntitlements` corrects it. Only verified, unrevoked, unexpired transactions count.
 /// `Transaction.updates` is watched for as long as the store lives (the life of the app), which
-/// covers purchases on other devices, Ask to Buy approvals and refunds.
+/// covers purchases on other devices, Ask to Buy approvals, renewals and refunds. A subscription's end
+/// isn't always announced, so the store also checks again when the current period runs out.
 @Observable
 @MainActor
 final class StoreKitEntitlementStore: EntitlementStore {
     private static let log = Logger.app(category: "entitlement")
-    /// Shown until the product loads.
+    /// Shown for the one-time unlock until its product loads.
     static let fallbackPrice = "$9.99"
 
     private(set) var isUnlocked: Bool
-    private var product: Product?
-    var displayPrice: String { product?.displayPrice ?? Self.fallbackPrice }
-    /// The one-time unlock, at the fallback price until its product loads: it's the app's one product,
-    /// and the purchase loads it again if it must.
-    var plans: [UnlockPlan] { [UnlockPlan(kind: .once, displayPrice: displayPrice)] }
+    private(set) var activePlan: UnlockPlan.Kind?
+    private var products: [String: Product] = [:]
+    var displayPrice: String { products[StoreProducts.unlock]?.displayPrice ?? Self.fallbackPrice }
+    /// The one-time unlock always, at the fallback price until its product loads (the purchase loads it
+    /// again if it must). The subscription only once its product has loaded: its price and terms have to
+    /// be the store's.
+    var plans: [UnlockPlan] {
+        var plans = [UnlockPlan(kind: .once, displayPrice: displayPrice)]
+        if let monthly = products[StoreProducts.monthly] {
+            plans.append(UnlockPlan(kind: .monthly, displayPrice: monthly.displayPrice))
+        }
+        return plans
+    }
 
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private let sync: () async throws -> Void
     // Unsafe: written once in init and read only in deinit, which can't be isolated before Swift 6.2.
     @ObservationIgnored private nonisolated(unsafe) var updates: Task<Void, Never>?
     @ObservationIgnored private var launch: Task<Void, Never>?
+    /// Waits out the subscription's current period, then asks again.
+    @ObservationIgnored private var expiryCheck: Task<Void, Never>?
 
     /// `sync` is `AppStore.sync()`, replaceable in tests.
     init(defaults: UserDefaults = .standard, sync: @escaping () async throws -> Void = { try await AppStore.sync() }) {
@@ -47,7 +78,7 @@ final class StoreKitEntitlementStore: EntitlementStore {
         }
         launch = Task { [weak self] in
             await self?.finishUnfinished()
-            await self?.loadProduct()
+            await self?.loadProducts()
             await self?.refreshEntitlements()
         }
     }
@@ -62,17 +93,22 @@ final class StoreKitEntitlementStore: EntitlementStore {
     }
 
     func purchase(_ plan: UnlockPlan.Kind) async -> PurchaseOutcome {
-        // Only what `plans` lists is on sale.
-        guard plan == .once else { return .failed }
         // So a slow launch check can't land after the purchase and relock.
         await ready()
-        if product == nil { await loadProduct() }
-        guard let product else { return .failed }
+        let id = StoreProducts.id(for: plan)
+        if products[id] == nil { await loadProducts() }
+        guard let product = products[id] else { return .failed }
         do {
             switch try await product.purchase() {
             case .success(.verified(let transaction)):
                 await transaction.finish()
-                setUnlocked(transaction.revocationDate == nil)
+                // The whole picture, not just this transaction: a subscriber may already own the lifetime unlock.
+                await refreshEntitlements()
+                // In case the entitlement list hasn't caught up with a purchase that just finished.
+                if !isUnlocked, let bought = Self.unlockingPlan(transaction, now: .now) {
+                    activePlan = bought
+                    setUnlocked(true)
+                }
                 return isUnlocked ? .purchased : .failed
             case .success(.unverified(_, let error)):
                 Self.log.error("Purchase couldn't be verified: \(error.localizedDescription, privacy: .public)")
@@ -104,17 +140,38 @@ final class StoreKitEntitlementStore: EntitlementStore {
         return isUnlocked ? .restored : .nothingToRestore
     }
 
-    /// Re-reads what this Apple Account owns.
+    /// Re-reads what this Apple Account owns. Either product unlocks; the lifetime one outranks the
+    /// subscription as the active plan, since it never lapses.
     func refreshEntitlements() async {
-        var owned = false
+        var owned: Set<UnlockPlan.Kind> = []
+        var subscriptionEnds: Date?
+        let now = Date.now
         for await result in Transaction.currentEntitlements {
-            if case .verified(let transaction) = result,
-               transaction.productID == StoreProducts.unlock,
-               transaction.revocationDate == nil {
-                owned = true
-            }
+            guard case .verified(let transaction) = result,
+                  let plan = Self.unlockingPlan(transaction, now: now) else { continue }
+            owned.insert(plan)
+            if plan == .monthly { subscriptionEnds = transaction.expirationDate }
         }
-        setUnlocked(owned)
+        activePlan = owned.contains(.once) ? .once : owned.contains(.monthly) ? .monthly : nil
+        setUnlocked(!owned.isEmpty)
+        // Only a subscription that's the reason the app is unlocked needs watching.
+        scheduleExpiryCheck(activePlan == .monthly ? subscriptionEnds : nil)
+    }
+
+    /// The plan a transaction unlocks, if it does: one of the app's two products, not refunded or
+    /// revoked, not replaced by an upgrade, and not past its end.
+    nonisolated static func unlockingPlan(_ transaction: Transaction, now: Date) -> UnlockPlan.Kind? {
+        unlockingPlan(productID: transaction.productID, revokedAt: transaction.revocationDate,
+                      expiresAt: transaction.expirationDate, isUpgraded: transaction.isUpgraded, now: now)
+    }
+
+    /// The rule itself, on plain values so it can be tested without a store.
+    nonisolated static func unlockingPlan(
+        productID: String, revokedAt: Date?, expiresAt: Date?, isUpgraded: Bool, now: Date
+    ) -> UnlockPlan.Kind? {
+        guard let plan = StoreProducts.plan(for: productID), revokedAt == nil, !isUpgraded else { return nil }
+        if let expiresAt, expiresAt <= now { return nil }
+        return plan
     }
 
     // MARK: Private
@@ -135,13 +192,29 @@ final class StoreKitEntitlementStore: EntitlementStore {
         }
     }
 
-    /// Tried at launch, and again on the next purchase if it failed.
-    private func loadProduct() async {
+    /// Tried at launch, and again on the next purchase if a product is still missing.
+    private func loadProducts() async {
         do {
-            product = try await Product.products(for: [StoreProducts.unlock]).first
-            if product == nil { Self.log.error("The unlock product wasn't found.") }
+            for product in try await Product.products(for: StoreProducts.all) {
+                products[product.id] = product
+            }
+            for id in StoreProducts.all where products[id] == nil {
+                Self.log.error("A product wasn't found: \(id, privacy: .public)")
+            }
         } catch {
-            Self.log.error("Couldn't load the unlock product: \(error.localizedDescription, privacy: .public)")
+            Self.log.error("Couldn't load the products: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    /// A lapsed subscription relocks when its period ends, even if StoreKit sends nothing then. A renewal
+    /// arrives as a new transaction with a later end, which schedules the next check.
+    private func scheduleExpiryCheck(_ end: Date?) {
+        expiryCheck?.cancel()
+        guard let end else { return }
+        expiryCheck = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(max(0, end.timeIntervalSinceNow) + 1))
+            guard !Task.isCancelled else { return }
+            await self?.refreshEntitlements()
         }
     }
 

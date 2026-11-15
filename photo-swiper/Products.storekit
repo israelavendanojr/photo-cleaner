@@ -1,8 +1,6 @@
 {
   "identifier" : "5C1E2A7B",
-  "nonRenewingSubscriptions" : [
-
-  ],
+  "nonRenewingSubscriptions" : [],
   "products" : [
     {
       "displayPrice" : "9.99",
@@ -24,12 +22,38 @@
     "_failTransactionsEnabled" : false,
     "_locale" : "en_US",
     "_storefront" : "USA",
-    "_storeKitErrors" : [
-
-    ]
+    "_storeKitErrors" : []
   },
   "subscriptionGroups" : [
-
+    {
+      "id" : "21A5C3F0",
+      "localizations" : [],
+      "name" : "Bristle Unlock",
+      "subscriptions" : [
+        {
+          "adHocOffers" : [],
+          "codeOffers" : [],
+          "displayPrice" : "4.99",
+          "familyShareable" : false,
+          "groupNumber" : 1,
+          "internalID" : "7B2E1D4C",
+          "introductoryOffer" : null,
+          "localizations" : [
+            {
+              "description" : "Unlimited swipes and no pile limit, renewed monthly.",
+              "displayName" : "Bristle Monthly",
+              "locale" : "en_US"
+            }
+          ],
+          "productID" : "com.israelavendanojr.photo-swiper.monthly",
+          "recurringSubscriptionPeriod" : "P1M",
+          "referenceName" : "Monthly",
+          "subscriptionGroupID" : "21A5C3F0",
+          "type" : "RecurringSubscription",
+          "winbackOffers" : []
+        }
+      ]
+    }
   ],
   "version" : {
     "major" : 3,

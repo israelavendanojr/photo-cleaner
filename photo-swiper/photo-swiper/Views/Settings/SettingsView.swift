@@ -1,3 +1,4 @@
+import StoreKit
 import SwiftUI
 import UIKit
 
@@ -18,6 +19,7 @@ struct SettingsView: View {
 
     @State private var safariLink: SafariLink?
     @State private var isUnlockPresented = false
+    @State private var isManagingSubscription = false
     /// "Email address copied", shown briefly when mail can't open.
     @State private var copiedNotice = false
     /// "Developer mode on/off", shown briefly after the version row's taps.
@@ -128,6 +130,7 @@ struct SettingsView: View {
                 .presentationBackground(DS.Palette.paper)
                 .presentationCornerRadius(DS.Radius.card)
         }
+        .manageSubscriptionsSheet(isPresented: $isManagingSubscription)
         .onAppear { vm.resetPurchaseStatus() }
         .task { await vm.refreshReminderPermission() }
         .onChange(of: scenePhase) { _, phase in
@@ -141,9 +144,21 @@ struct SettingsView: View {
     private var purchase: some View {
         SettingsSection("Purchase") {
             if vm.isUnlocked {
-                SettingsLabel(icon: "checkmark.seal", title: "Unlocked · thanks for supporting \(AppInfo.name)")
+                SettingsLabel(icon: "checkmark.seal", title: UnlockCopy.unlockedTitle(subscribed: vm.isSubscribed))
                     .settingsRowPadding()
                     .accessibilityIdentifier("settings.unlocked")
+                if vm.isSubscribed {
+                    // Apple's own sheet: change, or cancel, without leaving the app.
+                    Button {
+                        isManagingSubscription = true
+                    } label: {
+                        SettingsLabel(icon: "creditcard", title: "Manage subscription",
+                                      detail: "Renews monthly. Cancel anytime.", showsChevron: true)
+                            .settingsRowPadding()
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("settings.manageSubscription")
+                }
             } else {
                 Button {
                     vm.resetPurchaseStatus()

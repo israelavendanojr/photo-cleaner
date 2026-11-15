@@ -13,6 +13,9 @@ protocol EntitlementStore: AnyObject, Observable {
     /// What's on sale right now, in the order the paywall shows it. A plan whose product hasn't loaded
     /// isn't listed, so nothing is offered that can't be bought.
     var plans: [UnlockPlan] { get }
+    /// The plan that's unlocking the app right now: `.once` if the lifetime unlock is owned (it outranks
+    /// a subscription), `.monthly` for a running subscription, nil when locked or unlocked some other way.
+    var activePlan: UnlockPlan.Kind? { get }
     /// Runs the purchase of one plan.
     func purchase(_ plan: UnlockPlan.Kind) async -> PurchaseOutcome
     /// Looks for an earlier purchase.

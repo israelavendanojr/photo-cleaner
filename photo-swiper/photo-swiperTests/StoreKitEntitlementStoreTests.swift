@@ -36,6 +36,23 @@ struct StoreKitEntitlementStoreTests {
         return condition()
     }
 
+    /// Turns off renewal, then ends the current period: a subscription the user cancelled, run out.
+    private func endSubscription() throws {
+        for transaction in session.allTransactions() where transaction.productIdentifier == StoreProducts.monthly {
+            try session.disableAutoRenewForTransaction(identifier: transaction.identifier)
+        }
+        try session.expireSubscription(productIdentifier: StoreProducts.monthly)
+    }
+
+    /// Asks the store to look again until `condition` holds: the test session takes a moment to apply an expiry.
+    private func eventuallyAfterRefresh(_ store: StoreKitEntitlementStore, _ condition: () -> Bool) async -> Bool {
+        for _ in 0..<60 where !condition() {
+            try? await Task.sleep(for: .milliseconds(100))
+            await store.refreshEntitlements()
+        }
+        return condition()
+    }
+
     // MARK: Purchase
 
     @Test func loadsThePrice() async {
@@ -96,6 +113,83 @@ struct StoreKitEntitlementStoreTests {
 
         #expect(await eventually { !store.isUnlocked })
         #expect(!defaults.bool(forKey: DefaultsKey.storeKitUnlocked))
+    }
+
+    // MARK: Subscription
+
+    @Test func bothPlansAreOnSaleAtTheStoresPrices() async {
+        let store = await makeStore()
+
+        #expect(store.plans == [
+            UnlockPlan(kind: .once, displayPrice: "$9.99"),
+            UnlockPlan(kind: .monthly, displayPrice: "$4.99"),
+        ])
+        #expect(store.activePlan == nil)
+    }
+
+    @Test func aSubscriptionUnlocksAndIsRemembered() async {
+        let defaults = freshDefaults()
+        let store = await makeStore(defaults: defaults)
+
+        #expect(await store.purchase(.monthly) == .purchased)
+
+        #expect(store.isUnlocked)
+        #expect(store.activePlan == .monthly)
+        #expect(defaults.bool(forKey: DefaultsKey.storeKitUnlocked))
+    }
+
+    @Test func anExpiredSubscriptionRelocks() async throws {
+        let defaults = freshDefaults()
+        let store = await makeStore(defaults: defaults)
+        #expect(await store.purchase(.monthly) == .purchased)
+
+        try endSubscription()
+
+        #expect(await eventuallyAfterRefresh(store) { !store.isUnlocked })
+        #expect(store.activePlan == nil)
+        #expect(!defaults.bool(forKey: DefaultsKey.storeKitUnlocked))
+    }
+
+    @Test func aRenewalKeepsItUnlocked() async throws {
+        let store = await makeStore()
+        #expect(await store.purchase(.monthly) == .purchased)
+
+        try session.forceRenewalOfSubscription(productIdentifier: StoreProducts.monthly)
+        await store.refreshEntitlements()
+
+        #expect(store.isUnlocked)
+        #expect(store.activePlan == .monthly)
+    }
+
+    @Test func aRefundedSubscriptionRelocks() async throws {
+        let store = await makeStore()
+        #expect(await store.purchase(.monthly) == .purchased)
+
+        let bought = try #require(session.allTransactions().first)
+        try session.refundTransaction(identifier: bought.identifier)
+
+        #expect(await eventually { !store.isUnlocked })
+    }
+
+    /// The lifetime unlock doesn't lapse with a subscription bought beside it.
+    @Test func theLifetimeUnlockOutlastsAnExpiredSubscription() async throws {
+        let store = await makeStore()
+        #expect(await store.purchase(.monthly) == .purchased)
+        #expect(await store.purchase(.once) == .purchased)
+        #expect(store.activePlan == .once, "The one that never lapses is the one that counts")
+
+        try endSubscription()
+
+        #expect(await eventuallyAfterRefresh(store) { store.activePlan == .once })
+        #expect(store.isUnlocked)
+    }
+
+    @Test func restoreFindsASubscription() async throws {
+        try await session.buyProduct(identifier: StoreProducts.monthly)
+        let store = await makeStore(defaults: freshDefaults())
+
+        #expect(await store.restore() == .restored)
+        #expect(store.activePlan == .monthly)
     }
 
     // MARK: Launch

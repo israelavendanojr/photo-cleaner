@@ -65,8 +65,16 @@ enum UnlockCopy {
     static func billingNote(for plan: UnlockPlan) -> String {
         switch plan.kind {
         case .once: "One-time purchase. No renewals."
-        case .monthly: "\(plan.displayPrice) a month until you cancel."
+        case .monthly: "\(subscriptionName): \(plan.displayPrice) per month, renewing automatically until you cancel in your Apple Account settings."
         }
+    }
+
+    /// The subscription's name, as the App Store lists it. App Review wants it beside the price and period.
+    static var subscriptionName: String { "\(AppInfo.name) Monthly" }
+
+    /// Settings, once unlocked: which plan is doing it.
+    static func unlockedTitle(subscribed: Bool) -> String {
+        subscribed ? "Subscribed monthly · thanks for supporting \(AppInfo.name)" : "Unlocked · thanks for supporting \(AppInfo.name)"
     }
 
     /// The line under the buttons after a purchase or restore that didn't unlock. Nil while idle,
