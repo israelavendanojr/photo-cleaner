@@ -55,7 +55,7 @@ Defined in `DS.Palette` ([`DesignSystem.swift`](photo-swiper/photo-swiper/Design
 | 34 | `.title` | regular | `ToClearCounter` (brick) |
 | 28 | `.title` | regular | Photo card date |
 | 24 | `.title2` | medium | The wordmark, beside `BristleMark` |
-| 22 | `.title3` | regular, *italic* for group cards; medium for the Library's list headers | Similar and duplicate card titles, the unlock offer's "One-time purchase." |
+| 22 | `.title3` | regular, *italic* for group cards; medium for the Library's list headers | Similar and duplicate card titles |
 | 20 | `.title3` | regular | Video card date |
 | 19 | `.headline` | medium | Navigation-bar title (Settings) |
 
@@ -180,7 +180,7 @@ One screen (`PaywallView`, `DS.Paywall`), the same on every surface, so the offe
 - **Hero:** three photos in a loose pile, each with `cardShadow()`. They start squared up and fan out as the screen appears (`DS.Motion.fan`); with Reduce Motion they're simply fanned.
 - **Headline** "Clear without limits." in serif 36, and one supporting sentence in `secondary`, both centred.
 - **Benefits:** ruled rows (`Rule`), each an icon, a title and a line. Every one must be true in code; `UnlockCopy.benefits` says how each was checked, and `UpsellCopyTests` holds them to it.
-- **Plans:** one card per plan the store lists (`vm.unlockPlans`), side by side, stacked at accessibility sizes: the plan's name, its price in serif 38, and how it's paid. The chosen card has an `ink` ring and a filled mark; the others an `outline` ring and an empty one. Choosing moves with `DS.Motion.planSelect` and `Haptics.planChosen`. Prices are the store's localized strings, never written in the app.
+- **Plans:** one card per plan the store lists (`vm.unlockPlans`), side by side, stacked at accessibility sizes: the plan's name, its price in serif 38, and how it's paid. The chosen card has an `ink` ring and a filled mark; the others an `outline` ring and an empty one. Choosing moves with `DS.Motion.planSelect` and `Haptics.planChosen`. Prices are the store's localized strings, never written in the app. A plan appears only once the store has given its price; with none to show, the cards give way to "Loading prices…" and then "Couldn't load prices from the App Store." with an outline "Try again", and there is no buy button.
 - **Under the scroll:** the screen's one `.pill(.brick)`, naming the chosen plan and price ("Unlock for $9.99", "Subscribe for $4.99 / month"), then how that plan is billed with Restore beside it (for the subscription: its name, price, period, that it renews, and where to cancel), then Privacy and Terms. A failed purchase or restore explains itself in one line under the button.
 
 It has no "Not now": Close is the way out. It says nothing about when free swipes come back.

@@ -18,6 +18,8 @@ struct PaywallView: View {
 
     /// The plan the user picked. Nil follows the store's first.
     @State private var picked: UnlockPlan.Kind?
+    /// The store is being asked for plans it hasn't listed.
+    @State private var isLoadingPlans = false
 
     private var plans: [UnlockPlan] { vm.unlockPlans }
     private var selected: UnlockPlan? { plans.first { $0.kind == picked } ?? plans.first }
@@ -55,8 +57,14 @@ struct PaywallView: View {
                         .padding(.top, DS.Spacing.xs)
                     benefits
                         .padding(.top, DS.Spacing.l)
-                    planCards
-                        .padding(.top, DS.Spacing.l)
+                    Group {
+                        if plans.isEmpty {
+                            plansMissing
+                        } else {
+                            planCards
+                        }
+                    }
+                    .padding(.top, DS.Spacing.l)
                 }
                 .padding(.horizontal, DS.Spacing.l)
                 .padding(.top, DS.Spacing.s + topInset)
@@ -69,6 +77,15 @@ struct PaywallView: View {
         }
         .paperBackground()
         .animation(DS.Motion.calm, value: status)
+        .task { await loadPlans() }
+    }
+
+    /// The store lists a plan only once it has its price, so a launch with no network leaves some out.
+    private func loadPlans() async {
+        guard !isLoadingPlans else { return }
+        isLoadingPlans = true
+        await vm.reloadUnlockPlans()
+        isLoadingPlans = false
     }
 
     // MARK: Benefits
@@ -102,6 +119,33 @@ struct PaywallView: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Plans")
+    }
+
+    /// No plan to show: the store hasn't given a price, and one is never made up here.
+    private var plansMissing: some View {
+        VStack(spacing: DS.Spacing.s) {
+            if isLoadingPlans {
+                ProgressView()
+                    .tint(DS.Palette.secondary)
+                Text(UnlockCopy.plansLoading)
+                    .font(.footnote)
+                    .foregroundStyle(DS.Palette.secondary)
+            } else {
+                Text(UnlockCopy.plansUnavailable)
+                    .font(.subheadline)
+                    .foregroundStyle(DS.Palette.ink)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button(UnlockCopy.plansRetry) {
+                    Task { await loadPlans() }
+                }
+                .buttonStyle(.pill(.outline))
+                .accessibilityIdentifier("paywall.retryPlans")
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("paywall.plansMissing")
     }
 
     // MARK: Footer

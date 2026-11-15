@@ -54,7 +54,6 @@ final class FakeLibrary: PhotoLibraryProviding, @unchecked Sendable {
 @Observable
 final class TestEntitlements: EntitlementStore {
     var isUnlocked: Bool
-    let displayPrice = "$9.99"
     var unlockResult = PurchaseOutcome.purchased
     var restoreResult = RestoreOutcome.restored
     private(set) var restoreCount = 0
@@ -68,6 +67,11 @@ final class TestEntitlements: EntitlementStore {
     var activePlan: UnlockPlan.Kind?
     /// The plan each purchase asked for, in order.
     private(set) var purchasedPlans: [UnlockPlan.Kind] = []
+    private(set) var reloadCount = 0
+
+    func reloadPlans() async {
+        reloadCount += 1
+    }
 
     func purchase(_ plan: UnlockPlan.Kind) async -> PurchaseOutcome {
         purchasedPlans.append(plan)

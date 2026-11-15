@@ -43,8 +43,12 @@ FeedViewModel ──protocols──▶ Services
    EntitlementStore       → StoreKitEntitlementStore (wrapped by DebugOverrideEntitlementStore)
                                lists the `UnlockPlan`s on sale; the paywall (`PaywallView`) shows those and buys one by kind.
                                Two products, either unlocks: the lifetime unlock, or the monthly subscription while it's
-                               verified, unrevoked and unexpired (`StoreKitEntitlementStore.unlockingPlan`). `activePlan`
-                               says which, for Settings' "Manage subscription"
+                               in `Transaction.currentEntitlements`, verified and unrevoked. StoreKit decides whether a
+                               subscription still runs (so a billing grace period keeps it), and the store asks again when
+                               the period ends. Entitlements are read before the products at launch, since that needs no
+                               network. A plan is listed only once its product has loaded, so no price is made up; the
+                               paywall asks again (`reloadPlans`) when it opens. `activePlan` says which plan unlocks,
+                               for Settings' "Manage subscription"
    IndexScheduler → LibraryIndexer → IndexAssetSource (PhotoKitIndexSource) + ImageAnalyzing (VisionImageAnalyzer)
                                    → FeatureIndex (actor, own ModelContext)
 Pure core (no PhotoKit, no UI; unit-tested):

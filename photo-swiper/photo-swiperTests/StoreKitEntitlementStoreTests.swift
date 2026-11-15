@@ -58,7 +58,7 @@ struct StoreKitEntitlementStoreTests {
     @Test func loadsThePrice() async {
         let store = await makeStore()
 
-        #expect(store.displayPrice == "$9.99")
+        #expect(store.plans.first == UnlockPlan(kind: .once, displayPrice: "$9.99"))
         #expect(!store.isUnlocked)
     }
 

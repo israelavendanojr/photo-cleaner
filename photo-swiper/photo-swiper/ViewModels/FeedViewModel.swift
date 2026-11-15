@@ -352,11 +352,15 @@ final class FeedViewModel {
     var freedBytes: Int64 { stats.freedBytes }
 
     var isUnlocked: Bool { entitlements.isUnlocked }
-    var displayPrice: String { entitlements.displayPrice }
     /// The unlock is a running monthly subscription, so Settings offers a way to manage it.
     var isSubscribed: Bool { entitlements.activePlan == .monthly }
     /// The plans the paywall offers, from the store.
     var unlockPlans: [UnlockPlan] { entitlements.plans }
+
+    /// Asks the store again for plans it couldn't list, when a paywall opens or the user retries.
+    func reloadUnlockPlans() async {
+        await entitlements.reloadPlans()
+    }
 
     /// The deck's phase, even while onboarding holds the screen. Paging and reordering go by this;
     /// swiping still needs `phase` itself to be the feed.

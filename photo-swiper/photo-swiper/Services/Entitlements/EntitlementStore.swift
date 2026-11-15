@@ -8,14 +8,14 @@ import Observation
 @MainActor
 protocol EntitlementStore: AnyObject, Observable {
     var isUnlocked: Bool { get }
-    /// Localized price of the one-time unlock, e.g. "$9.99".
-    var displayPrice: String { get }
     /// What's on sale right now, in the order the paywall shows it. A plan whose product hasn't loaded
     /// isn't listed, so nothing is offered that can't be bought.
     var plans: [UnlockPlan] { get }
     /// The plan that's unlocking the app right now: `.once` if the lifetime unlock is owned (it outranks
     /// a subscription), `.monthly` for a running subscription, nil when locked or unlocked some other way.
     var activePlan: UnlockPlan.Kind? { get }
+    /// Asks the store again for any plan that isn't listed yet, e.g. after a launch with no network.
+    func reloadPlans() async
     /// Runs the purchase of one plan.
     func purchase(_ plan: UnlockPlan.Kind) async -> PurchaseOutcome
     /// Looks for an earlier purchase.

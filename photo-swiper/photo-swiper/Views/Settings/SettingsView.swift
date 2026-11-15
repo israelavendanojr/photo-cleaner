@@ -153,7 +153,7 @@ struct SettingsView: View {
                         isManagingSubscription = true
                     } label: {
                         SettingsLabel(icon: "creditcard", title: "Manage subscription",
-                                      detail: "Renews monthly. Cancel anytime.", showsChevron: true)
+                                      detail: UnlockCopy.manageSubscriptionDetail, showsChevron: true)
                             .settingsRowPadding()
                     }
                     .buttonStyle(.plain)
@@ -164,7 +164,7 @@ struct SettingsView: View {
                     vm.resetPurchaseStatus()
                     isUnlockPresented = true
                 } label: {
-                    SettingsLabel(icon: "lock.open", title: "Unlock for \(vm.displayPrice)",
+                    SettingsLabel(icon: "lock.open", title: UnlockCopy.settingsTitle(plans: vm.unlockPlans),
                                   showsChevron: true)
                         .settingsRowPadding()
                 }

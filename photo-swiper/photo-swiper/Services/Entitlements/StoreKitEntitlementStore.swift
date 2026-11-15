@@ -32,27 +32,32 @@ enum StoreProducts {
 /// while it runs.
 ///
 /// `isUnlocked` starts from the last known state so the app doesn't flash locked at launch, then
-/// `Transaction.currentEntitlements` corrects it. Only verified, unrevoked, unexpired transactions count.
+/// `Transaction.currentEntitlements` corrects it, before anything that needs the network. Only verified,
+/// unrevoked transactions count. Whether a subscription is still running is StoreKit's call, not a date
+/// compared here: it keeps a subscriber entitled through a billing grace period, when the transaction's
+/// own end date has already passed.
 /// `Transaction.updates` is watched for as long as the store lives (the life of the app), which
 /// covers purchases on other devices, Ask to Buy approvals, renewals and refunds. A subscription's end
-/// isn't always announced, so the store also checks again when the current period runs out.
+/// isn't always announced, so the store also asks again when the current period runs out.
 @Observable
 @MainActor
 final class StoreKitEntitlementStore: EntitlementStore {
     private static let log = Logger.app(category: "entitlement")
-    /// Shown for the one-time unlock until its product loads.
-    static let fallbackPrice = "$9.99"
+    /// How soon to ask again about a subscription that's past its end date but still entitled: in a
+    /// billing grace period, or renewed with the new transaction not here yet.
+    nonisolated static let recheckInterval: TimeInterval = 600
 
     private(set) var isUnlocked: Bool
     private(set) var activePlan: UnlockPlan.Kind?
     private var products: [String: Product] = [:]
-    var displayPrice: String { products[StoreProducts.unlock]?.displayPrice ?? Self.fallbackPrice }
-    /// The one-time unlock always, at the fallback price until its product loads (the purchase loads it
-    /// again if it must). The subscription only once its product has loaded: its price and terms have to
-    /// be the store's.
+    /// Each plan only once its product has loaded: the price beside a buy button has to be the store's.
+    /// The subscription also has to be what the paywall's words say it is, see `matchesMonthlyCopy`.
     var plans: [UnlockPlan] {
-        var plans = [UnlockPlan(kind: .once, displayPrice: displayPrice)]
-        if let monthly = products[StoreProducts.monthly] {
+        var plans: [UnlockPlan] = []
+        if let once = products[StoreProducts.unlock] {
+            plans.append(UnlockPlan(kind: .once, displayPrice: once.displayPrice))
+        }
+        if let monthly = products[StoreProducts.monthly], Self.matchesMonthlyCopy(monthly) {
             plans.append(UnlockPlan(kind: .monthly, displayPrice: monthly.displayPrice))
         }
         return plans
@@ -65,6 +70,8 @@ final class StoreKitEntitlementStore: EntitlementStore {
     @ObservationIgnored private var launch: Task<Void, Never>?
     /// Waits out the subscription's current period, then asks again.
     @ObservationIgnored private var expiryCheck: Task<Void, Never>?
+    /// Counts entitlement reads, so one that started earlier can't overwrite a later one's answer.
+    @ObservationIgnored private var generation = 0
 
     /// `sync` is `AppStore.sync()`, replaceable in tests.
     init(defaults: UserDefaults = .standard, sync: @escaping () async throws -> Void = { try await AppStore.sync() }) {
@@ -78,8 +85,10 @@ final class StoreKitEntitlementStore: EntitlementStore {
         }
         launch = Task { [weak self] in
             await self?.finishUnfinished()
-            await self?.loadProducts()
+            // Before the products: this reads what the device already knows, and a lapsed subscriber
+            // shouldn't stay unlocked for as long as a slow network takes.
             await self?.refreshEntitlements()
+            await self?.loadProducts()
         }
     }
 
@@ -87,7 +96,7 @@ final class StoreKitEntitlementStore: EntitlementStore {
         updates?.cancel()
     }
 
-    /// Waits for the launch work: the product and the first entitlement check.
+    /// Waits for the launch work: the first entitlement check and the products.
     func ready() async {
         await launch?.value
     }
@@ -108,6 +117,7 @@ final class StoreKitEntitlementStore: EntitlementStore {
                 if !isUnlocked, let bought = Self.unlockingPlan(transaction, now: .now) {
                     activePlan = bought
                     setUnlocked(true)
+                    scheduleExpiryCheck(bought == .monthly ? transaction.expirationDate : nil)
                 }
                 return isUnlocked ? .purchased : .failed
             case .success(.unverified(_, let error)):
@@ -140,26 +150,63 @@ final class StoreKitEntitlementStore: EntitlementStore {
         return isUnlocked ? .restored : .nothingToRestore
     }
 
+    /// Fetches any product that's still missing, so a paywall opened after a failed launch fetch can
+    /// offer its plans.
+    func reloadPlans() async {
+        await ready()
+        guard StoreProducts.all.contains(where: { products[$0] == nil }) else { return }
+        await loadProducts()
+    }
+
     /// Re-reads what this Apple Account owns. Either product unlocks; the lifetime one outranks the
     /// subscription as the active plan, since it never lapses.
     func refreshEntitlements() async {
+        generation &+= 1
+        let read = generation
         var owned: Set<UnlockPlan.Kind> = []
         var subscriptionEnds: Date?
-        let now = Date.now
         for await result in Transaction.currentEntitlements {
+            // No end-date test: StoreKit lists a subscription for exactly as long as it entitles, which
+            // includes a billing grace period past the transaction's own end.
             guard case .verified(let transaction) = result,
-                  let plan = Self.unlockingPlan(transaction, now: now) else { continue }
+                  let plan = Self.unlockingPlan(productID: transaction.productID, revokedAt: transaction.revocationDate,
+                                                expiresAt: nil, isUpgraded: transaction.isUpgraded, now: .now)
+            else { continue }
             owned.insert(plan)
             if plan == .monthly { subscriptionEnds = transaction.expirationDate }
         }
-        activePlan = owned.contains(.once) ? .once : owned.contains(.monthly) ? .monthly : nil
+        // A read that started after this one has the newer picture; leave the answer to it.
+        guard read == generation else { return }
+        activePlan = Self.activePlan(among: owned)
         setUnlocked(!owned.isEmpty)
         // Only a subscription that's the reason the app is unlocked needs watching.
         scheduleExpiryCheck(activePlan == .monthly ? subscriptionEnds : nil)
     }
 
-    /// The plan a transaction unlocks, if it does: one of the app's two products, not refunded or
-    /// revoked, not replaced by an upgrade, and not past its end.
+    /// The lifetime unlock outranks a subscription: it's the one that never lapses.
+    nonisolated static func activePlan(among owned: Set<UnlockPlan.Kind>) -> UnlockPlan.Kind? {
+        owned.contains(.once) ? .once : owned.contains(.monthly) ? .monthly : nil
+    }
+
+    /// When to ask again about a subscription that ends at `end`: just after that, or, if it's already
+    /// past and still entitled, after `recheckInterval`.
+    nonisolated static func nextCheck(end: Date, now: Date) -> Date {
+        end > now ? end.addingTimeInterval(1) : now.addingTimeInterval(recheckInterval)
+    }
+
+    /// Whether the subscription is what `UnlockCopy` tells the buyer: one month a period, and no
+    /// introductory offer, which the paywall would have to disclose.
+    nonisolated static func matchesMonthlyCopy(_ product: Product) -> Bool {
+        guard let subscription = product.subscription else { return false }
+        return matchesMonthlyCopy(period: subscription.subscriptionPeriod, hasIntroductoryOffer: subscription.introductoryOffer != nil)
+    }
+
+    nonisolated static func matchesMonthlyCopy(period: Product.SubscriptionPeriod, hasIntroductoryOffer: Bool) -> Bool {
+        period.unit == .month && period.value == 1 && !hasIntroductoryOffer
+    }
+
+    /// The plan a just-bought transaction unlocks, if it does: one of the app's two products, not
+    /// refunded or revoked, not replaced by an upgrade, and not past its end.
     nonisolated static func unlockingPlan(_ transaction: Transaction, now: Date) -> UnlockPlan.Kind? {
         unlockingPlan(productID: transaction.productID, revokedAt: transaction.revocationDate,
                       expiresAt: transaction.expirationDate, isUpgraded: transaction.isUpgraded, now: now)
@@ -198,8 +245,11 @@ final class StoreKitEntitlementStore: EntitlementStore {
             for product in try await Product.products(for: StoreProducts.all) {
                 products[product.id] = product
             }
-            for id in StoreProducts.all where products[id] == nil {
-                Self.log.error("A product wasn't found: \(id, privacy: .public)")
+            for plan in UnlockPlan.Kind.allCases where products[StoreProducts.id(for: plan)] == nil {
+                Self.log.error("A product wasn't found: \(plan.rawValue, privacy: .public)")
+            }
+            if let monthly = products[StoreProducts.monthly], !Self.matchesMonthlyCopy(monthly) {
+                Self.log.error("The subscription isn't one month with no offer, so it isn't listed")
             }
         } catch {
             Self.log.error("Couldn't load the products: \(error.localizedDescription, privacy: .public)")
@@ -210,11 +260,15 @@ final class StoreKitEntitlementStore: EntitlementStore {
     /// arrives as a new transaction with a later end, which schedules the next check.
     private func scheduleExpiryCheck(_ end: Date?) {
         expiryCheck?.cancel()
+        expiryCheck = nil
         guard let end else { return }
+        let wait = Self.nextCheck(end: end, now: .now).timeIntervalSinceNow
         expiryCheck = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(max(0, end.timeIntervalSinceNow) + 1))
-            guard !Task.isCancelled else { return }
-            await self?.refreshEntitlements()
+            try? await Task.sleep(for: .seconds(max(0, wait)))
+            guard !Task.isCancelled, let self else { return }
+            // Let go first, so the read this starts can't be cancelled halfway by its own rescheduling.
+            expiryCheck = nil
+            await refreshEntitlements()
         }
     }
 

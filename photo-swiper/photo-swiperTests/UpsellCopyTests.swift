@@ -102,9 +102,28 @@ struct UpsellCopyTests {
     }
 
     @Test func failuresAndWaitsExplainThemselves() {
-        #expect(UnlockCopy.message(for: .purchaseFailed) == "The purchase didn't go through. You weren't charged.")
+        #expect(UnlockCopy.message(for: .purchaseFailed) == "The purchase didn't go through. If you were charged, use Restore.")
         #expect(UnlockCopy.message(for: .purchasePending) == "Waiting for approval. You'll be unlocked as soon as it's approved.")
         #expect(UnlockCopy.message(for: .nothingToRestore) == "We couldn't find an earlier purchase to restore.")
         #expect(UnlockCopy.message(for: .restoreFailed) == "Couldn't reach the App Store. Try again in a moment.")
+    }
+
+    /// Settings names a price only when the store has given one.
+    @Test func settingsNamesThePriceOnlyOnceTheStoreHasIt() {
+        #expect(UnlockCopy.settingsTitle(plans: [once, monthly]) == "Unlock for $9.99")
+        #expect(UnlockCopy.settingsTitle(plans: [monthly]) == "Unlock \(AppInfo.name)")
+        #expect(UnlockCopy.settingsTitle(plans: []) == "Unlock \(AppInfo.name)")
+    }
+
+    /// A subscriber may have cancelled already, so the row doesn't promise a renewal.
+    @Test func theManageRowDoesNotPromiseARenewal() {
+        #expect(UnlockCopy.manageSubscriptionDetail == "Change or cancel in your Apple Account.")
+    }
+
+    @MainActor @Test func openingAPaywallAsksTheStoreForMissingPlans() async {
+        let entitlements = TestEntitlements(isUnlocked: false)
+        let vm = FeedViewModel.mock(entitlements: entitlements)
+        await vm.reloadUnlockPlans()
+        #expect(entitlements.reloadCount == 1)
     }
 }
