@@ -181,6 +181,49 @@ struct LibraryScanTests {
         #expect(DashboardStats.rows(scan).map(\.focus).contains(.blurry))
     }
 
+    /// The dashboard's "Ready to clear" total. A blurry shot that's also a similar one is in both rows,
+    /// so the rows can't be summed; the total counts it once.
+    @Test func theToClearTotalCountsAnItemInTwoRowsOnce() {
+        var softExtra = features(bytes: 4_000)
+        softExtra.sharpness = 12
+        var soft = features(bytes: 2_000)
+        soft.sharpness = 12
+        let library: [LibraryItem.ID: AssetFeatures] = [
+            "best": features(bytes: 4_000),
+            "soft-extra": softExtra,
+            "soft": soft,
+            "shot": features(bytes: 1_000, screenshot: true),
+            "big-video": features(bytes: 80_000_000, video: true),
+            "photo": features(bytes: 6_000),
+        ]
+        let scan = LibraryScan.make(
+            features: library, excluding: [], duplicates: [],
+            similar: [PlannedGroup(ids: ["best", "soft-extra"], bestID: "best", reason: "")], scanPercent: nil
+        )
+        #expect(scan.bucket(for: .category(.similar)) == .init(count: 1, bytes: 4_000))
+        #expect(scan.bucket(for: .blurry) == .init(count: 2, bytes: 6_000), "The similar extra is blurry too")
+        #expect(scan.toClear == .init(count: 3, bytes: 7_000), "Counted once; large videos and plain photos aren't in it")
+
+        let snapshot = DashboardStats.make(history: [], scan: scan, now: .now)
+        #expect(snapshot.toClearBytes == 7_000)
+        let toClear = Set(snapshot.toClearRows.map(\.focus))
+        let others = Set(snapshot.otherRows.map(\.focus))
+        #expect(toClear == [.category(.similar), .category(.screenshot), .blurry])
+        #expect(others == [.allVideos, .category(.photo)])
+    }
+
+    /// A snapshot cached before the total existed decodes, and shows no total rather than a wrong one.
+    @Test func anOlderCachedSnapshotHasNoToClearTotal() throws {
+        var snapshot = DashboardStats.make(history: [], scan: LibraryScan(), now: .now)
+        snapshot.toClearBytes = 5
+        let data = try JSONEncoder().encode(snapshot)
+        var json = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        json["toClearBytes"] = nil
+        let older = try JSONSerialization.data(withJSONObject: json)
+        let decoded = try JSONDecoder().decode(DashboardSnapshot.self, from: older)
+        #expect(decoded.toClearBytes == nil)
+    }
+
     @Test func eachItemCountsOnceInTheFirstBucketItFits() {
         let library: [LibraryItem.ID: AssetFeatures] = [
             "big-video": features(bytes: 80_000_000, video: true),

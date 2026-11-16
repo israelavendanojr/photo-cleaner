@@ -1,8 +1,8 @@
 import SwiftUI
 import UIKit
 
-/// The Library tab, a dashboard in three parts: space cleared and photos reviewed (the hero), the bin, and
-/// the library card with what's worth a look. The numbers come from `DashboardController`'s cached snapshot, shown at once
+/// The Library tab, a dashboard laid straight on the paper: the wordmark, space cleared and photos reviewed
+/// (the hero), the bin, then two ruled lists, what's ready to clear and what else the library holds. The numbers come from `DashboardController`'s cached snapshot, shown at once
 /// and refreshed when stale or pulled. The gear opens Settings. Confetti falls the first time it's seen at 100%.
 struct LibraryView: View {
     /// The tab is on screen. Both tabs stay mounted, so this says when the confetti can be seen.
@@ -12,6 +12,8 @@ struct LibraryView: View {
     @State private var isSettingsPresented = false
     /// The confetti burst playing, if one is. A new value starts a new burst.
     @State private var celebration: Int?
+    /// The lists' rows have had their entrance. The tab stays mounted, so this is once per launch.
+    @State private var rowsEntered = false
 
     var body: some View {
         NavigationStack {
@@ -29,16 +31,15 @@ struct LibraryView: View {
             // `-libraryScrollToBottom YES` opens scrolled to the library card, for screenshots.
             .defaultScrollAnchor(UserDefaults.standard.bool(forKey: "libraryScrollToBottom") ? .bottom : .top)
             #endif
-            // The navigation bar is hidden, so paper fills the status bar's strip as the sections scroll under it.
-            .safeAreaInset(edge: .top, spacing: 0) {
-                Color.clear.frame(height: 0).background(DS.Palette.paper)
-            }
+            // The navigation bar is hidden. A hair of padding stops the scroll view reaching under the status
+            // bar, so the sections are clipped below it rather than sliding under the clock.
+            .padding(.top, DS.Rule.thickness)
             .refreshable {
                 await vm.refreshDashboard()
                 Haptics.refreshed()
                 AccessibilityNotification.Announcement("Dashboard updated").post()
             }
-            .background(DS.Palette.paper)
+            .paperBackground()
             .toolbar(.hidden, for: .navigationBar)
             .navigationDestination(for: Destination.self) { _ in
                 PendingPileView()
@@ -62,6 +63,10 @@ struct LibraryView: View {
         .task(id: isActive) {
             guard isActive else { return }
             await vm.refreshDashboardIfStale()
+        }
+        // The rows come in once there are numbers to show and the tab is up to show them.
+        .onChange(of: isActive && vm.dashboardSnapshot != nil, initial: true) { _, ready in
+            if ready { rowsEntered = true }
         }
         .onAppear(perform: celebrateIfDue)
         .onChange(of: isActive) { celebrateIfDue() }
@@ -87,17 +92,23 @@ struct LibraryView: View {
 
     private var header: some View {
         HStack(alignment: .center, spacing: DS.Spacing.s) {
-            Text("Your library")
-                .dsSerif(34, relativeTo: .largeTitle, weight: .medium)
-                .foregroundStyle(DS.Palette.ink)
-                .accessibilityAddTraits(.isHeader)
+            HStack(alignment: .center, spacing: DS.Spacing.xs) {
+                BristleMark()
+                Text(AppInfo.name)
+                    .dsSerif(24, relativeTo: .title2, weight: .medium)
+                    .tracking(-0.3)
+                    .foregroundStyle(DS.Palette.ink)
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("\(AppInfo.name), your library")
+            .accessibilityAddTraits(.isHeader)
             Spacer(minLength: 0)
             CircleIconButton(systemImage: "gearshape", accessibilityLabel: "Settings") {
                 isSettingsPresented = true
             }
             .accessibilityIdentifier("library.settings")
         }
-        .padding(.top, DS.Spacing.l)
+        .padding(.top, DS.Spacing.xs)
     }
 
     /// Before the first numbers on a new install, the sections show stand-in shapes, redacted and still.
@@ -109,14 +120,14 @@ struct LibraryView: View {
         return VStack(alignment: .leading, spacing: DS.Spacing.xl) {
             HeroSection(snapshot: shown, isLoading: isLoading, clearedBytes: cleared, isActive: isActive)
             bin
-            LibraryCard(snapshot: shown, isLoading: isLoading)
+            LibraryList(snapshot: shown, isLoading: isLoading, entered: rowsEntered)
         }
     }
 
     /// The pile as a bin, opening the pile screen, and under limited access the ways to show the app more.
     private var bin: some View {
-        VStack(spacing: DS.Spacing.s) {
-            // Empty, there's nothing to open; a disabled link would also dim the card's text.
+        VStack(spacing: 0) {
+            // Empty, there's nothing to open; a disabled link would also dim the row's text.
             if vm.binCount == 0 {
                 binCard
                     .accessibilityIdentifier("library.bin")
@@ -135,7 +146,7 @@ struct LibraryView: View {
     }
 
     private var binCard: some View {
-        BinCard(
+        BinRow(
             count: vm.binCount,
             bytes: vm.binBytes,
             limit: vm.pileLimitBytes.map { (counted: vm.pileCountedBytes, bytes: $0) }
@@ -151,20 +162,13 @@ struct LibraryView: View {
             }
             .buttonStyle(.plain)
             .accessibilityHint("Choose more photos for \(AppInfo.name) to look through")
-            Divider()
-                .overlay(DS.Palette.line)
-                .padding(.leading, 52)
+            Rule()
             OpenSettingsButton {
                 OverviewRow(icon: "lock", title: "Photo access", value: "Selected photos only")
             }
             .buttonStyle(.plain)
             .accessibilityHint("Opens Settings")
-        }
-        .background {
-            // On the shape, so the rows' text doesn't get a halo.
-            RoundedRectangle(cornerRadius: DS.Radius.inner, style: .continuous)
-                .fill(DS.Palette.card)
-                .softShadow()
+            Rule()
         }
     }
 
@@ -182,11 +186,11 @@ private struct OverviewRow: View {
     @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
-        HStack(spacing: DS.Spacing.m) {
+        HStack(spacing: DS.Spacing.s) {
             Image(systemName: icon)
                 .font(.body)
                 .foregroundStyle(DS.Palette.ink)
-                .frame(width: 24)
+                .accessibilityHidden(true)
             // Title over value at accessibility sizes, so neither breaks mid-word.
             if typeSize.isAccessibilitySize {
                 VStack(alignment: .leading, spacing: DS.Spacing.xxs) {
@@ -202,17 +206,20 @@ private struct OverviewRow: View {
             }
             if showsChevron {
                 Image(systemName: "chevron.right")
-                    .font(.footnote.weight(.semibold))
+                    .font(.caption.weight(.bold))
                     .foregroundStyle(DS.Palette.secondary)
+                    .accessibilityHidden(true)
             }
         }
-        .padding(.horizontal, DS.Spacing.m)
-        .padding(.vertical, 18)
+        .padding(.vertical, DS.Spacing.s)
+        .frame(minHeight: DS.Tally.minHeight)
+        .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
     }
 
     private var titleText: some View {
         Text(title)
+            .font(.callout)
             .foregroundStyle(DS.Palette.ink)
     }
 
@@ -227,6 +234,12 @@ private struct OverviewRow: View {
 #Preview {
     LibraryView()
         .environment(FeedViewModel.mock(startingAt: .batch))
+}
+
+#Preview("Dark") {
+    LibraryView()
+        .environment(FeedViewModel.mock(startingAt: .batch))
+        .preferredColorScheme(.dark)
 }
 
 #Preview("Large text") {

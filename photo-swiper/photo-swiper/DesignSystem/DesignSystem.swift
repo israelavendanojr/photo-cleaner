@@ -73,6 +73,8 @@ enum DS {
         /// `BristleTicks` filling: the fill sweeps to its new value, and the ticks appear one by one
         /// as it passes them.
         static let tickFill = Animation.easeOut(duration: 0.6)
+        /// The Library's rows fading up one after another: the beat between one row and the next, in seconds.
+        static let rowStagger = 0.04
         /// The loose stack: a card behind straightening as it comes to the top, and the next one
         /// taking its place at the back.
         static let stackSettle = Animation.spring(duration: 0.5, bounce: 0.12)
@@ -156,16 +158,17 @@ enum DS {
         static let minimum: CGFloat = 44
     }
 
-    /// The dashboard's library list: the icon column, wide enough for a badged symbol, at the default text
-    /// size; scale it with `@ScaledMetric`.
-    enum LibraryList {
-        static let iconWidth: CGFloat = 28
+    /// A hairline (`Rule`).
+    enum Rule {
+        static let thickness: CGFloat = 1
     }
 
-    /// The dashboard's bin (`BinCard`): its trash circle, the same size as the pile screen's, at the default
-    /// text size; scale it with `@ScaledMetric`.
-    enum Bin {
-        static let iconDiameter: CGFloat = 52
+    /// A ruled tally row (`TallyRow`): its columns at the default text size (scale them with
+    /// `@ScaledMetric`), and its least height, a tap target and a little air.
+    enum Tally {
+        static let ticksWidth: CGFloat = 84
+        static let sizeWidth: CGFloat = 70
+        static let minHeight: CGFloat = 45
     }
 
     /// The full-screen video's trim strip (`TrimStrip`).

@@ -43,7 +43,8 @@ struct MockFeedBuilder: FeedBuilding {
             .documents: .init(count: 260, bytes: 520_000_000),
             .savedForLater: .init(count: 27, bytes: 96_000_000),
         ],
-        indexedCount: 17_820, indexedBytes: 64_000_000_000, scanPercent: 86
+        indexedCount: 17_820, indexedBytes: 64_000_000_000, scanPercent: 86,
+        toClear: .init(count: 1_624, bytes: 5_510_000_000)
     )
 
     /// Synchronous variant for previews and launch-time setup.

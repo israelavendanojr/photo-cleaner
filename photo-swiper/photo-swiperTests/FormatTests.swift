@@ -4,6 +4,13 @@ import Testing
 
 /// Sizes and times as every screen shows them.
 struct FormatTests {
+    @Test func sizeSplitsIntoNumberAndUnit() {
+        let parts = Format.sizeParts(8_120_000_000)
+        #expect(Format.size(8_120_000_000).replacingOccurrences(of: "\u{00A0}", with: " ") == "\(parts.number) \(parts.unit)")
+        #expect(parts.unit == "GB")
+        #expect(Format.sizeParts(0).unit == "MB")
+    }
+
     @Test(arguments: [
         (Int64(0), "0 MB"), (100_000, "0.1 MB"), (3_400_000, "3.4 MB"), (38_000_000, "38 MB"),
         (1_230_000_000, "1.23 GB"), (1_200_000_000, "1.2 GB"),
