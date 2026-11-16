@@ -66,7 +66,7 @@ struct RootView: View {
                 .presentationCornerRadius(DS.Radius.card)
         }
         .sheet(isPresented: $isUpsellPresented) {
-            UnlockSheet(title: "Freed \(Format.size(vm.upsellFreedBytes))", subtitle: Self.deleteUpsellSubtitle)
+            UnlockSheet()
                 .presentationDragIndicator(.visible)
                 .presentationBackground(DS.Palette.paper)
                 .presentationCornerRadius(DS.Radius.card)
@@ -168,11 +168,6 @@ private struct DelayedProgressView: View {
                 withAnimation(.easeIn(duration: 0.2)) { isShown = true }
             }
     }
-}
-
-extension RootView {
-    /// The line under "Freed …" on the unlock offered after a free user's delete. Admin Tools raise it too.
-    static let deleteUpsellSubtitle = "Unlock to keep going without limits."
 }
 
 extension EnvironmentValues {

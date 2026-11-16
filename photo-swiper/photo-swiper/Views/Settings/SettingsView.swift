@@ -150,7 +150,7 @@ struct SettingsView: View {
                     isUnlockPresented = true
                 } label: {
                     SettingsLabel(icon: "lock.open", title: "Unlock for \(vm.displayPrice)",
-                                  detail: "One-time purchase. No subscription.", showsChevron: true)
+                                  showsChevron: true)
                         .settingsRowPadding()
                 }
                 .buttonStyle(.plain)

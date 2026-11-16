@@ -25,11 +25,14 @@ final class StoreKitEntitlementStore: EntitlementStore {
     private(set) var isUnlocked: Bool
     private var product: Product?
     var displayPrice: String { product?.displayPrice ?? Self.fallbackPrice }
+    /// The one-time unlock, at the fallback price until its product loads: it's the app's one product,
+    /// and the purchase loads it again if it must.
+    var plans: [UnlockPlan] { [UnlockPlan(kind: .once, displayPrice: displayPrice)] }
 
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private let sync: () async throws -> Void
     // Unsafe: written once in init and read only in deinit, which can't be isolated before Swift 6.2.
-    @ObservationIgnored nonisolated(unsafe) private var updates: Task<Void, Never>?
+    @ObservationIgnored private nonisolated(unsafe) var updates: Task<Void, Never>?
     @ObservationIgnored private var launch: Task<Void, Never>?
 
     /// `sync` is `AppStore.sync()`, replaceable in tests.
@@ -58,7 +61,9 @@ final class StoreKitEntitlementStore: EntitlementStore {
         await launch?.value
     }
 
-    func unlock() async -> PurchaseOutcome {
+    func purchase(_ plan: UnlockPlan.Kind) async -> PurchaseOutcome {
+        // Only what `plans` lists is on sale.
+        guard plan == .once else { return .failed }
         // So a slow launch check can't land after the purchase and relock.
         await ready()
         if product == nil { await loadProduct() }

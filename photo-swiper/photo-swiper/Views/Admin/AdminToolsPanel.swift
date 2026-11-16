@@ -56,7 +56,7 @@ struct AdminUpsellPanel: View {
             .accessibilityIdentifier("settings.admin.raiseUpsell")
         }
         .sheet(isPresented: isRaised(.postDelete)) {
-            UnlockSheet(title: "Freed \(Format.size(vm.upsellFreedBytes))", subtitle: RootView.deleteUpsellSubtitle)
+            UnlockSheet()
                 .presentationDragIndicator(.visible)
                 .presentationBackground(DS.Palette.paper)
                 .presentationCornerRadius(DS.Radius.card)
@@ -68,8 +68,7 @@ struct AdminUpsellPanel: View {
                 .presentationCornerRadius(DS.Radius.card)
         }
         .fullScreenCover(isPresented: isRaised(.onboarding)) {
-            UpsellView { raised = nil }
-                .background(DS.Palette.paper)
+            UpsellView(showsClose: true) { raised = nil }
         }
     }
 

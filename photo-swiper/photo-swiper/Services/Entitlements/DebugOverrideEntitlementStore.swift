@@ -55,7 +55,9 @@ final class DebugOverrideEntitlementStore: EntitlementStore {
 
     var displayPrice: String { base.displayPrice }
 
-    func unlock() async -> PurchaseOutcome { await base.unlock() }
+    var plans: [UnlockPlan] { base.plans }
+
+    func purchase(_ plan: UnlockPlan.Kind) async -> PurchaseOutcome { await base.purchase(plan) }
 
     func restore() async -> RestoreOutcome { await base.restore() }
 

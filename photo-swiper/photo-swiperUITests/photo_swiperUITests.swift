@@ -562,7 +562,7 @@ final class photo_swiperUITests: XCTestCase {
         XCTAssertTrue(bin.waitForNonExistence(timeout: 4), "Then it closes by itself")
 
         // Mocks start locked, so the unlock is offered once the pile has closed.
-        let notNow = app.buttons["paywall.notNow"]
+        let notNow = app.buttons["paywall.close"]
         XCTAssertTrue(notNow.waitForExistence(timeout: 4))
         notNow.tap()
         XCTAssertTrue(notNow.waitForNonExistence(timeout: 3))
@@ -601,13 +601,11 @@ final class photo_swiperUITests: XCTestCase {
 
         let unlock = app.buttons["paywall.unlock"]
         XCTAssertTrue(unlock.waitForExistence(timeout: 5), "The unlock is offered after the delete")
-        let title = app.staticTexts["unlock.title"]
-        XCTAssertTrue(title.label.hasPrefix("Freed "), "The headline says what was freed")
-        XCTAssertTrue(element(app, containing: "Unlock to keep going without limits").exists)
+        XCTAssertEqual(app.staticTexts["paywall.title"].label, "Clear without limits.", "The same paywall as everywhere")
         sleep(1)
         attachScreenshot(app, "unlock after delete")
 
-        app.buttons["paywall.notNow"].tap()
+        app.buttons["paywall.close"].tap()
         XCTAssertTrue(unlock.waitForNonExistence(timeout: 3))
         XCTAssertTrue(emptyPile(app).waitForExistence(timeout: 3))
     }
@@ -678,16 +676,21 @@ final class photo_swiperUITests: XCTestCase {
         tapCenter(onScreen(app, "Keep"))
         let unlock = app.buttons["paywall.unlock"]
         XCTAssertTrue(unlock.waitForExistence(timeout: 5), "The swipe is refused and the wall opens")
-        XCTAssertTrue(element(app, containing: "Out of swipes").exists)
-        let countdown = app.descendants(matching: .any)["wall.countdown"]
-        XCTAssertTrue(countdown.exists, "The wall says when swipes come back")
-        XCTAssertTrue(countdown.label.hasPrefix("+10 in "), "Plainly: \(countdown.label)")
+        XCTAssertEqual(app.staticTexts["paywall.title"].label, "Clear without limits.")
         XCTAssertTrue(element(app, containing: "Unlimited swipes").exists)
+        XCTAssertTrue(element(app, containing: "No pile limit").exists)
+        XCTAssertEqual(unlock.label, "Unlock for $9.99, one-time purchase", "The one-time plan is chosen to start")
+        XCTAssertEqual(app.staticTexts["paywall.billingNote"].label, "One-time purchase. No renewals.")
+        // Choosing the other plan changes the button and how it says it's billed.
+        app.buttons["paywall.plan.monthly"].tap()
+        XCTAssertEqual(unlock.label, "Subscribe for $4.99 a month, renews monthly until cancelled")
+        XCTAssertEqual(app.staticTexts["paywall.billingNote"].label, "$4.99 a month until you cancel.")
+        app.buttons["paywall.plan.once"].tap()
         XCTAssertEqual(unlock.label, "Unlock for $9.99, one-time purchase")
         sleep(1)
         attachScreenshot(app, "swipe wall")
 
-        app.buttons["paywall.notNow"].tap()
+        app.buttons["paywall.close"].tap()
         XCTAssertTrue(unlock.waitForNonExistence(timeout: 3))
         XCTAssertEqual(cardMarker(app).label, second, "Nothing was committed; the deck stays")
         let pill = app.buttons["feed.swipesLeft"]
@@ -892,11 +895,10 @@ final class photo_swiperUITests: XCTestCase {
         XCTAssertTrue(raise.label.contains("Post-delete sheet"), "The default pick, read \(raise.label)")
         raise.tap()
 
-        let title = app.descendants(matching: .any)["unlock.title"]
+        let title = app.descendants(matching: .any)["paywall.title"]
         XCTAssertTrue(title.waitForExistence(timeout: 3), "The offer comes up over the Admin tab")
-        XCTAssertTrue(title.label.hasPrefix("Freed "), "Read \(title.label)")
-        // The offer's own dismiss button; a drag on the sheet can scroll its content instead.
-        let notNow = app.buttons["paywall.notNow"]
+        // The paywall's own close button; a drag on the sheet can scroll its content instead.
+        let notNow = app.buttons["paywall.close"]
         if notNow.exists { notNow.tap() } else { app.swipeDown(velocity: .fast) }
         XCTAssertTrue(title.waitForNonExistence(timeout: 3))
         XCTAssertTrue(raise.isHittable, "Dismissed, it's back on the Admin tab")

@@ -353,6 +353,8 @@ final class FeedViewModel {
 
     var isUnlocked: Bool { entitlements.isUnlocked }
     var displayPrice: String { entitlements.displayPrice }
+    /// The plans the paywall offers, from the store.
+    var unlockPlans: [UnlockPlan] { entitlements.plans }
 
     /// The deck's phase, even while onboarding holds the screen. Paging and reordering go by this;
     /// swiping still needs `phase` itself to be the feed.
@@ -962,8 +964,8 @@ final class FeedViewModel {
     /// Buys the unlock, from the wall or Settings. See `SwipeGate.purchaseUnlock()`.
     /// Bought: reminders are moot.
     @discardableResult
-    func purchaseUnlock() async -> Bool {
-        guard await gate.purchaseUnlock() else { return false }
+    func purchaseUnlock(_ plan: UnlockPlan.Kind = .once) async -> Bool {
+        guard await gate.purchaseUnlock(plan) else { return false }
         reminders.cancelAll()
         return true
     }
