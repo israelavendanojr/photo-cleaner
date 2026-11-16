@@ -10,6 +10,9 @@ struct Chip: View {
         case plain
         /// White text on frosted dark. Video duration.
         case frosted
+        /// A label lying on a photo: a pale slip with dark text in both appearances, so it reads on
+        /// any picture. "Best pick", "Keep".
+        case onPhoto
     }
 
     let text: String
@@ -17,6 +20,7 @@ struct Chip: View {
     var trailingSystemImage: String?
     var style: Style = .brick
     var size: Font.TextStyle = .subheadline
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         HStack(spacing: 6) {
@@ -50,22 +54,32 @@ struct Chip: View {
         case .brick: DS.Palette.brick
         case .plain: DS.Palette.ink
         case .frosted: .white
+        case .onPhoto: colorScheme == .dark ? DS.Palette.onInk : DS.Palette.ink
         }
     }
 
     private var iconColor: Color {
-        style == .plain ? DS.Palette.brick : foreground
+        switch style {
+        case .plain: DS.Palette.brick
+        // On the pale slip, the brick that reads on a light ground in either appearance.
+        case .onPhoto: DS.Palette.brickFill
+        case .brick, .frosted: foreground
+        }
     }
 
     private var background: Color {
-        style == .brick ? DS.Palette.brickTint : DS.Palette.card
+        switch style {
+        case .brick: DS.Palette.brickTint
+        case .onPhoto: colorScheme == .dark ? DS.Palette.ink : DS.Palette.card
+        case .plain, .frosted: DS.Palette.card
+        }
     }
 }
 
 #Preview {
     VStack(spacing: 16) {
         Chip(text: "3 left", size: .caption)
-        Chip(text: "Best pick", systemImage: "star.fill", style: .plain)
+        Chip(text: "Best pick", systemImage: "star.fill", style: .onPhoto)
         Chip(text: "Only videos", trailingSystemImage: "xmark", style: .plain, size: .caption)
         Chip(text: "4:12", style: .frosted)
             .padding()

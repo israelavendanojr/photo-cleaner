@@ -1,6 +1,8 @@
 import SwiftUI
 
-/// The red serif running total, with a small "+3.4 MB" chip that pops above it.
+/// The brick serif running total with its label beside it on the baseline ("184 MB of 1 GB"), and a
+/// small "+3.4 MB" chip that pops above it. Where the two don't fit side by side, the label drops
+/// under the number.
 struct ToClearCounter: View {
     let bytes: Int64
     var label: String = "to clear"
@@ -14,25 +16,23 @@ struct ToClearCounter: View {
     var addedID: AnyHashable?
 
     var body: some View {
-        VStack(alignment: .trailing, spacing: 2) {
-            Text(Format.size(bytes))
-                .dsSerif(28, relativeTo: .title2)
-                .foregroundStyle(DS.Palette.brick)
-                .contentTransition(.numericText(value: Double(bytes)))
-                .lineLimit(1)
-                .minimumScaleFactor(0.6)
-            Text(label)
-                .font(.caption)
-                .monospacedDigit()
-                .foregroundStyle(isLabelEmphasized ? DS.Palette.brick : DS.Palette.secondary)
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .firstTextBaseline, spacing: DS.Spacing.xs) {
+                total.fixedSize()
+                caption.fixedSize()
+            }
+            VStack(alignment: .trailing, spacing: 0) {
+                total.minimumScaleFactor(0.6)
+                caption
+            }
         }
         .overlay(alignment: .topTrailing) {
             if let addedBytes, addedBytes > 0 {
                 Text("+\(Format.size(addedBytes))")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(DS.Palette.brick)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 3)
+                    .padding(.horizontal, DS.Spacing.xs)
+                    .padding(.vertical, DS.Spacing.xxs)
                     .background(DS.Palette.brickTint, in: Capsule())
                     .fixedSize()
                     .offset(y: -26)
@@ -45,6 +45,23 @@ struct ToClearCounter: View {
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(Format.size(bytes)) \(accessibilityText ?? label)")
+    }
+
+    private var total: some View {
+        Text(Format.size(bytes))
+            .dsSerif(34, relativeTo: .title)
+            .tracking(-0.5)
+            .foregroundStyle(DS.Palette.brick)
+            .contentTransition(.numericText(value: Double(bytes)))
+            .lineLimit(1)
+    }
+
+    private var caption: some View {
+        Text(label)
+            .font(.footnote)
+            .monospacedDigit()
+            .foregroundStyle(isLabelEmphasized ? DS.Palette.brick : DS.Palette.secondary)
+            .lineLimit(1)
     }
 }
 
@@ -61,6 +78,6 @@ struct ToClearCounter: View {
             }
         }
     }
-    .padding(60)
-    .background(DS.Palette.paper)
+    .padding(DS.Spacing.xxl)
+    .paperBackground()
 }

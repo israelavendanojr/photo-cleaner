@@ -12,12 +12,11 @@ struct FeedView: View {
                 withAnimation(DS.Motion.calm) { vm.undo() }
             }, onOpenPile: onOpenPile)
                 .padding(.horizontal, DS.Spacing.l)
-                .padding(.top, DS.Spacing.s)
-                .padding(.bottom, DS.Spacing.m)
+                .padding(.top, DS.Spacing.xxs)
+                .padding(.bottom, DS.Spacing.l)
             CardStackView()
                 .overlay(alignment: .top) { trimToast }
         }
-        .background(DS.Palette.paper)
         .animation(DS.Motion.calm, value: vm.trimToast)
         // Free users clear the pile to go on; the unlock is offered after the delete instead.
         .alert("Your pile is full", isPresented: Binding(get: { vm.isPileFullNoticePresented }, set: { if !$0 { vm.dismissPileFullNotice() } })) {
@@ -54,10 +53,26 @@ struct FeedView: View {
 #Preview("Feed") {
     FeedView()
         .environment(FeedViewModel.mock())
+        .paperBackground()
+}
+
+#Preview("Dark") {
+    FeedView()
+        .environment(FeedViewModel.mock())
+        .paperBackground()
+        .preferredColorScheme(.dark)
+}
+
+#Preview("XXL") {
+    FeedView()
+        .environment(FeedViewModel.mock())
+        .paperBackground()
+        .dynamicTypeSize(.xxLarge)
 }
 
 #Preview("Similar") {
     FeedView()
         .environment(FeedViewModel.mock(startingAt: .similar))
+        .paperBackground()
 }
 #endif

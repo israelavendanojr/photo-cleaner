@@ -6,12 +6,9 @@ enum AppTab: CaseIterable {
 
     var tabItem: PillTabBar<AppTab>.Item {
         switch self {
-        case .feed:
-            .init(tab: self, title: "Feed", systemImage: "square.stack", selectedSystemImage: "square.stack.fill")
-        case .library:
-            .init(tab: self, title: "Library", systemImage: "photo.on.rectangle", selectedSystemImage: "photo.fill.on.rectangle.fill")
-        case .admin:
-            .init(tab: self, title: "Admin", systemImage: "hammer", selectedSystemImage: "hammer.fill")
+        case .feed: .init(tab: self, title: "Feed")
+        case .library: .init(tab: self, title: "Library")
+        case .admin: .init(tab: self, title: "Admin")
         }
     }
 

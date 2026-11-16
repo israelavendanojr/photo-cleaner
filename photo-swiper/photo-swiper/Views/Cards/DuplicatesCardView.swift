@@ -55,7 +55,7 @@ struct DuplicatesCardView: View {
                 CardCenterButton(accessibilityLabel: "Go one by one") { onOpen(group.keepID) }
             }
             .overlay(alignment: .topLeading) {
-                Chip(text: "Keep", systemImage: "checkmark", style: .plain)
+                Chip(text: "Keep", systemImage: "checkmark", style: .onPhoto)
                     .padding(DS.Spacing.s)
             }
             .accessibilityElement()
@@ -107,6 +107,8 @@ struct DuplicatesCardView: View {
             }
             .font(.subheadline.weight(.semibold))
             .foregroundStyle(markedItems.isEmpty ? DS.Palette.secondary : DS.Palette.brick)
+            // What a swipe will clear is the line that must stay whole; the hint gives way.
+            .layoutPriority(1)
             Spacer(minLength: DS.Spacing.xs)
             Button { onOpen(group.keepID) } label: {
                 Text("Tap to go one by one")

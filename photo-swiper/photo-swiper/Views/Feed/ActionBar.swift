@@ -9,15 +9,15 @@ struct ActionBar: View {
             CircleActionButton(title: "Delete", systemImage: "trash", variant: .destructive) {
                 onAction(.left)
             }
-            CircleActionButton(title: "Later", systemImage: "arrow.up", diameter: 52) {
+            CircleActionButton(title: "Later", systemImage: "arrow.up", diameter: DS.Control.minorAction) {
                 onAction(.up)
             }
             .padding(.top, DS.Spacing.xs)
-            CircleActionButton(title: "Keep", systemImage: "checkmark") {
+            CircleActionButton(title: "Keep", systemImage: "checkmark", variant: .primary) {
                 onAction(.right)
             }
         }
-        .padding(.top, DS.Spacing.s)
+        .padding(.top, DS.Spacing.xl)
         .padding(.bottom, DS.Spacing.xs)
     }
 }
@@ -25,5 +25,5 @@ struct ActionBar: View {
 #Preview {
     ActionBar { print($0) }
         .padding()
-        .background(DS.Palette.paper)
+        .paperBackground()
 }

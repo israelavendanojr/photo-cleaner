@@ -21,10 +21,10 @@ struct PhotoCardView: View {
     }
 
     private var caption: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: DS.Spacing.xxs) {
             Text(Format.day(item.date))
-                .dsSerif(26, relativeTo: .title)
-            HStack(spacing: 6) {
+                .dsSerif(28, relativeTo: .title)
+            HStack(spacing: DS.Spacing.xs) {
                 Text([item.location, Format.size(item.bytes)].compactMap { $0 }.joined(separator: " · "))
                 if item.isFavorite {
                     Image(systemName: "heart.fill").imageScale(.small)
@@ -34,8 +34,8 @@ struct PhotoCardView: View {
             .opacity(0.9)
         }
         .foregroundStyle(.white)
-        .padding(.horizontal, 22)
-        .padding(.bottom, 24)
+        .padding(.horizontal, DS.Spacing.l)
+        .padding(.bottom, DS.Spacing.l)
     }
 
     private var accessibilityText: String {
@@ -51,7 +51,7 @@ struct BottomScrim: View {
         LinearGradient(
             stops: [
                 .init(color: .clear, location: 0.55),
-                .init(color: DS.Palette.ink.opacity(0.85), location: 1),
+                .init(color: DS.Palette.scrim.opacity(0.85), location: 1),
             ],
             startPoint: .top,
             endPoint: .bottom
@@ -63,13 +63,13 @@ struct BottomScrim: View {
 #if DEBUG
 #Preview("Flagged") {
     PhotoCardView(item: PreviewSamples.blurryPhoto)
-        .padding(14)
-        .background(DS.Palette.paper)
+        .padding(DS.Spacing.cardInset)
+        .paperBackground()
 }
 
 #Preview("Plain") {
     PhotoCardView(item: PreviewSamples.plainPhoto)
-        .padding(14)
-        .background(DS.Palette.paper)
+        .padding(DS.Spacing.cardInset)
+        .paperBackground()
 }
 #endif

@@ -5,14 +5,16 @@ struct CircleActionButton: View {
     enum Variant {
         /// Brick icon on tint. Delete.
         case destructive
-        /// Ink icon on card with a hairline. Keep, Later.
+        /// Ink icon on card with a ring. Later.
         case neutral
+        /// A filled ink disc. Keep: the one the eye should land on.
+        case primary
     }
 
     let title: String
     let systemImage: String
     var variant: Variant = .neutral
-    var diameter: CGFloat = 68
+    var diameter: CGFloat = DS.Control.action
     let action: () -> Void
 
     @ScaledMetric(relativeTo: .title2) private var iconSize: CGFloat = 26
@@ -21,13 +23,13 @@ struct CircleActionButton: View {
         Button(action: action) {
             VStack(spacing: 6) {
                 Image(systemName: systemImage)
-                    .font(.system(size: iconSize * diameter / 68, weight: .medium))
-                    .foregroundStyle(variant == .destructive ? DS.Palette.brick : DS.Palette.ink)
+                    .font(.system(size: iconSize * diameter / DS.Control.action, weight: .medium))
+                    .foregroundStyle(foreground)
                     .frame(width: diameter, height: diameter)
-                    .background(variant == .destructive ? DS.Palette.brickTint : DS.Palette.card, in: Circle())
+                    .background(fill, in: Circle())
                     .overlay {
                         if variant == .neutral {
-                            Circle().strokeBorder(DS.Palette.line, lineWidth: 1.5)
+                            Circle().strokeBorder(DS.Palette.outline, lineWidth: DS.Control.ring)
                         }
                     }
                 Text(title)
@@ -37,6 +39,22 @@ struct CircleActionButton: View {
         }
         .buttonStyle(PressScaleStyle())
         .accessibilityLabel(title)
+    }
+
+    private var foreground: Color {
+        switch variant {
+        case .destructive: DS.Palette.brick
+        case .neutral: DS.Palette.ink
+        case .primary: DS.Palette.onInk
+        }
+    }
+
+    private var fill: Color {
+        switch variant {
+        case .destructive: DS.Palette.brickTint
+        case .neutral: DS.Palette.card
+        case .primary: DS.Palette.ink
+        }
     }
 }
 
@@ -53,12 +71,12 @@ struct PressScaleStyle: ButtonStyle {
 }
 
 #Preview {
-    HStack(alignment: .top, spacing: 28) {
+    HStack(alignment: .top, spacing: DS.Spacing.xl) {
         CircleActionButton(title: "Delete", systemImage: "trash", variant: .destructive) {}
-        CircleActionButton(title: "Later", systemImage: "arrow.up", diameter: 52) {}
-            .padding(.top, 8)
-        CircleActionButton(title: "Keep", systemImage: "checkmark") {}
+        CircleActionButton(title: "Later", systemImage: "arrow.up", diameter: DS.Control.minorAction) {}
+            .padding(.top, DS.Spacing.xs)
+        CircleActionButton(title: "Keep", systemImage: "checkmark", variant: .primary) {}
     }
     .padding()
-    .background(DS.Palette.paper)
+    .paperBackground()
 }
