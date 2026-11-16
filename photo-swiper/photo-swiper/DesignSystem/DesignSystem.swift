@@ -322,6 +322,9 @@ struct PaperBackground: View {
                     .scaledToFill()
             }
             .clipped()
+            // Clipping hides the texture's overflow but leaves it catching taps, which matters for a strip
+            // pinned over other content: taps stop at the paper's own bounds.
+            .contentShape(Rectangle())
             .ignoresSafeArea()
             .accessibilityHidden(true)
     }
