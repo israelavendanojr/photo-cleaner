@@ -71,7 +71,7 @@ private struct FannedThumbnails: View {
                     ItemImage(item.image)
                         .frame(width: tile.width, height: tile.height)
                         .clipShape(RoundedRectangle(cornerRadius: DS.Radius.tile, style: .continuous))
-                        .shadow(color: DS.Palette.shadow.opacity(0.14), radius: 14, y: 10)
+                        .cardShadow()
                         .rotationEffect(.degrees(isFanned ? Double(centered) * 4 - 2 : 0))
                         .offset(x: isFanned ? centered * spread : 0)
                         .animation(DS.Motion.gentle.delay(0.1 + Double(index) * 0.05), value: isFanned)

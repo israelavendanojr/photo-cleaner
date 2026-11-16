@@ -12,7 +12,6 @@ struct BinCard: View {
     var limit: (counted: Int64, bytes: Int64)?
 
     @Environment(\.dynamicTypeSize) private var typeSize
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ScaledMetric(relativeTo: .title3) private var diameter = DS.Bin.iconDiameter
 
     private var isEmpty: Bool { count == 0 }
@@ -66,8 +65,7 @@ struct BinCard: View {
                 .contentTransition(.numericText(value: Double(bytes)))
                 .fixedSize(horizontal: false, vertical: true)
             if let limit {
-                ProgressLine(value: fill, tint: DS.Palette.brick)
-                    .animation(reduceMotion ? nil : DS.Motion.calm, value: fill)
+                BristleTicks(value: fill, tint: DS.Palette.brick, height: DS.Ticks.rowHeight)
                     .padding(.top, DS.Spacing.xxs)
                 Text(isFull ? "Full at \(Format.limit(limit.bytes)). Delete these to keep clearing."
                     : "\(Format.size(limit.counted)) of \(Format.limit(limit.bytes))")

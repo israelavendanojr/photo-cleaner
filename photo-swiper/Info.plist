@@ -8,6 +8,12 @@
 	<!-- Limited access: the app offers "Add more photos" itself, so iOS doesn't re-ask at each launch. -->
 	<key>PHPhotoLibraryPreventAutomaticLimitedAccessAlert</key>
 	<true/>
+	<!-- Newsreader, the serif (`dsSerif`). Its licence, Newsreader-OFL.txt, ships beside it. -->
+	<key>UIAppFonts</key>
+	<array>
+		<string>Newsreader.ttf</string>
+		<string>Newsreader-Italic.ttf</string>
+	</array>
 	<!-- Merged with the generated Info.plist. Build settings can't express this nested key. -->
 	<key>UILaunchScreen</key>
 	<dict>

@@ -207,7 +207,7 @@ struct PendingPileView: View {
                         .foregroundStyle(.white)
                         .padding(.horizontal, 6)
                         .frame(minWidth: 20, minHeight: 20)
-                        .background(DS.Palette.brick, in: Capsule())
+                        .background(DS.Palette.brickFill, in: Capsule())
                         .contentTransition(.numericText(value: Double(binCount)))
                         .offset(x: 4, y: -4)
                 }
@@ -313,7 +313,7 @@ private struct PileLimit: View {
                     .monospacedDigit()
                     .foregroundStyle(isFull ? DS.Palette.brick : DS.Palette.ink)
                     .contentTransition(.numericText(value: Double(bytes)))
-                ProgressLine(value: min(1, Double(counted) / Double(max(limit, 1))), tint: DS.Palette.brick, height: 4)
+                BristleTicks(value: min(1, Double(counted) / Double(max(limit, 1))), tint: DS.Palette.brick, height: DS.Ticks.rowHeight)
             }
             if isFull {
                 Text("Your pile is full. Delete these to keep clearing.")
@@ -337,7 +337,7 @@ private struct EditProgressRow: View {
             Text("Saving edited video \(progress.index) of \(progress.count)")
                 .font(.footnote.weight(.semibold))
                 .foregroundStyle(DS.Palette.ink)
-            ProgressLine(value: progress.fraction, tint: DS.Palette.ink, height: 4)
+            BristleTicks(value: progress.fraction, height: DS.Ticks.rowHeight)
         }
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("pile.editProgress")
@@ -520,7 +520,7 @@ private struct PendingTile: View {
                 .font(.system(size: 9, weight: .black))
                 .foregroundStyle(.white)
                 .frame(width: 22, height: 22)
-                .background(DS.Palette.brick, in: Circle())
+                .background(DS.Palette.brickFill, in: Circle())
                 .transition(.scale.combined(with: .opacity))
         } else {
             Circle()

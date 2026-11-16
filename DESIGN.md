@@ -6,36 +6,41 @@ For UI work, load the `ios-ui` skill. To check a diff against this file, load `u
 
 ## Principles and tone
 
-- **Warm and quiet.** The app uses paper-white surfaces, near-black ink and one accent. The photos are the color on screen, so the chrome stays out of their way.
+- **Warm and quiet.** The app is ink on creased paper, light or dark, with one accent. The photos are the color on screen, so the chrome stays out of their way.
 - **Brick means "this goes away".** The accent marks deletion, amounts to clear and the celebration when space is freed, and nothing else. When something is brick, the user should read it as "this frees space".
 - **Calm motion.** Springs settle with little bounce. Nothing loops for attention, and every flourish has a still fallback under Reduce Motion.
-- **Serif for moments, system for work.** New York (`dsSerif`) is for headlines and big numbers. SF in system text styles is for everything you read or tap.
+- **Serif for moments, system for work.** Newsreader (`dsSerif`) is for headlines and big numbers. SF in system text styles is for everything you read or tap.
 - **Plain words.** Copy is in sentence case and short sentences, with no exclamation marks and no dark patterns. Say what happens: "They'll stay in Recently Deleted for 30 days."
 - **Private by design.** Nothing on screen implies a cloud. Don't add account, sync or sharing affordances.
 
 ## Color
 
-Defined in `DS.Palette` ([`DesignSystem.swift`](photo-swiper/photo-swiper/DesignSystem/DesignSystem.swift)). Every token is a fixed sRGB hex built with `Color(hex:)`. Only `DesignSystem.swift` calls `Color(hex:)`.
+Defined in `DS.Palette` ([`DesignSystem.swift`](photo-swiper/photo-swiper/DesignSystem/DesignSystem.swift)). Every token has a light and a dark value behind one name, as a color set in `Assets.xcassets/Palette/`, and the app follows the system appearance. Views never name a hex value; a new color is a new color set and a line here.
 
 | Token | Light | Dark | Use |
 |---|---|---|---|
-| `paper` | `#FAF7F2` | none | App and screen background. `LaunchBackground` in the asset catalog matches it. |
-| `card` | `#FFFDF9` | none | Card surfaces, chip and neutral button fills, `UpsellCard`, tab bar. |
-| `ink` | `#1F1B18` | none | Primary text, icons, `.pill(.ink)` fill, the selected tab, Keep. Also the usual `.tint`. |
-| `secondary` | `#8A817A` | none | Supporting text, captions, inactive tabs, the outlined icon button. |
-| `brick` | `#C24A3A` | none | Delete, amounts to clear, celebrations. **Never anything else.** |
-| `brickTint` | `#F5E4DF` | none | Background behind brick content: the Delete circle, brick chips, the bin. |
-| `line` | `#E9E3DB` | none | Hairlines, outlined buttons, empty progress tracks. |
-| `muted` | `#EEE8E0` | none | Placeholder fill behind images while they load. |
-| `shadow` | `#4A382B` | none | Shadow color only, used at low opacity through `cardShadow()` and `softShadow()`. |
+| `paper` | `#FAF7F2` | `#171412` | The background's color, under the paper texture. `LaunchBackground` matches it in both modes. |
+| `card` | `#FFFDF9` | `#231F1C` | Raised surfaces: chips, neutral round buttons, the tab bar, plan cards. |
+| `ink` | `#1F1B18` | `#F3EEE6` | Primary text and icons, `.pill(.ink)`, the selected tab, Keep. Also the usual `.tint`. |
+| `onInk` | `#FFFFFF` | `#171412` | Text and icons on an `ink` fill. Ink turns pale in dark mode, so fixed white there would vanish. |
+| `secondary` | `#5F5750` | `#A99F95` | Supporting text, captions, inactive tabs. |
+| `brick` | `#B23F30` | `#E67862` | Delete, amounts to clear, celebrations, as text, icons and ticks. **Never anything else.** |
+| `brickFill` | `#B23F30` | `#C24A3A` | A brick surface under white text: `.pill(.brick)`, Save, a delete mark. |
+| `brickTint` | `#F5E4DF` | `#3B211C` | Background behind brick content: the Delete circle, brick chips, the bin. |
+| `line` | `#DDD5C9` | `#352F2A` | Hairline rules and quiet borders. |
+| `outline` | `#CFC6B9` | `#453D36` | The empty part of a tick track, and the ring of an outlined control. |
+| `muted` | `#EEE8E0` | `#2C2723` | Placeholder fill behind images while they load. |
+| `shadow` | `#4A382B` | `#000000` | Shadow color only, through `cardShadow()` and `softShadow()`. |
 
-**Fixed white and black** are allowed in only two places: over photos and video (preview chrome, card captions, scrims, `Chip(.frosted)`), and as text or icons on an `ink` or `brick` fill.
+**Fixed white and black** are allowed in only two places: over photos and video (preview chrome, card captions, scrims, `Chip(.frosted)`), and white on `brickFill`. On an `ink` fill use `onInk`.
 
-**Dark mode doesn't exist yet.** No token has a dark value, and the app doesn't set `UIUserInterfaceStyle`, so it follows the system appearance. In dark mode, alerts, confirmation dialogs, the keyboard and the Safari sheet turn dark while every app surface stays light. The full-screen previews ([`PhotoPreviewView`](photo-swiper/photo-swiper/Views/Preview/PhotoPreviewView.swift), [`VideoPreviewView`](photo-swiper/photo-swiper/Views/Preview/VideoPreviewView.swift)) and `Chip(.frosted)` force `.dark` on purpose, because they sit on media. The plan for dark mode is to give each `DS.Palette` name a dark value (an asset-catalog color set, or a dynamic `UIColor`) behind the same name, so call sites don't change. Until then, new UI must use the tokens so that it picks up dark values when they land.
+**The paper.** Every screen sits on `PaperBackground` (`.paperBackground()`): the `paper` color under the `Paper` image, a creased-paper texture with a light and a dark version. It fills the screen under the safe areas, keeps its proportions, and never moves. Don't put an opaque `paper` fill over it at screen level.
+
+**Forced dark.** The full-screen previews ([`PhotoPreviewView`](photo-swiper/photo-swiper/Views/Preview/PhotoPreviewView.swift), [`VideoPreviewView`](photo-swiper/photo-swiper/Views/Preview/VideoPreviewView.swift)) and `Chip(.frosted)` force `.dark` on purpose, because they sit on media.
 
 ## Typography
 
-**Serif:** `.dsSerif(size, relativeTo:weight:italic:)` sets New York at a design size through `@ScaledMetric`, so it still scales with Dynamic Type. Always pass the `relativeTo` text style the size stands in for. The sizes in use:
+**Serif:** `.dsSerif(size, relativeTo:weight:italic:)` sets Newsreader at a design size through `@ScaledMetric`, so it still scales with Dynamic Type. Newsreader is bundled (`Resources/Fonts/`, two variable fonts under the SIL Open Font License, whose text ships beside them) and listed in `UIAppFonts`; `DS.Serif` sets its weight and optical-size axes, and falls back to New York if it didn't load. Always pass the `relativeTo` text style the size stands in for. The sizes in use:
 
 | Size | `relativeTo` | Weight | Where |
 |---|---|---|---|
@@ -80,10 +85,10 @@ Numbers that change use `.monospacedDigit()` and `.contentTransition(.numericTex
 | `tile` | Grid tiles and smaller grouped surfaces |
 | `thumb` | Thumbnails |
 
-**Elevation** has two levels, both warm:
+**Elevation** has two levels. Each is a tight contact line under a short drop, so a surface reads as paper lying on paper; the values are in `DS.Shadow`, heavier in dark mode, where a soft shadow wouldn't show.
 
-- `cardShadow()`: a soft two-layer lift for cards and stamp discs.
-- `softShadow()`: lighter, for chips, `PillTabBar` and `UpsellCard`.
+- `cardShadow()`: cards, photos and stamp discs.
+- `softShadow()`: chips and `PillTabBar`. `softShadow(raised: true)` is a touch firmer, for a surface that's a choice.
 
 Put the shadow on the background shape, not on the view that holds text, so the text doesn't get a halo (`UpsellCard` shows the pattern). The only material is `.ultraThinMaterial`, used for controls over media.
 
@@ -119,7 +124,8 @@ Put the shadow on the background shape, not on the view that holds text, so the 
 | `gentle` | Screen-level transitions, big reveals, onboarding entrances |
 | `page` | Moving between onboarding pages |
 | `tab` | The tab bar's selection capsule |
-| `countUpDuration`, `countUpSteps` | The dashboard's space cleared counting up from zero, and its progress bar filling from empty alongside: once per launch, in steps of `calm` changes, easing out |
+| `tickFill` | `BristleTicks` sweeping to a new value, tick by tick |
+| `countUpDuration`, `countUpSteps` | The dashboard's space cleared counting up from zero, and its ticks filling from empty alongside: once per launch, in steps of `calm` changes, easing out |
 
 **Reduce Motion:** read `@Environment(\.accessibilityReduceMotion)` and show the end state at once, or swap movement for a fade. Examples: `OnboardingEntrance`, `DealIn`, `SwipeableCard` (no nudges), `ConfettiView` (a fading note instead of confetti), `StackedPhotosIllustration`.
 
@@ -137,7 +143,7 @@ All of these are in [`DesignSystem/Components/`](photo-swiper/photo-swiper/Desig
 | `PressScaleStyle` | The press-down scale for custom icon buttons. It also dims the button when disabled. |
 | `Chip` | Small rounded labels. `.brick` for counts tied to clearing (swipes left), `.plain` for neutral markers over imagery (Best pick, Keep) and the feed's focus ("Only large videos ×", with `trailingSystemImage: "xmark"`, which takes the text color), `.frosted` for text over video. |
 | `PillTabBar` | The floating tab bar. Its selection animates with `DS.Motion.tab` and fires `Haptics.tabChange`. |
-| `ProgressLine` | A thin progress track. Ink by default, brick for amounts to clear. It reads its percentage to VoiceOver. The dashboard hero's is thicker, at `DS.Progress.heroHeight`. |
+| `BristleTicks` | Any progress or proportion: upright 2pt strokes on a 5pt pitch (`DS.Ticks`), the filled part over an `outline` track, drawn in a `Canvas`. Ink by default, brick for amounts to clear. `showsTrack: false` for a bar that only compares sizes; `popsNew` lifts ticks as they fill. It fills tick by tick, from empty the first time it's seen (at once under Reduce Motion), scales its height with Dynamic Type, and reads its percentage to VoiceOver: give it a label where it's used. `BristleMark` is the glyph made from it, for the wordmark. |
 | `ToClearCounter` | The brick serif running total, with a "+3.4 MB" chip that pops above it. Unlocked, it's the whole bin, edits included; with a free limit it's the deletes the limit counts. |
 | `Toast` | A short note in an ink `Capsule()` with an optional underlined action, announced to VoiceOver, e.g. the feed's "Edit queued · saves ~335 MB · Undo". The caller decides how long it stays. |
 | `UpsellLayout` / `UpsellCard` / `IncludedRow` | Every unlock surface (the wall and the sheets), so they read as one offer. |
@@ -145,7 +151,7 @@ All of these are in [`DesignSystem/Components/`](photo-swiper/photo-swiper/Desig
 | `OpenSettingsButton` | Any link to the app's page in iOS Settings (permissions). |
 | `SwipeStamp` (in `Views/Feed/`) | The Delete, Keep and Later wash over a card. It's also used in onboarding's demo. |
 | `DashboardCard` | A dashboard panel: a header view, then content, on a `card` panel at `Radius.inner` with `softShadow()` on the shape. The hero and the library card use it. |
-| `BinCard` | The pile on the dashboard: `trash` in brick on a `brickTint` circle (`DS.Bin.iconDiameter`, scaled), like the feed's Delete, then "Bin" and "N to clear · size" in brick. With a free limit, a brick `ProgressLine` of the pile against it and "56.6 MB of 64 MB" ("Full at …" when full). Empty, it looks the same with zeros and an empty line. Wrap it in the link to the pile only when there's something in it: a disabled link would dim its text. One VoiceOver sentence. |
+| `BinCard` | The pile on the dashboard: `trash` in brick on a `brickTint` circle (`DS.Bin.iconDiameter`, scaled), like the feed's Delete, then "Bin" and "N to clear · size" in brick. With a free limit, brick `BristleTicks` of the pile against it and "56.6 MB of 64 MB" ("Full at …" when full). Empty, it looks the same with zeros and an empty track. Wrap it in the link to the pile only when there's something in it: a disabled link would dim its text. One VoiceOver sentence. |
 
 Formatting goes through `Format` (`size`, `signedSize`, `percent`, `signedPercent`, `weeklyChange`, `day`, `shortDay`, `range`, `duration`, `countdown`, `roughDays`, `spelled`, `count`). `size` uses `ByteCountFormatter` in decimal units from MB up, as Photos and Settings do ("1.2 GB", "0.1 MB"), and reads "0 MB" for nothing. `signedPercent` has one decimal ("+34.5%", "−25.0%"); `weeklyChange` reads "+1.2 GB (+34.5%) vs last week", or "+1.2 GB this week" when last week cleared nothing.
 
@@ -163,13 +169,13 @@ Formatting goes through `Format` (`size`, `signedSize`, `percent`, `signedPercen
 ### The bin's edits and clearing
 
 - **Edits section** in `PendingPileView`, under the photo grid: one `EditRow` per video on `card` at `DS.Radius.tile`, with the thumbnail, then the marks ("Trimmed", "Compressed · Balanced", or both) as `caption` semibold ink labels with their symbols, the change ("1:42 → 0:12 · 380 MB → ~45 MB") in subheadline semibold, and "saves ~X" in brick footnote. Swiping a row left cancels the edit.
-- **Clearing.** With edits waiting, the bin's one brick pill reads "Clear bin · X" (the marked photos plus what the edits save), and the system alert says what happens: edited copies saved first, then the originals and photos deleted. While copies are made, "Saving edited video 1 of 2" sits above the buttons with an ink `ProgressLine`, and the screen stays awake.
+- **Clearing.** With edits waiting, the bin's one brick pill reads "Clear bin · X" (the marked photos plus what the edits save), and the system alert says what happens: edited copies saved first, then the originals and photos deleted. While copies are made, "Saving edited video 1 of 2" sits above the buttons with ink `BristleTicks`, and the screen stays awake.
 
 ### The Library dashboard
 
 Three parts, top to bottom, and nothing else: the hero, the bin, the library card. Each says one thing; no number appears twice.
 
-- **Hero** (`HeroSection`), one `DashboardCard`. Space cleared as the brick serif 48 number, with no label over it. Under it, this week against last (`Format.weeklyChange`): brick when more was cleared, ink when less, since brick only means space freed and a drop isn't that (not `secondary`: it's essential small text); hidden when neither week cleared anything. The first time the tab is seen each launch, the number counts up from zero (`DS.Motion.countUpDuration` in `countUpSteps` numeric-text steps) and the change fades up once it lands; under Reduce Motion, and on later visits, both show at once. Then, as the card's content and its one visual, how far through the whole library the user is: the share reviewed in `title3` semibold with "reviewed" after it, a `ProgressLine` in ink at `DS.Progress.heroHeight`, and "11,050 of 17,820 photos reviewed" in footnote, all ink. It reads as one VoiceOver sentence. It shows whenever the library has anything in it, 0% included, so the goal is always there. On the entrance the bar fills from empty and the percent counts up in the same steps as the number, and the count under the bar fades up with the change. Before anything is cleared it's "Nothing cleared yet" with "Start reviewing", with the bar under it; the entrance still fills the bar once anything is reviewed.
+- **Hero** (`HeroSection`), one `DashboardCard`. Space cleared as the brick serif 48 number, with no label over it. Under it, this week against last (`Format.weeklyChange`): brick when more was cleared, ink when less, since brick only means space freed and a drop isn't that (not `secondary`: it's essential small text); hidden when neither week cleared anything. The first time the tab is seen each launch, the number counts up from zero (`DS.Motion.countUpDuration` in `countUpSteps` numeric-text steps) and the change fades up once it lands; under Reduce Motion, and on later visits, both show at once. Then, as the card's content and its one visual, how far through the whole library the user is: the share reviewed in `title3` semibold with "reviewed" after it, `BristleTicks` in ink at `DS.Ticks.heroHeight`, and "11,050 of 17,820 photos reviewed" in footnote, all ink. It reads as one VoiceOver sentence. It shows whenever the library has anything in it, 0% included, so the goal is always there. On the entrance the bar fills from empty and the percent counts up in the same steps as the number, and the count under the bar fades up with the change. Before anything is cleared it's "Nothing cleared yet" with "Start reviewing", with the bar under it; the entrance still fills the bar once anything is reviewed.
 - **Bin** (`BinCard`), right under the hero. Under limited access only, "Add more photos" and "Photo access" rows follow it.
 - **Library card** (`LibraryCard`), "Review by type". A plain list, one row per focus with something in it: icon (`DS.LibraryList.iconWidth` column, hidden at accessibility sizes) · title · "count · size" · chevron, with `line` dividers, each row at least `DS.Tap.minimum` tall. The rows cover the library's kinds and what the analysis finds: duplicates, similar, accidental shots, blurry, screenshots, bursts and documents. Large videos aren't a row: they're already in Videos. Rows are biggest first, ties in `FocusTarget.listOrder`, and Saved for later always last. Tapping a row focuses the feed on it and does nothing else. A size is brick only when it's an amount to clear (duplicates and similar count only their extras, accidental shots, blurry, screenshots, bursts); the library's own kinds (videos, Live Photos, documents, photos) and what's saved for later are ink. While the library is still being analyzed the header says "Analyzing · 86%". At accessibility sizes the count and size stack under the title instead of truncating.
 
@@ -181,23 +187,24 @@ Three parts, top to bottom, and nothing else: the hero, the bin, the library car
 - **UI test IDs.** Use `accessibilityIdentifier("screen.element")`, for example `settings.done` or `caughtUp.checkAgain`.
 - **Contrast** (WCAG 2.x, measured from the hex values):
 
-  | Pair | Ratio | |
-  |---|---|---|
-  | `ink` on `paper` / `card` | 16.0 / 16.8 | AA |
-  | white on `ink` | 17.1 | AA |
-  | white on `brick` | 4.84 | AA |
-  | `brick` on `paper` | 4.53 | AA (just) |
-  | `brick` on `brickTint` | 3.93 | **large text only** |
-  | `secondary` on `paper` / `card` | 3.57 / 3.76 | **large text only** |
-  | `line` on `paper` | 1.19 | decoration only; don't rely on it to convey anything |
+  | Pair | Light | Dark | |
+  |---|---|---|---|
+  | `ink` on `paper` / `card` | 16.0 / 16.8 | 15.9 / 14.2 | AA |
+  | `onInk` on `ink` | 17.1 | 15.9 | AA |
+  | white on `brickFill` | 5.76 | 4.84 | AA |
+  | `brick` on `paper` / `card` | 5.39 / 5.67 | 6.31 / 5.63 | AA |
+  | `brick` on `brickTint` | 4.67 | 5.09 | AA |
+  | `secondary` on `paper` / `card` | 6.63 / 6.97 | 7.06 / 6.29 | AA |
+  | `line` on `paper` | 1.36 | 1.39 | decoration only |
+  | `outline` on `paper` / `card` | 1.58 / 1.66 | 1.72 / 1.54 | decoration only; a control it rings must be clear from its fill or icon |
 
-  Don't use `secondary` or brick-on-tint for essential small text in new UI. This is a known gap, listed below.
+  Over the paper texture's lightest and darkest areas the worst cases are still AA: `ink` 14.5, `secondary` 6.0, `brick` 4.9 in light; 14.8, 6.6, 5.9 in dark. Recompute this table when a palette value changes.
 
 ## Do / don't
 
 ```swift
 // Do                                             // Don't
-.foregroundStyle(DS.Palette.brick)                .foregroundStyle(.red)  /  Color(hex: 0xC24A3A)
+.foregroundStyle(DS.Palette.brick)                .foregroundStyle(.red)  /  a hex color
 .padding(.horizontal, DS.Spacing.l)               .padding(.horizontal, 20)
 RoundedRectangle(cornerRadius: DS.Radius.inner,   RoundedRectangle(cornerRadius: 20)
                  style: .continuous)
@@ -219,9 +226,8 @@ Text(Format.size(bytes))                          Text("\(bytes / 1_000_000) MB"
 
 These are known gaps in the code as of this file's first version. They're documented here, not fixed. Fix them in their own PRs, and remove each line when it's done.
 
-- **No dark mode.** Tokens have no dark values, and the app follows the system appearance, so in dark mode its light surfaces sit beside dark system alerts, dialogs and the keyboard.
+- **The paper isn't behind every screen yet.** `RootView` has it; screens that still fill themselves with `paper` cover it. The A5 redesign moves them over screen by screen.
 - **`AccentColor` asset is empty.** Tint is set view by view instead (`.tint(DS.Palette.ink)` in Settings, Library and Admin; `.tint(DS.Palette.secondary)` on progress views).
-- **Contrast below AA for small text:** `secondary` on `paper`/`card` (3.57/3.76), used widely for captions; `brick` on `brickTint` (3.93), for example `Chip(.brick)` at `.caption`.
 - **Literal paddings instead of `DS.Spacing`:**
   - 14, 18, 22 and 24 in the cards (`PhotoCardView`, `VideoCardView`, `DuplicatesCardView`, `SimilarShotsCardView`, `ScreenshotBatchCardView`, `CardContentView`, `SwipeableCard`, `SwipeHint`);
   - a list-row leading inset of 52 (`LibraryView`, `SettingsView`);
@@ -230,7 +236,7 @@ These are known gaps in the code as of this file's first version. They're docume
 - **58 literal `spacing:` values** in stacks across `Views/` and `DesignSystem/`.
 - **A radius with no token:** 8 in `PendingThumbnailGrid` (`thumb` is 12).
 - **Fixed-size fonts that don't scale with Dynamic Type:** 34 light in `LibraryAccessView`, 8 black in `SimilarShotsCardView`, 9 black and 20 in `PendingPileView`, 18 and 26 on the preview buttons (`PhotoPreviewView`, `VideoPreviewView`), and 18 in `CircleIconButton`.
-- **Raw shadows outside the two modifiers:** a third style in `ScreenshotBatchCardView` (radius 14, y 10), and black shadows in `PendingPileView` and `VideoPreviewView`.
+- **Raw shadows outside the two modifiers:** black legibility shadows over media in `PendingPileView` and `VideoPreviewView`.
 - **Raw animations outside `DS.Motion`:** `RootView` (2), `PhotoAccessPrimerView` (2), `OnboardingView`, `NotificationsPrimerView` and `SwipeableCard` (2).
 - **Haptic outside `Haptics`:** `PendingPileView` uses `.sensoryFeedback(.selection, trigger:)`.
 - **Duplicated toast:** `SettingsView` builds the same ink capsule toast twice instead of using `Toast`.

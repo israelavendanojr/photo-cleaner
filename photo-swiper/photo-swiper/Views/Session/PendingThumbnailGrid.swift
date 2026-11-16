@@ -22,7 +22,7 @@ struct PendingThumbnailGrid: View {
                     DS.Palette.ink.overlay {
                         Text("+\(overflow)")
                             .font(.footnote.weight(.semibold))
-                            .foregroundStyle(.white)
+                            .foregroundStyle(DS.Palette.onInk)
                             .minimumScaleFactor(0.6)
                     }
                 }

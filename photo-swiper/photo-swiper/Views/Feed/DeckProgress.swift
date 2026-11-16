@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// The center of a deck's top bar: an optional title, "12 of 20", and a progress line.
+/// The center of a deck's top bar: an optional title, "12 of 20", and progress ticks.
 struct DeckProgress<Footer: View>: View {
     var title: String?
     let position: Int
@@ -21,7 +21,7 @@ struct DeckProgress<Footer: View>: View {
                 .monospacedDigit()
                 .foregroundStyle(DS.Palette.secondary)
                 .contentTransition(.numericText(value: Double(position)))
-            ProgressLine(value: value)
+            BristleTicks(value: value, height: DS.Ticks.rowHeight)
                 .frame(width: 96)
             footer
         }

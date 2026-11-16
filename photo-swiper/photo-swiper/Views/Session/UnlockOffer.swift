@@ -136,7 +136,7 @@ struct UnlockOffer: View {
             ForEach(UnlockCopy.included, id: \.text) { item in
                 HStack(alignment: .firstTextBaseline, spacing: DS.Spacing.s) {
                     Circle()
-                        .fill(DS.Palette.brick)
+                        .fill(DS.Palette.brickFill)
                         .frame(width: 6, height: 6)
                         // Centers the dot on the first line's x-height.
                         .alignmentGuide(.firstTextBaseline) { $0[.bottom] + 1 }

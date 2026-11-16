@@ -147,7 +147,7 @@ struct HeroSection: View {
                     .font(.callout)
             }
             .foregroundStyle(DS.Palette.ink)
-            ProgressLine(value: fraction, height: DS.Progress.heroHeight)
+            BristleTicks(value: fraction, height: DS.Ticks.heroHeight)
             Text("\(Format.count(vm.libraryReviewedCount)) of \(Format.count(vm.stats.totalItems)) photos reviewed")
                 .font(.footnote)
                 .monospacedDigit()

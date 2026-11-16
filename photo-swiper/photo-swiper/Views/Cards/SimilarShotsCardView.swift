@@ -163,7 +163,7 @@ private struct MarkCircle: View {
                 .font(.system(size: 8, weight: .black))
                 .foregroundStyle(.white)
                 .frame(width: 18, height: 18)
-                .background(DS.Palette.brick, in: Circle())
+                .background(DS.Palette.brickFill, in: Circle())
                 .transition(.scale.combined(with: .opacity))
         } else {
             Circle()
@@ -182,8 +182,8 @@ private struct MarkCircle: View {
     SimilarShotsCardView(group: PreviewSamples.similarGroup, marked: marked, onToggle: { id in
         if marked.contains(id) { marked.remove(id) } else { marked.insert(id) }
     }, onOpen: { print("open", $0) })
-    .frame(height: 560)
-    .padding(14)
-    .background(DS.Palette.paper)
+        .frame(height: 560)
+        .padding(14)
+        .background(DS.Palette.paper)
 }
 #endif

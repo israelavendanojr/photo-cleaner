@@ -40,7 +40,7 @@ struct SwipeStamp: View {
 
     private var discColor: Color {
         switch kind {
-        case .delete: DS.Palette.brick
+        case .delete: DS.Palette.brickFill
         case .keep: DS.Palette.ink
         case .later: DS.Palette.card
         }
@@ -54,7 +54,14 @@ struct SwipeStamp: View {
         }
     }
 
-    private var iconColor: Color { kind == .later ? DS.Palette.ink : .white }
+    /// White on the brick disc; on the ink disc, whatever reads on ink in this appearance.
+    private var iconColor: Color {
+        switch kind {
+        case .delete: .white
+        case .keep: DS.Palette.onInk
+        case .later: DS.Palette.ink
+        }
+    }
 
     private var textColor: Color { kind == .delete ? DS.Palette.brick : DS.Palette.ink }
 }

@@ -88,7 +88,7 @@ struct PhotoAccessPrimerView: View {
                 .opacity(isPreparing ? 0 : 1)
             HStack(spacing: DS.Spacing.xs) {
                 ProgressView()
-                    .tint(.white)
+                    .tint(DS.Palette.onInk)
                 Text(Copy.preparing)
             }
             .opacity(isPreparing ? 1 : 0)

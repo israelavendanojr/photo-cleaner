@@ -19,7 +19,7 @@ struct RootView: View {
 
     var body: some View {
         ZStack {
-            DS.Palette.paper.ignoresSafeArea()
+            PaperBackground()
             switch vm.phase {
             case .loading:
                 DelayedProgressView()

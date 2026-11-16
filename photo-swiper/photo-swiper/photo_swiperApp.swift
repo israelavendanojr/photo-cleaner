@@ -19,8 +19,6 @@ struct photo_swiperApp: App {
             RootView()
                 .environment(feed)
                 .tint(DS.Palette.ink)
-                // The palette is light-only for now.
-                .preferredColorScheme(.light)
         }
     }
 }

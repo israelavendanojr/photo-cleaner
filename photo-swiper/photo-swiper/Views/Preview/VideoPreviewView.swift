@@ -524,7 +524,7 @@ struct FrostedIconButton: View {
                 .foregroundStyle(.white)
                 .contentTransition(.symbolEffect(.replace))
                 .frame(width: DS.Tap.minimum, height: DS.Tap.minimum)
-                .background(isActive ? AnyShapeStyle(DS.Palette.brick) : AnyShapeStyle(.ultraThinMaterial), in: Circle())
+                .background(isActive ? AnyShapeStyle(DS.Palette.brickFill) : AnyShapeStyle(.ultraThinMaterial), in: Circle())
                 .contentShape(Circle())
         }
         .buttonStyle(PressScaleStyle())
@@ -544,7 +544,7 @@ struct TrimButtonStyle: ButtonStyle {
             .foregroundStyle(.white)
             .padding(.horizontal, DS.Spacing.m)
             .frame(minHeight: DS.Tap.minimum)
-            .background(isPrimary ? AnyShapeStyle(DS.Palette.brick) : AnyShapeStyle(.ultraThinMaterial), in: Capsule())
+            .background(isPrimary ? AnyShapeStyle(DS.Palette.brickFill) : AnyShapeStyle(.ultraThinMaterial), in: Capsule())
             .contentShape(Capsule())
             .scaleEffect(configuration.isPressed ? 0.96 : 1)
             .opacity(isEnabled ? 1 : 0.4)
