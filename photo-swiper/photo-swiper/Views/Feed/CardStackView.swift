@@ -109,6 +109,6 @@ private struct CurrentCardMarker: View {
 #Preview {
     CardStackView()
         .environment(FeedViewModel.mock())
-        .background(DS.Palette.paper)
+        .paperBackground()
 }
 #endif

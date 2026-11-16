@@ -310,14 +310,21 @@ extension View {
 /// The app's background: the paper colour under a creased-paper texture, filling the screen and
 /// never stretched out of proportion. It never moves.
 struct PaperBackground: View {
+    /// Which edge of the texture to hold to. A strip pinned to the bottom of a screen passes `.bottom`,
+    /// so its paper lines up with the screen's behind it.
+    var alignment: Alignment = .center
+
     var body: some View {
         DS.Palette.paper
-            .overlay {
+            .overlay(alignment: alignment) {
                 Image("Paper")
                     .resizable()
                     .scaledToFill()
             }
             .clipped()
+            // Clipping hides the texture's overflow but leaves it catching taps, which matters for a strip
+            // pinned over other content: taps stop at the paper's own bounds.
+            .contentShape(Rectangle())
             .ignoresSafeArea()
             .accessibilityHidden(true)
     }

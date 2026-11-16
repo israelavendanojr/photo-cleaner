@@ -16,7 +16,7 @@ struct PillButtonStyle: ButtonStyle {
             .background(background, in: Capsule())
             .overlay {
                 if variant == .outline {
-                    Capsule().strokeBorder(DS.Palette.line, lineWidth: 1.5)
+                    Capsule().strokeBorder(DS.Palette.outline, lineWidth: DS.Control.ring)
                 }
             }
             .contentShape(Capsule())
@@ -60,5 +60,5 @@ extension ButtonStyle where Self == PillButtonStyle {
         Button("Disabled") {}.buttonStyle(.pill(.brick)).disabled(true)
     }
     .padding(26)
-    .background(DS.Palette.paper)
+    .paperBackground()
 }

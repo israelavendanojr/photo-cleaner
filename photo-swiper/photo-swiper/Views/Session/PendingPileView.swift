@@ -81,7 +81,7 @@ struct PendingPileView: View {
         }
         .safeAreaPadding(.bottom, tabBarOverlap)
         .onGeometryChange(for: CGFloat.self) { $0.safeAreaInsets.bottom } action: { bottomInset = $0 }
-        .background(DS.Palette.paper)
+        .paperBackground()
         .sensoryFeedback(.selection, trigger: selected)
         .onAppear {
             guard !didPreselect else { return }
@@ -185,7 +185,8 @@ struct PendingPileView: View {
         .padding(.horizontal, DS.Spacing.l)
         .padding(.top, DS.Spacing.s)
         .padding(.bottom, DS.Spacing.m)
-        .background(DS.Palette.paper)
+        // The same paper, lined up with the screen's, so the photos scroll under it without a seam.
+        .background { PaperBackground(alignment: .bottom) }
     }
 
     /// The marked photos plus the edits, as the bin's badge counts them.

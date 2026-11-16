@@ -38,7 +38,7 @@ struct CompressionLevelsPanel: View {
         CompressionLevelsPanel()
             .padding()
     }
-    .background(DS.Palette.paper)
+    .paperBackground()
     .environment(FeedViewModel.mock())
 }
 #endif

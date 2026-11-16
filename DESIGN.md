@@ -35,7 +35,7 @@ Defined in `DS.Palette` ([`DesignSystem.swift`](photo-swiper/photo-swiper/Design
 
 **Fixed white and black** are allowed in only two places: over photos and video (preview chrome, card captions, scrims, `Chip(.frosted)`), and white on `brickFill`. On an `ink` fill use `onInk`.
 
-**The paper.** Every screen sits on `PaperBackground` (`.paperBackground()`): the `paper` color under the `Paper` image, a creased-paper texture with a light and a dark version. It fills the screen under the safe areas, keeps its proportions, and never moves. Don't put an opaque `paper` fill over it at screen level.
+**The paper.** Every screen sits on `PaperBackground` (`.paperBackground()`): the `paper` color under the `Paper` image, a creased-paper texture with a light and a dark version. It fills the screen under the safe areas, keeps its proportions, and never moves. Don't put an opaque `paper` fill over it at screen level. A sheet takes it with `.presentationBackground { PaperBackground() }`. A bar pinned over scrolling content (onboarding's footer, the pile's actions) uses `PaperBackground(alignment: .bottom)`, which lines its paper up with the screen's so the bar has no edge of its own. Navigation bars keep a flat `paper` toolbar background, so titles stay readable over scrolled content.
 
 **Forced dark.** The full-screen previews ([`PhotoPreviewView`](photo-swiper/photo-swiper/Views/Preview/PhotoPreviewView.swift), [`VideoPreviewView`](photo-swiper/photo-swiper/Views/Preview/VideoPreviewView.swift)) and `Chip(.frosted)` force `.dark` on purpose, because they sit on media.
 
@@ -152,7 +152,7 @@ All of these are in [`DesignSystem/Components/`](photo-swiper/photo-swiper/Desig
 | `PressScaleStyle` | The press-down scale for custom icon buttons. It also dims the button when disabled. |
 | `Chip` | Small rounded labels. `.brick` for counts tied to clearing (swipes left), `.plain` for the feed's focus ("Only large videos ×", with `trailingSystemImage: "xmark"`, which takes the text color), `.onPhoto` for a label lying on a picture (Best pick, Keep): a pale slip with dark text in both appearances. `.frosted` for text over video. |
 | `PillTabBar` | The floating tab bar: text-only tabs (`DS.TabBar`), the selected one on an ink capsule. Its selection animates with `DS.Motion.tab` and fires `Haptics.tabChange`. |
-| `BristleTicks` | Any progress or proportion: upright 2pt strokes on a 5pt pitch (`DS.Ticks`), the filled part over an `outline` track, drawn in a `Canvas`. Ink by default, brick for amounts to clear. `showsTrack: false` for a bar that only compares sizes; `popsNew` lifts ticks as they fill. It fills tick by tick, from empty the first time it's seen (at once under Reduce Motion), scales its height with Dynamic Type, and reads its percentage to VoiceOver: give it a label where it's used. `BristleMark` is the glyph made from it, for the wordmark. |
+| `BristleTicks` | Any progress or proportion: upright 2pt strokes on a 5pt pitch (`DS.Ticks`), the filled part over an `outline` track, drawn in a `Canvas`. Ink by default, brick for amounts to clear. `showsTrack: false` for a bar that only compares sizes; `popsNew` lifts ticks as they fill. It fills tick by tick, from empty the first time it's seen (at once under Reduce Motion), scales its height with Dynamic Type, and reads its percentage to VoiceOver: give it a label where it's used. Onboarding's step progress is one too. `BristleMark` is the glyph made from it, for the wordmark. |
 | `ToClearCounter` | The brick serif running total with its label on the same baseline ("184 MB of 1 GB"; the label drops under it where they don't fit), and a "+3.4 MB" chip that pops above it. Unlocked, it's the whole bin, edits included; with a free limit it's the deletes the limit counts. |
 | `Toast` | A short note in an ink `Capsule()` with an optional underlined action, announced to VoiceOver, e.g. the feed's "Edit queued · saves ~335 MB · Undo". The caller decides how long it stays. |
 | `PaywallView` (in `Views/Session/`) | Every place the unlock is offered: the swipe wall, after a free user's delete, Settings and onboarding's last step show this one screen. See "The paywall" below. |
@@ -259,7 +259,6 @@ Text(Format.size(bytes))                          Text("\(bytes / 1_000_000) MB"
 
 These are known gaps in the code as of this file's first version. They're documented here, not fixed. Fix them in their own PRs, and remove each line when it's done.
 
-- **The paper isn't behind every screen yet.** `RootView` has it; screens that still fill themselves with `paper` cover it. The A5 redesign moves them over screen by screen.
 - **`AccentColor` asset is empty.** Tint is set view by view instead (`.tint(DS.Palette.ink)` in Settings, Library and Admin; `.tint(DS.Palette.secondary)` on progress views).
 - **Literal paddings instead of `DS.Spacing`:**
   - 14, 18, 22 and 24 in the cards (`VideoCardView`, `DuplicatesCardView`, `SimilarShotsCardView`, `ScreenshotBatchCardView`, `CardContentView`, `SwipeableCard`, `SwipeHint`);
@@ -274,7 +273,6 @@ These are known gaps in the code as of this file's first version. They're docume
 - **Haptic outside `Haptics`:** `PendingPileView` uses `.sensoryFeedback(.selection, trigger:)`.
 - **Duplicated toast:** `SettingsView` builds the same ink capsule toast twice instead of using `Toast`.
 - **Press styles differ:** `PressScaleStyle` dims to 0.4 when disabled, and the tab bar's private `TabPressStyle` doesn't.
-- **The pushed pile screen** still fills itself with `paper`.
 - **Two screen gutters:** 20 (`l`) in most screens and 28 (`xl`) in onboarding. The reason isn't written down.
 - **`Chip` has no XXL preview.**
 - **Debug-only exceptions:** `RankDebugBadge` uses a fixed font, black, and a radius of 6. It's Debug-only and can stay.

@@ -39,6 +39,6 @@ struct SwipeOverlay: View {
     }
     .frame(height: 300)
     .padding()
-    .background(DS.Palette.paper)
+    .paperBackground()
 }
 #endif

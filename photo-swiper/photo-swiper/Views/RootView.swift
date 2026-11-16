@@ -62,13 +62,13 @@ struct RootView: View {
             PendingPileView(showsDone: true)
                 .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
-                .presentationBackground(DS.Palette.paper)
+                .presentationBackground { PaperBackground() }
                 .presentationCornerRadius(DS.Radius.card)
         }
         .sheet(isPresented: $isUpsellPresented) {
             UnlockSheet()
                 .presentationDragIndicator(.visible)
-                .presentationBackground(DS.Palette.paper)
+                .presentationBackground { PaperBackground() }
                 .presentationCornerRadius(DS.Radius.card)
         }
         .task(id: vm.isDeleteUpsellDue) {
@@ -131,7 +131,7 @@ struct RootView: View {
             SwipeWallView()
                 .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
-                .presentationBackground(DS.Palette.paper)
+                .presentationBackground { PaperBackground() }
                 .presentationCornerRadius(DS.Radius.card)
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {

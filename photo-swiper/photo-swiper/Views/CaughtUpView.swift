@@ -42,7 +42,7 @@ struct CaughtUpView: View {
         .multilineTextAlignment(.center)
         .padding(.horizontal, DS.Spacing.xxl)
         .padding(.bottom, DS.Spacing.m)
-        .background(DS.Palette.paper)
+        .paperBackground()
     }
 
     /// Back to the feed if new photos turned up, or "later" ones are due again.

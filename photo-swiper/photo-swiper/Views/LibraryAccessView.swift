@@ -23,12 +23,12 @@ struct LibraryAccessView: View {
                 .padding(.top, DS.Spacing.xs)
             Spacer()
             OpenSettingsButton("Open Settings")
-            .buttonStyle(.pill(.ink))
+                .buttonStyle(.pill(.ink))
         }
         .multilineTextAlignment(.center)
         .padding(.horizontal, DS.Spacing.xxl)
         .padding(.bottom, DS.Spacing.m)
-        .background(DS.Palette.paper)
+        .paperBackground()
         .onChange(of: scenePhase) { _, phase in
             // Pick up a change made in Settings.
             if phase == .active { Task { await vm.start() } }

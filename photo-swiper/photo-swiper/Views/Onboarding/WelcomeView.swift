@@ -83,5 +83,5 @@ private struct AssuranceRow: View {
 
 #Preview {
     WelcomeView(onContinue: {})
-        .background(DS.Palette.paper)
+        .paperBackground()
 }

@@ -61,7 +61,8 @@ extension View {
                 .padding(.horizontal, DS.Spacing.xl)
                 .padding(.top, DS.Spacing.s)
                 .padding(.bottom, DS.Spacing.m)
-                .background(DS.Palette.paper)
+                // The same paper, lined up with the screen's, so the pinned footer has no edge of its own.
+                .background { PaperBackground(alignment: .bottom) }
                 .overlay(alignment: .top) {
                     // Softens the edge where scrolled content meets the pinned button.
                     LinearGradient(colors: [DS.Palette.paper.opacity(0), DS.Palette.paper], startPoint: .top, endPoint: .bottom)

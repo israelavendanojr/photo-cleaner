@@ -86,5 +86,5 @@ struct Chip: View {
             .background(DS.Palette.ink.opacity(0.6))
     }
     .padding()
-    .background(DS.Palette.paper)
+    .paperBackground()
 }

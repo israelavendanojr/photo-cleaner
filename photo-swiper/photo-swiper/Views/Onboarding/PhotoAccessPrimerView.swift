@@ -217,34 +217,34 @@ private struct CheckmarkShape: Shape {
 #if DEBUG
 #Preview("Idle") {
     PhotoAccessPrimerView(progress: .idle, onContinue: {})
-        .background(DS.Palette.paper)
+        .paperBackground()
 }
 
 #Preview("Preparing") {
     PhotoAccessPrimerView(progress: .preparing, onContinue: {})
-        .background(DS.Palette.paper)
+        .paperBackground()
 }
 
 #Preview("Granted, revisited") {
     PhotoAccessPrimerView(progress: .granted, onContinue: {})
-        .background(DS.Palette.paper)
+        .paperBackground()
 }
 
 #Preview("Idle, dark") {
     PhotoAccessPrimerView(progress: .idle, onContinue: {})
-        .background(DS.Palette.paper)
+        .paperBackground()
         .preferredColorScheme(.dark)
 }
 
 #Preview("Preparing, dark") {
     PhotoAccessPrimerView(progress: .preparing, onContinue: {})
-        .background(DS.Palette.paper)
+        .paperBackground()
         .preferredColorScheme(.dark)
 }
 
 #Preview("Grid") {
     LockedLibraryGrid(revealed: 3, isChecked: false, checkDrawn: 0)
         .padding(28)
-        .background(DS.Palette.paper)
+        .paperBackground()
 }
 #endif

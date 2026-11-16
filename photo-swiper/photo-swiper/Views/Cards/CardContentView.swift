@@ -38,6 +38,6 @@ struct CardContentView: View {
     CardContentView(card: PreviewSamples.session.cards[12])
         .environment(FeedViewModel.mock())
         .padding(14)
-        .background(DS.Palette.paper)
+        .paperBackground()
 }
 #endif
