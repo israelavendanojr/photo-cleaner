@@ -684,7 +684,7 @@ final class photo_swiperUITests: XCTestCase {
         // Choosing the other plan changes the button and how it says it's billed.
         app.buttons["paywall.plan.monthly"].tap()
         XCTAssertEqual(unlock.label, "Subscribe for $4.99 a month, renews monthly until cancelled")
-        XCTAssertEqual(app.staticTexts["paywall.billingNote"].label, "$4.99 a month until you cancel.")
+        XCTAssertTrue(app.staticTexts["paywall.billingNote"].label.contains("$4.99 per month, renewing automatically"), "The subscription's terms sit under the button")
         app.buttons["paywall.plan.once"].tap()
         XCTAssertEqual(unlock.label, "Unlock for $9.99, one-time purchase")
         sleep(1)

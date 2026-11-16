@@ -53,9 +53,12 @@ final class DebugOverrideEntitlementStore: EntitlementStore {
         }
     }
 
-    var displayPrice: String { base.displayPrice }
-
     var plans: [UnlockPlan] { base.plans }
+
+    /// StoreKit's answer: the override forces the unlock, not a purchase.
+    var activePlan: UnlockPlan.Kind? { base.activePlan }
+
+    func reloadPlans() async { await base.reloadPlans() }
 
     func purchase(_ plan: UnlockPlan.Kind) async -> PurchaseOutcome { await base.purchase(plan) }
 

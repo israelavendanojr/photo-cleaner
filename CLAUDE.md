@@ -64,7 +64,7 @@ Say "Needs human review" in the PR, with one sentence of risk, when a change tou
 ## Don't
 
 - Don't edit `photo-swiper-context/`. It's reference material, and gitignored.
-- Don't change the permanent IDs in `ARCHITECTURE.md` → Names: the bundle ID `com.israelavendanojr.photo-swiper` and the product ID `com.israelavendanojr.photo-swiper.unlock`.
+- Don't change the permanent IDs in `ARCHITECTURE.md` → Names: the bundle ID `com.israelavendanojr.photo-swiper` and the product IDs `com.israelavendanojr.photo-swiper.unlock` and `com.israelavendanojr.photo-swiper.monthly`.
 - Don't change Linear issue statuses, assignees or labels, or create issues, without asking.
 - Don't change `parallelizable = "NO"` on the UI test target in the shared scheme. UI tests must run serially.
 - Don't treat `docs/audit/` as current. It's a dated snapshot.

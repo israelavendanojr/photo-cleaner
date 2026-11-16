@@ -65,15 +65,38 @@ enum UnlockCopy {
     static func billingNote(for plan: UnlockPlan) -> String {
         switch plan.kind {
         case .once: "One-time purchase. No renewals."
-        case .monthly: "\(plan.displayPrice) a month until you cancel."
+        case .monthly: "\(subscriptionName): \(plan.displayPrice) per month, renewing automatically until you cancel in your Apple Account settings."
         }
     }
+
+    /// The subscription's name, as the App Store lists it. App Review wants it beside the price and period.
+    static var subscriptionName: String { "\(AppInfo.name) Monthly" }
+
+    /// Settings, once unlocked: which plan is doing it.
+    static func unlockedTitle(subscribed: Bool) -> String {
+        subscribed ? "Subscribed monthly · thanks for supporting \(AppInfo.name)" : "Unlocked · thanks for supporting \(AppInfo.name)"
+    }
+
+    /// Settings' row for a subscriber. It doesn't say "renews": they may already have cancelled.
+    static let manageSubscriptionDetail = "Change or cancel in your Apple Account."
+
+    /// Settings' row that opens the paywall. It names the one-time price only when the store has given one.
+    static func settingsTitle(plans: [UnlockPlan]) -> String {
+        guard let once = plans.first(where: { $0.kind == .once }) else { return "Unlock \(AppInfo.name)" }
+        return buttonTitle(for: once)
+    }
+
+    /// In place of the plans when the store hasn't listed any.
+    static let plansLoading = "Loading prices…"
+    static let plansUnavailable = "Couldn't load prices from the App Store."
+    static let plansRetry = "Try again"
 
     /// The line under the buttons after a purchase or restore that didn't unlock. Nil while idle,
     /// working, or once it worked (the screen closes itself then).
     static func message(for status: PaywallStatus) -> String? {
         switch status {
-        case .purchaseFailed: "The purchase didn't go through. You weren't charged."
+        // Not "you weren't charged": a purchase can be taken and still fail to unlock here.
+        case .purchaseFailed: "The purchase didn't go through. If you were charged, use Restore."
         case .purchasePending: "Waiting for approval. You'll be unlocked as soon as it's approved."
         case .nothingToRestore: "We couldn't find an earlier purchase to restore."
         case .restoreFailed: "Couldn't reach the App Store. Try again in a moment."

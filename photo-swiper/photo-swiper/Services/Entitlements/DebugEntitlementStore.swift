@@ -13,11 +13,12 @@ final class DebugEntitlementStore: EntitlementStore {
     private static let log = Logger.app(category: "entitlement")
 
     private(set) var isUnlocked: Bool
-    let displayPrice = "$9.99"
+    /// What the last stand-in purchase bought, for this launch only.
+    private(set) var activePlan: UnlockPlan.Kind?
     /// Both plans, with made-up prices, so the paywall can be seen whole on the mock library.
     var plans: [UnlockPlan] {
         #if DEBUG
-        [UnlockPlan(kind: .once, displayPrice: displayPrice), UnlockPlan(kind: .monthly, displayPrice: "$4.99")]
+        [UnlockPlan(kind: .once, displayPrice: "$9.99"), UnlockPlan(kind: .monthly, displayPrice: "$4.99")]
         #else
         []
         #endif
@@ -39,10 +40,13 @@ final class DebugEntitlementStore: EntitlementStore {
         #endif
     }
 
+    func reloadPlans() async {}
+
     func purchase(_ plan: UnlockPlan.Kind) async -> PurchaseOutcome {
         try? await Task.sleep(for: delay)
         #if DEBUG
         grant()
+        activePlan = plan
         return .purchased
         #else
         Self.log.error("Unlock requested from the stand-in store. Not unlocking.")
@@ -66,6 +70,7 @@ final class DebugEntitlementStore: EntitlementStore {
     /// Settings' debug toggle.
     func setUnlocked(_ unlocked: Bool) {
         isUnlocked = unlocked
+        if !unlocked { activePlan = nil }
         defaults.set(unlocked, forKey: DefaultsKey.debugUnlocked)
     }
 

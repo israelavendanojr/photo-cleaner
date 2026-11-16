@@ -16,7 +16,8 @@ The app has had several names. They differ on purpose, and the permanent ones ca
 | App target / Swift module (for `@testable import`) | `photo-swiper` / `photo_swiper` | No: tests, previews and every command name it |
 | Test targets | `photo-swiperTests` (Swift Testing), `photo-swiperUITests` (XCTest) | No |
 | Bundle ID | `com.israelavendanojr.photo-swiper` | **Never.** It's the App Store identity and the on-device data |
-| Unlock product ID | `com.israelavendanojr.photo-swiper.unlock` (`StoreKitEntitlementStore.unlock`) | **Never.** Purchases are tied to it |
+| Unlock product ID | `com.israelavendanojr.photo-swiper.unlock` (`StoreProducts.unlock`), the lifetime non-consumable | **Never.** Purchases are tied to it |
+| Monthly product ID | `com.israelavendanojr.photo-swiper.monthly` (`StoreProducts.monthly`), an auto-renewing subscription in the group "Bristle Unlock" | **Not once it's on sale.** Subscriptions are tied to it |
 | Log subsystem | `com.israelavendanojr.photo-swiper` (`Logger.appSubsystem`) | Yes, but log-stream commands use it |
 | Display name | `Bristle`. Set it only in `AppName.xcconfig` | Yes, in that one place |
 
@@ -40,7 +41,14 @@ FeedViewModel ──protocols──▶ Services
                                └─ GroupingCache  grouping work, kept until FeatureIndex.generation changes
    ProgressStoring        → SwiftDataProgressStore (main context) decisions + saved deck + cleanup history
    EntitlementStore       → StoreKitEntitlementStore (wrapped by DebugOverrideEntitlementStore)
-                               lists the `UnlockPlan`s on sale; the paywall (`PaywallView`) shows those and buys one by kind
+                               lists the `UnlockPlan`s on sale; the paywall (`PaywallView`) shows those and buys one by kind.
+                               Two products, either unlocks: the lifetime unlock, or the monthly subscription while it's
+                               in `Transaction.currentEntitlements`, verified and unrevoked. StoreKit decides whether a
+                               subscription still runs (so a billing grace period keeps it), and the store asks again when
+                               the period ends. Entitlements are read before the products at launch, since that needs no
+                               network. A plan is listed only once its product has loaded, so no price is made up; the
+                               paywall asks again (`reloadPlans`) when it opens. `activePlan` says which plan unlocks,
+                               for Settings' "Manage subscription"
    IndexScheduler → LibraryIndexer → IndexAssetSource (PhotoKitIndexSource) + ImageAnalyzing (VisionImageAnalyzer)
                                    → FeatureIndex (actor, own ModelContext)
 Pure core (no PhotoKit, no UI; unit-tested):
