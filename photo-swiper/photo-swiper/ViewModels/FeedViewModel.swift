@@ -158,7 +158,7 @@ final class FeedViewModel {
     ///   - allowanceStore: Where the free swipes are saved. Nil keeps them in memory, starting full.
     ///   - allowanceTunables: Fixed swipe tunables, used when `freeTier` is nil.
     ///   - freeTier: The live free-tier limits. Nil fixes them at `allowanceTunables` and the standard pile limit.
-    ///   - features: Live feature availability. Nil gives everyone every feature.
+    ///   - features: Live feature access per plan. Nil uses the hardcoded `.standard` baseline.
     ///   - progressLoadFailed: Saved progress couldn't be opened, so `store` is a stand-in. The user is told once.
     ///   - editor: Makes the bin's edited copies. Nil leaves edits waiting in the bin when it's cleared.
     ///   - compression: Live compression settings. Nil fixes them at the standard levels.
@@ -321,11 +321,11 @@ final class FeedViewModel {
     var binBytes: Int64 { pendingBytes + editSavedBytes }
     /// Deletes and edits together.
     var binCount: Int { pendingItems.count + pendingEdits.count }
-    /// What the full-screen video offers: trimming and compressing as the feature toggles allow, at the
-    /// current compression settings.
+    /// What the full-screen video offers: trimming and compressing unless the feature is off for this
+    /// plan, at the current compression settings.
     var videoEditOptions: VideoEditOptions {
-        VideoEditOptions(canTrim: features.availability(.videoTrimmer).allows(isUnlocked: isUnlocked),
-                         canCompress: features.availability(.videoCompression).allows(isUnlocked: isUnlocked),
+        VideoEditOptions(canTrim: features.access(.videoTrimmer, isUnlocked: isUnlocked).isVisible,
+                         canCompress: features.access(.videoCompression, isUnlocked: isUnlocked).isVisible,
                          levels: compression.levels)
     }
     /// The edit waiting for this video, if there is one.
@@ -1407,11 +1407,11 @@ final class FeedViewModel {
         return options
     }
 
-    /// Splits bundles this user doesn't get into single cards. See `FeatureAvailabilityTunables`.
+    /// Splits bundles that are off for this user into single cards. See `FeatureAvailabilityTunables`.
     private func gated(_ session: Session) -> Session {
-        let enabled = features.enabled(isUnlocked: isUnlocked)
+        let visible = features.visible(isUnlocked: isUnlocked)
         var session = session
-        session.cards = session.cards.flatMap { $0.unbundled(unless: enabled) }
+        session.cards = session.cards.flatMap { $0.unbundled(unless: visible) }
         return session
     }
 

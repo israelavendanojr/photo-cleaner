@@ -225,9 +225,9 @@ final class AdminController {
 
     // MARK: Feature availability
 
-    /// Changes who gets one feature. The next page follows it; `adminRebuildDeck()` applies it now.
-    func setFeatureAvailability(_ feature: TierFeature, _ availability: FeatureAvailability) {
-        vm.features.set(feature, availability)
+    /// Changes what one plan gets of a feature. The next page follows it; `adminRebuildDeck()` applies it now.
+    func setFeatureAccess(_ feature: TierFeature, on plan: Plan, _ access: FeatureAccess) {
+        vm.features.set(feature, on: plan, access)
     }
 
     func resetFeatureAvailability() {
