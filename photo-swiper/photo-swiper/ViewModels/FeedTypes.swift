@@ -44,9 +44,11 @@ struct DeleteChip: Equatable {
 struct TrimToast: Equatable {
     let id = UUID()
     let savedBytes: Int64
+    /// A Live Photo's flatten (JUN-79) rather than a video's edit, which the toast names.
+    var isFlatten = false
 }
 
-/// Where clearing the bin is in making the edited copies: video `index` of `count`, `fraction` of the way through it.
+/// Where clearing the bin is in making the edited copies: copy `index` of `count` (a video's or a flattened still), `fraction` of the way through it.
 struct EditProgress: Equatable {
     let index: Int
     let count: Int

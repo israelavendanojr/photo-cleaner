@@ -21,8 +21,11 @@ struct EditedCopy: Equatable, Sendable {
     let bytes: Int64
 }
 
+/// Why an edited copy (a video's, or a Live Photo's still) couldn't be made.
+typealias EditError = VideoEditError
+
 enum VideoEditError: Error, Equatable {
-    /// The original isn't in the library, or couldn't be downloaded from iCloud.
+    /// The original isn't in the library (or isn't the kind the edit is for), or couldn't be downloaded from iCloud.
     case unavailable
     /// Slow-motion and Cinematic videos aren't edited.
     case unsupported

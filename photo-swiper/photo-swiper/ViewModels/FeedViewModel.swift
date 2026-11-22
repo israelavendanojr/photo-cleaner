@@ -126,6 +126,8 @@ final class FeedViewModel {
     private let library: any PhotoLibraryProviding
     /// Makes the bin's edited copies. Nil in tests that don't need one.
     private let editor: (any VideoEditing)?
+    /// Makes the bin's flattened Live Photos' stills. Nil in tests that don't need one.
+    private let photoEditor: (any PhotoEditing)?
     private let builder: any FeedBuilding
     private let store: any ProgressStoring
     private let entitlements: any EntitlementStore
@@ -166,6 +168,7 @@ final class FeedViewModel {
     ///   - features: Live feature access per plan. Nil uses the hardcoded `.standard` baseline.
     ///   - progressLoadFailed: Saved progress couldn't be opened, so `store` is a stand-in. The user is told once.
     ///   - editor: Makes the bin's edited copies. Nil leaves edits waiting in the bin when it's cleared.
+    ///   - photoEditor: Makes the bin's flattened stills. Nil leaves flattens waiting in the bin when it's cleared.
     ///   - compression: Live compression settings. Nil fixes them at the standard levels.
     ///   - topCategories: Live Top Categories limits. Nil fixes them at the standard ones.
     init(
@@ -184,11 +187,13 @@ final class FeedViewModel {
         progressLoadFailed: Bool = false,
         dashboardCache: URL? = nil,
         editor: (any VideoEditing)? = nil,
+        photoEditor: (any PhotoEditing)? = nil,
         compression: CompressionTunables? = nil,
         topCategories: TopCategoriesTunables? = nil,
         now: @escaping () -> Date = Date.init
     ) {
         self.editor = editor
+        self.photoEditor = photoEditor
         self.compression = compression ?? .fixed()
         self.topCategories = topCategories ?? .fixed()
         self.library = library
@@ -227,12 +232,13 @@ final class FeedViewModel {
         features: FeatureAvailabilityTunables? = nil,
         notifier: RefillNotifier? = nil,
         editor: (any VideoEditing)? = nil,
+        photoEditor: (any PhotoEditing)? = nil,
         compression: CompressionTunables? = nil,
         topCategories: TopCategoriesTunables? = nil
     ) {
         self.init(library: library, builder: builder, store: store, entitlements: entitlements, allowanceStore: allowanceStore,
                   allowanceTunables: allowanceTunables, freeTier: freeTier, features: features, notifier: notifier, editor: editor,
-                  compression: compression, topCategories: topCategories)
+                  photoEditor: photoEditor, compression: compression, topCategories: topCategories)
         libraryStats = stats
         apply(session)
         refreshTotals()
@@ -340,7 +346,7 @@ final class FeedViewModel {
         if let isLivePhoto = item.isLivePhoto { return isLivePhoto }
         return await builder.livePhotoIDs().contains(item.id)
     }
-    /// The edit waiting for this video, if there is one.
+    /// The edit waiting for this video or Live Photo, if there is one.
     func pendingEdit(for itemID: LibraryItem.ID) -> PendingEdit? {
         pendingEdits.first { $0.id == itemID }?.edit
     }
@@ -598,17 +604,38 @@ final class FeedViewModel {
         commit(outcome, card: card, direction: direction)
     }
 
-    /// Keeps video card `cardID` and queues `edit` for it in the bin, as a right swipe would keep it.
-    /// It costs a swipe like any keep, and undo takes the edit back with the decision. If that card is
-    /// no longer the current one, or isn't a video, or the edit is empty, nothing happens.
-    /// A trim while the trimmer is locked, or a compression level while compression is locked, does nothing
-    /// (the viewer opens the paywall before it gets here).
+    /// Keeps card `cardID` and queues `edit` for it in the bin, as a right swipe would keep it: a video's
+    /// trim or compression, or a Live Photo's flatten (JUN-79). It costs a swipe like any keep, and undo
+    /// takes the edit back with the decision. If that card is no longer the current one, or the edit doesn't
+    /// fit it (a flatten needs a Live Photo, anything else a video), or the edit is empty, nothing happens.
+    /// An edit using a locked feature does nothing (the viewer opens the paywall before it gets here).
     func decideEdit(_ edit: PendingEdit, cardID: FeedCard.ID) {
-        guard !edit.isEmpty, phase == .feed, let top = currentCard, !isLockedEdit(edit) else { return }
+        // An edit for another card, or one that can't apply to this one, is refused before a swipe is admitted.
+        guard !edit.isEmpty, phase == .feed, let top = currentCard, top.id == cardID, !isLockedEdit(edit),
+              Self.editable(top, by: edit) != nil else { return }
         // Admitting can credit a refill, which reorders the deck, so the card is only read after it.
-        guard top.isAdminMock || admitSwipe(), let card = currentCard(matching: cardID), case .video(let item) = card else { return }
+        guard top.isAdminMock || admitSwipe(), let card = currentCard(matching: cardID),
+              let item = Self.editable(card, by: edit) else { return }
         commit([item.id: .keep], card: card, direction: .right, edits: [item.id: edit])
-        showTrimToast(savedBytes: edit.savedBytes(from: item.bytes))
+        showTrimToast(savedBytes: edit.savedBytes(from: item.bytes), isFlatten: edit.isFlatten)
+    }
+
+    /// The card's item if `edit` can apply to it (`fits`).
+    private static func editable(_ card: FeedCard, by edit: PendingEdit) -> LibraryItem? {
+        switch card {
+        case .video(let item), .photo(let item): fits(edit, item) ? item : nil
+        default: nil
+        }
+    }
+
+    /// Whether `edit` can apply to `item`: a flatten alone (no trim or level) to a photo that may be Live, any
+    /// other edit to a video. A photo saved before `isLivePhoto` existed (nil) may be Live: the viewer offers
+    /// Flatten only once `isLivePhoto(_:)` says so, and the still's maker refuses anything that isn't, so its
+    /// original is never deleted. `requireKnownLive` asks for the flag itself, where nothing has checked.
+    private static func fits(_ edit: PendingEdit, _ item: LibraryItem, requireKnownLive: Bool = false) -> Bool {
+        guard edit.isFlatten else { return item.isVideo }
+        guard !edit.isTrimmed, !edit.isCompressed, !item.isVideo else { return false }
+        return requireKnownLive ? item.isLivePhoto == true : item.isLivePhoto != false
     }
 
     /// Settles batch or similar-shots card `cardID` from a one-by-one review. Items left out
@@ -617,7 +644,11 @@ final class FeedViewModel {
     /// It costs one swipe like any card; out of swipes, or past a free user's pile limit, the review
     /// is kept as a draft and the wall or the pile notice opens.
     /// A locked bundle keeps the review as a draft and decides nothing.
-    func decideIndividually(_ outcome: [LibraryItem.ID: Decision], cardID: FeedCard.ID) {
+    /// `edits` are flattens made in the review (JUN-79). Each applies only to an item of that card kept in
+    /// `outcome`, and not while flattening is locked; any other is dropped. When the review is kept as a draft
+    /// instead (out of swipes, a full pile), the view holds on to its flattens; the draft saves decisions only.
+    func decideIndividually(_ outcome: [LibraryItem.ID: Decision], edits: [LibraryItem.ID: PendingEdit] = [:],
+                            cardID: FeedCard.ID) {
         guard phase == .feed, let top = currentCard, completed(outcome, for: top) != nil else { return }
         if isLocked(top) {
             if top.id == cardID { saveDraft(outcome, for: top.id) }
@@ -635,7 +666,12 @@ final class FeedViewModel {
             isPileFullNoticePresented = true
             return
         }
-        commit(complete, card: card, direction: complete.values.contains(.delete) ? .left : .right)
+        let items = Dictionary(uniqueKeysWithValues: card.items.map { ($0.id, $0) })
+        let kept = edits.filter { id, edit in
+            guard complete[id] == .keep, let item = items[id], edit.isFlatten, !isLockedEdit(edit) else { return false }
+            return Self.fits(edit, item)
+        }
+        commit(complete, card: card, direction: complete.values.contains(.delete) ? .left : .right, edits: kept)
     }
 
     /// Decisions from an unfinished one-by-one review of this card.
@@ -682,11 +718,18 @@ final class FeedViewModel {
         keep(items, edits: [:])
     }
 
-    /// Sets, changes or cancels the edit waiting for `item`, from the bin. A video in the deletes moves to
-    /// the edits, kept, as `keep` would keep it. An edit already waiting is replaced, and nil (or an empty
-    /// edit) cancels it: the video stays kept, as it is. Costs no swipe. Anything else is left alone.
+    /// Sets, changes or cancels the edit waiting for `item`, from the bin: a video's trim or level, or a Live
+    /// Photo's flatten (only once the item is known to be Live). An item in the deletes moves to the edits,
+    /// kept, as `keep` would keep it. An edit already waiting is replaced, and nil (or an empty edit) cancels
+    /// it: the item stays kept, as it is. Costs no swipe. Anything else is left alone.
     func setEdit(_ edit: PendingEdit?, for item: LibraryItem) {
-        guard item.isVideo else { return }
+        if let edit, !edit.isEmpty {
+            // A video's trim or level, or a known Live Photo's flatten: nothing upstream has checked it here.
+            guard Self.fits(edit, item, requireKnownLive: true) else { return }
+        } else {
+            // Cancelling works for any edit that's waiting.
+            guard item.isVideo || pendingEdit(for: item.id) != nil else { return }
+        }
         let edit = edit.flatMap { $0.isEmpty ? nil : $0 }
         if pendingItems.contains(where: { $0.id == item.id }) {
             guard let edit else { return }
@@ -760,7 +803,7 @@ final class FeedViewModel {
         if !real.isEmpty || !edited.isEmpty {
             guard let deleted = await delete(real + edited.map(\.item)) else {
                 if !edited.isEmpty, deleteNotice == nil {
-                    deleteNotice = "Your edited videos are saved. The originals stay in the bin until you clear it again."
+                    deleteNotice = "Your \(Self.copiesNoun(edited, plural: true)) are saved. The originals stay in the bin until you clear it again."
                 }
                 refreshEdits()
                 return nil
@@ -799,16 +842,23 @@ final class FeedViewModel {
         return freed
     }
 
-    /// Makes the copy of every pending edit, one video at a time, and returns them by original. Each
-    /// video is exported once, by `editor`. A copy saved by an earlier clear that didn't finish is used as
-    /// it is. Each new copy is remembered with its edit as soon as it's saved (write-through), so it's
-    /// never made twice. Failures are left out and told to the user; their originals stay in the bin.
+    /// Makes the copy of every pending edit, one at a time, and returns them by original: each video
+    /// exported once by `editor`, each flattened Live Photo's still by `photoEditor`. An edit with no editor
+    /// for it waits in the bin. A copy saved by an earlier clear that didn't finish is used as it is. Each
+    /// new copy is remembered with its edit as soon as it's saved (write-through), so it's never made twice.
+    /// Failures are left out and told to the user; their originals stay in the bin.
     private func makeEditedCopies() async -> [LibraryItem.ID: EditedCopy] {
-        let edits = pendingEdits
-        guard let editor, !edits.isEmpty else { return [:] }
+        let edits = pendingEdits.filter { $0.edit.isFlatten ? photoEditor != nil : editor != nil }
+        guard !edits.isEmpty else { return [:] }
         var copies: [LibraryItem.ID: EditedCopy] = [:]
         var failed: [EditedItem] = []
-        let saved = await editor.existingCopies(Set(edits.compactMap(\.edit.copyID)))
+        var saved: Set<LibraryItem.ID> = []
+        if let editor {
+            saved.formUnion(await editor.existingCopies(Set(edits.filter { !$0.edit.isFlatten }.compactMap(\.edit.copyID))))
+        }
+        if let photoEditor {
+            saved.formUnion(await photoEditor.existingCopies(Set(edits.filter(\.edit.isFlatten).compactMap(\.edit.copyID))))
+        }
         for (offset, edited) in edits.enumerated() {
             if let copyID = edited.edit.copyID, saved.contains(copyID) {
                 copies[edited.id] = EditedCopy(id: copyID, bytes: edited.newBytes)
@@ -816,12 +866,19 @@ final class FeedViewModel {
             }
             let index = offset + 1
             editProgress = EditProgress(index: index, count: edits.count, fraction: 0)
+            let progress: @Sendable (Double) -> Void = { fraction in
+                Task { @MainActor [weak self] in
+                    guard let self, editProgress?.index == index else { return }
+                    editProgress?.fraction = fraction
+                }
+            }
             do {
-                let copy = try await editor.makeCopy(of: edited.item, edit: edited.edit, levels: compression.levels) { fraction in
-                    Task { @MainActor [weak self] in
-                        guard let self, editProgress?.index == index else { return }
-                        editProgress?.fraction = fraction
-                    }
+                let copy = if edited.edit.isFlatten, let photoEditor {
+                    try await photoEditor.makeCopy(of: edited.item, edit: edited.edit, progress: progress)
+                } else if let editor {
+                    try await editor.makeCopy(of: edited.item, edit: edited.edit, levels: compression.levels, progress: progress)
+                } else {
+                    throw EditError.unavailable
                 }
                 rememberCopy(copy.id, for: edited.id)
                 copies[edited.id] = copy
@@ -835,11 +892,18 @@ final class FeedViewModel {
         return copies
     }
 
-    /// "Couldn't save the edited video from Mar 3, so it stays as it is in the bin."
+    /// "Couldn't save the edited video from Mar 3, so it stays as it is in the bin." Flattens say "flattened photo".
     private static func copyFailureNotice(_ failed: [EditedItem]) -> String {
         let days = failed.map { Format.day($0.item.date) }
-        if days.count == 1 { return "Couldn't save the edited video from \(days[0]), so it stays as it is in the bin." }
-        return "Couldn't save \(days.count) edited videos (from \(days.joined(separator: ", "))), so they stay as they are in the bin."
+        if days.count == 1 { return "Couldn't save the \(copiesNoun(failed, plural: false)) from \(days[0]), so it stays as it is in the bin." }
+        return "Couldn't save \(days.count) \(copiesNoun(failed, plural: true)) (from \(days.joined(separator: ", "))), so they stay as they are in the bin."
+    }
+
+    /// What the copies are called: "edited video(s)", "flattened photo(s)", or "edited copies" for a mix.
+    private static func copiesNoun(_ edits: [EditedItem], plural: Bool) -> String {
+        if edits.allSatisfy(\.edit.isFlatten) { return plural ? "flattened photos" : "flattened photo" }
+        if !edits.contains(where: \.edit.isFlatten) { return plural ? "edited videos" : "edited video" }
+        return plural ? "edited copies" : "edited copy"
     }
 
     /// Saves `copyID` with the edit for `itemID`, so the copy is used again if this clear doesn't finish.
@@ -859,8 +923,10 @@ final class FeedViewModel {
             guard let copy = copies[original.id] else { return nil }
             let item = original.item
             let image: ImageReference = if case .photoKit = item.image { .photoKit(localIdentifier: copy.id) } else { item.image }
-            let copyItem = LibraryItem(id: copy.id, kind: .video(duration: original.edit.newDuration), date: item.date,
-                                       location: item.location, bytes: copy.bytes, isFavorite: item.isFavorite, image: image)
+            var copyItem = LibraryItem(id: copy.id, kind: original.edit.isFlatten ? .photo : .video(duration: original.edit.newDuration),
+                                       date: item.date, location: item.location, bytes: copy.bytes, isFavorite: item.isFavorite, image: image)
+            // A flattened copy is a plain still.
+            if original.edit.isFlatten { copyItem.isLivePhoto = false }
             return (copy.id, StoredDecision(decision: .keep, decidedAt: decidedAt, sessionNumber: session?.number ?? 0, item: copyItem,
                                             category: saved[original.id]?.category))
         })
@@ -1005,6 +1071,7 @@ final class FeedViewModel {
     private func isLockedEdit(_ edit: PendingEdit) -> Bool {
         (edit.range != nil && featureAccess(.videoTrimmer) == .locked)
             || (edit.compression != nil && featureAccess(.videoCompression) == .locked)
+            || (edit.isFlatten && featureAccess(.livePhotoFlatten) == .locked)
     }
 
     /// Opens the paywall for a locked feature the user tried to use (the filter pill, a Top Categories row).
@@ -1643,8 +1710,8 @@ final class FeedViewModel {
         }
     }
 
-    private func showTrimToast(savedBytes: Int64) {
-        let toast = TrimToast(savedBytes: savedBytes)
+    private func showTrimToast(savedBytes: Int64, isFlatten: Bool = false) {
+        let toast = TrimToast(savedBytes: savedBytes, isFlatten: isFlatten)
         trimToast = toast
         trimToastTask?.cancel()
         trimToastTask = Task { [weak self] in
