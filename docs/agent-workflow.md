@@ -74,3 +74,14 @@ cd ../photo-cleaner-jun-NN && claude
 - Each worktree builds into its own `build/DerivedData`, so builds don't collide.
 - **Simulators do collide.** Two test runs on one simulator crash each other's test host. Give each other worktree its own device, e.g. `DEST='platform=iOS Simulator,name=iPhone 16 Pro Max' make test-unit` (the default is the first available iPhone). Run UI tests in one worktree at a time.
 - When a branch is merged, run `git worktree remove ../photo-cleaner-jun-NN`, then `git worktree prune` to drop entries for folders that are already gone.
+
+## Stacked PRs
+
+The repo only allows squash merges. Squashing a PR in a stack turns its commits into one new commit on `main`, so the next PR still carries the originals and conflicts with `main`. After each merge, rebase the rest of the stack onto `main`:
+
+```sh
+scripts/restack.sh 54 --dry-run   # 54 is the PR just merged; shows what would move
+scripts/restack.sh 54
+```
+
+The script rebases every open PR stacked above the merged one, in a temporary worktree, and checks that each PR's own diff is unchanged. Only then does it force-push the branches, all at once and with a lease, and point the first PR at `main`. It stops without pushing on a conflict or a changed diff, and only touches `jun-NN` branches. Run it yourself: agents don't force-push (CLAUDE.md → Git). Afterwards, update a stale local branch with `git reset --keep origin/<branch>`.
