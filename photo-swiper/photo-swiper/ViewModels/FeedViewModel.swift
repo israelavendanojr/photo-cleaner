@@ -300,12 +300,6 @@ final class FeedViewModel {
     /// The deck ran out ahead of the next page; the deck shows "Finding more…" meanwhile.
     var isFindingMore: Bool { phase == .feed && currentCard == nil }
 
-    /// "Still scanning" percentage, shown only early in the first deck.
-    var scanningPercent: Int? {
-        guard let start = session?.scanPercentAtStart, index < 10 else { return nil }
-        return min(start + index * 4, 99)
-    }
-
     var canUndo: Bool { !history.isEmpty && phase == .feed }
 
     var pendingItems: [LibraryItem] {
@@ -909,20 +903,25 @@ final class FeedViewModel {
     /// Shows only what `focus` picks in the feed (one kind of clutter, all videos, Live Photos, or what was
     /// saved for later), or everything again with nil, and asks for the Feed tab.
     ///
-    /// The current card never changes, whatever its kind: the user may be partway through it, and a decision
-    /// must land on the card they acted on. Only the cards after it that don't fit are dropped, and a page
-    /// being built without the focus is thrown away. New pages bring the rest. Nothing is decided.
+    /// The current card and the ones after it that don't fit are dropped (JUN-78), so the first card that
+    /// fits is on top; a current card that fits stays. Clearing the focus (nil) never changes the current
+    /// card. Cards before it, which undo reaches, are untouched, and nothing is decided: a dropped card comes
+    /// back in a later page, and a decision still naming it is refused (`currentCard(matching:)`). A page
+    /// being built without the focus is thrown away. With nothing left that fits, the next page loads.
     func focusFeed(on focus: FocusTarget?) {
         defer { showFeed() }
         guard focus != feedFocus else { return }
         feedFocus = focus
         dealtWhileFocused = Set(session?.items.map(\.id) ?? [])
-        if let focus, var current = session, current.cards.count > index + 1 {
+        if let focus, var current = session, current.cards.count > index {
             let only = focus == .savedForLater ? store.laterIDs() : nil
-            current.cards = Array(current.cards.prefix(index + 1))
-                + current.cards.dropFirst(index + 1).filter { $0.matches(focus, only: only) }
+            let top = currentCard?.id
+            current.cards = Array(current.cards.prefix(index))
+                + current.cards.dropFirst(index).filter { $0.matches(focus, only: only) }
             session = current
-            // Partial reviews of dropped cards go with them. Undo only reaches cards up to the current one.
+            // An undone card that was just dropped mustn't slide back in like an undo if a page brings it.
+            if currentCard?.id != top { returningCard = nil }
+            // Partial reviews of dropped cards go with them. Undo only reaches the cards before the current one.
             let kept = Set(current.cards.map(\.id))
             drafts = drafts.filter { kept.contains($0.key) }
             marks = marks.filter { kept.contains($0.key) }

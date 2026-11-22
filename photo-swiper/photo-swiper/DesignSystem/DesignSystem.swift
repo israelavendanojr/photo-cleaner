@@ -109,8 +109,6 @@ enum DS {
         static let action: CGFloat = 68
         static let minorAction: CGFloat = 52
         static let ring: CGFloat = 1.5
-        /// A 6pt dot before a label: a card's flag, the scanning note.
-        static let dot: CGFloat = 6
     }
 
     /// The tick motif (`BristleTicks`): upright strokes on a fixed pitch.

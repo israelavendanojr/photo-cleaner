@@ -5,17 +5,37 @@ struct FeedView: View {
     @Environment(FeedViewModel.self) private var vm
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var onOpenPile: () -> Void = {}
+    /// The filter's menu is open: it sits over the deck, swipes are off, and a tap outside closes it.
+    @State private var isFilterOpen = false
+    /// Where the deck starts, so the menu opens just under the top bar.
+    @State private var topBarHeight: CGFloat = 0
 
     var body: some View {
-        VStack(spacing: 0) {
-            FeedTopBar(onUndo: {
-                withAnimation(DS.Motion.calm) { vm.undo() }
-            }, onOpenPile: onOpenPile)
-                .padding(.horizontal, DS.Spacing.l)
-                .padding(.top, DS.Spacing.xxs)
-                .padding(.bottom, DS.Spacing.l)
-            CardStackView()
-                .overlay(alignment: .top) { trimToast }
+        ZStack(alignment: .topLeading) {
+            VStack(spacing: 0) {
+                FeedTopBar(onUndo: {
+                    withAnimation(DS.Motion.calm) { vm.undo() }
+                }, onOpenPile: onOpenPile, isFilterOpen: $isFilterOpen)
+                    .padding(.horizontal, DS.Spacing.l)
+                    .padding(.top, DS.Spacing.xxs)
+                    .padding(.bottom, DS.Spacing.l)
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { topBarHeight = $0 }
+                CardStackView()
+                    .overlay(alignment: .top) { trimToast }
+                    .allowsHitTesting(!isFilterOpen)
+                    .accessibilityHidden(isFilterOpen)
+            }
+            if isFilterOpen {
+                Color.clear
+                    .contentShape(Rectangle())
+                    .onTapGesture { withAnimation(DS.Motion.calm) { isFilterOpen = false } }
+                    .accessibilityHidden(true)
+                FeedFilterMenu(isOpen: $isFilterOpen)
+                    .padding(.horizontal, DS.Spacing.l)
+                    .padding(.top, max(0, topBarHeight - DS.Spacing.s))
+                    .padding(.bottom, DS.Spacing.l)
+                    .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.95, anchor: .topLeading)))
+            }
         }
         .animation(DS.Motion.calm, value: vm.trimToast)
         // Free users clear the pile to go on; the unlock is offered after the delete instead.

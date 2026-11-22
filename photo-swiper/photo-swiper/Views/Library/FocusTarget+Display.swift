@@ -17,20 +17,6 @@ extension FocusTarget {
         }
     }
 
-    /// "Only large videos", the feed's focus chip.
-    var focusTitle: String {
-        switch self {
-        case .category(.video): "Only large videos"
-        case .category(let category): category.focusTitle
-        case .allVideos: "Only videos"
-        case .livePhotos: "Only Live Photos"
-        case .accidental: "Only accidental shots"
-        case .blurry: "Only blurry photos"
-        case .documents: "Only documents"
-        case .savedForLater: "Saved for later"
-        }
-    }
-
     /// "large videos", inside a sentence. Live Photos keeps its capitals.
     var phrase: String {
         switch self {
