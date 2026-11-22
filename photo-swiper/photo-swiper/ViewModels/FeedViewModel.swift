@@ -333,6 +333,13 @@ final class FeedViewModel {
                                 trimLocked: trim == .locked, compressLocked: compress == .locked,
                                 levels: compression.levels)
     }
+    /// Whether the full-screen viewer can play `item`'s motion. Items saved before `LibraryItem.isLivePhoto`
+    /// existed ask the builder, which knows every Live Photo in the library.
+    func isLivePhoto(_ item: LibraryItem) async -> Bool {
+        guard !item.isVideo else { return false }
+        if let isLivePhoto = item.isLivePhoto { return isLivePhoto }
+        return await builder.livePhotoIDs().contains(item.id)
+    }
     /// The edit waiting for this video, if there is one.
     func pendingEdit(for itemID: LibraryItem.ID) -> PendingEdit? {
         pendingEdits.first { $0.id == itemID }?.edit

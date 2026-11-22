@@ -101,7 +101,7 @@ struct VideoPreviewView: View {
             if playback.isBoosted {
                 Chip(text: "2x", systemImage: "forward.fill", style: .frosted)
                     // Below the top bar, which may or may not be showing.
-                    .padding(.top, 76)
+                    .padding(.top, DS.Preview.pillTop)
                     .allowsHitTesting(false)
                     .transition(reduceMotion ? .opacity : .scale(scale: 0.8).combined(with: .opacity))
                     .accessibilityLabel("Playing at 2x speed")
@@ -112,7 +112,7 @@ struct VideoPreviewView: View {
             if isChoosingLevel, let level = previewer.level {
                 previewLabel(level)
                     // Below the top bar, like the 2x pill.
-                    .padding(.top, 76)
+                    .padding(.top, DS.Preview.pillTop)
                     .allowsHitTesting(false)
                     .transition(.opacity)
             }

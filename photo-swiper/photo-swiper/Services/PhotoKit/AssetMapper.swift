@@ -3,8 +3,9 @@ import Photos
 
 /// `PHAsset` → `LibraryItem` and `AssetFeatures`. Review flags come from `ImageFlags`.
 enum AssetMapper {
-    /// Only the identifier is needed of the asset itself; everything else comes from `features`.
-    static func item(id: LibraryItem.ID, features: AssetFeatures, location: String?) -> LibraryItem {
+    /// Only the identifier is needed of the asset itself; everything else comes from `features`, except
+    /// `isLivePhoto`, which the index doesn't record (the caller reads the subtype). A video is never Live.
+    static func item(id: LibraryItem.ID, features: AssetFeatures, location: String?, isLivePhoto: Bool = false) -> LibraryItem {
         LibraryItem(
             id: id,
             kind: features.isVideo ? .video(duration: features.duration) : .photo,
@@ -14,7 +15,8 @@ enum AssetMapper {
             flags: (features.isScreenshot ? [.screenshot] : []) + ImageFlags.classify(features),
             isFavorite: features.isFavorite,
             image: .photoKit(localIdentifier: id),
-            features: features
+            features: features,
+            isLivePhoto: isLivePhoto && !features.isVideo
         )
     }
 

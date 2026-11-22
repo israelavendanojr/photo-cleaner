@@ -84,6 +84,11 @@ actor PhotoKitFeedBuilder: FeedBuilding {
                                 later: later.subtracting(removed))
     }
 
+    /// For items saved before they carried `isLivePhoto`: the dashboard's cached set, fetched if there isn't one yet.
+    func livePhotoIDs() async -> Set<LibraryItem.ID> {
+        livePhotos?.ids ?? livePhotoIDs(at: indexed?.generation ?? 0)
+    }
+
     /// Live Photo IDs, fetched again only when the index has changed: a new Live Photo isn't counted
     /// until it's indexed anyway, and the fetch walks every Live Photo in the library.
     private func livePhotoIDs(at generation: Int) -> Set<LibraryItem.ID> {
@@ -118,13 +123,14 @@ actor PhotoKitFeedBuilder: FeedBuilding {
 
         // Chosen items deleted meanwhile are left out.
         let present = catalog.locations(for: slots.flatMap(\.ids))
+        let live = catalog.livePhotoIDs(among: Array(present.keys))
         let locations = present.compactMapValues { $0 }
         let placing = signposts.beginInterval("places")
         let names = await places.names(for: locations, within: options.placeBudget)
         signposts.endInterval("places", placing)
         let item = { (id: LibraryItem.ID) -> LibraryItem? in
             guard present.index(forKey: id) != nil, let features = pool.features[id] else { return nil }
-            return AssetMapper.item(id: id, features: features, location: names[id])
+            return AssetMapper.item(id: id, features: features, location: names[id], isLivePhoto: live.contains(id))
         }
 
         let cards: [FeedCard] = slots.compactMap { slot in

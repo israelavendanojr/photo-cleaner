@@ -14,10 +14,13 @@ protocol AssetCatalog: Sendable {
     func locations(for ids: [LibraryItem.ID]) -> [LibraryItem.ID: CLLocation?]
     /// Live Photos in the library, for the dashboard's breakdown. The index doesn't record them.
     func livePhotoIDs() -> Set<LibraryItem.ID>
+    /// Which of `ids` are Live Photos, for marking a page's cards. Cheap: only those assets are fetched.
+    func livePhotoIDs(among ids: [LibraryItem.ID]) -> Set<LibraryItem.ID>
 }
 
 extension AssetCatalog {
     func livePhotoIDs() -> Set<LibraryItem.ID> { [] }
+    func livePhotoIDs(among ids: [LibraryItem.ID]) -> Set<LibraryItem.ID> { livePhotoIDs().intersection(ids) }
 }
 
 /// The user's library through PhotoKit.
@@ -38,6 +41,10 @@ struct PhotoKitAssetCatalog: AssetCatalog {
 
     func locations(for ids: [LibraryItem.ID]) -> [LibraryItem.ID: CLLocation?] {
         PHAsset.byID(ids).mapValues(\.location)
+    }
+
+    func livePhotoIDs(among ids: [LibraryItem.ID]) -> Set<LibraryItem.ID> {
+        Set(PHAsset.byID(ids).filter { $0.value.mediaType == .image && $0.value.mediaSubtypes.contains(.photoLive) }.keys)
     }
 
     /// One fetch on the subtype, so no resources or images are loaded.

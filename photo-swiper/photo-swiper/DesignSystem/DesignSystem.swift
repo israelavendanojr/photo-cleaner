@@ -201,6 +201,13 @@ enum DS {
         static let playheadWidth: CGFloat = 3
     }
 
+    /// The full-screen photo and video viewers.
+    enum Preview {
+        /// How far down a status pill sits (the video's 2x, a compression preview, a Live Photo loading), so it
+        /// clears the top bar whether or not that's showing.
+        static let pillTop: CGFloat = 76
+    }
+
     /// A frosted popup over the full-screen video (`CompressionPopup`): narrow enough to read as a popup on
     /// the largest phones, with the video showing around it.
     enum Popup {

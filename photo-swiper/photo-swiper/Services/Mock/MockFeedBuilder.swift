@@ -70,6 +70,8 @@ enum MockImages {
     ]
     static let pocket = "photo-pocket"
     static let receipt = "photo-receipt"
+    /// The still of the bundled Live Photo pair (`mock-live.heic`, `mock-live.mov`).
+    static let live = "photo-dusk"
     static let screenshots = ["shot-light", "shot-dark", "shot-cream", "shot-sand", "shot-lavender"]
     static let videos = ["video-waves", "video-party"]
     /// Similar sets: each has variants 1 to `similarVariants`, e.g. "similar-a-3".
@@ -108,6 +110,7 @@ private struct Factory {
         case 15: .similar(similar(cardIndex: index, image: "similar-b", reason: "Best exposure"))
         case 8: .batch(screenshots(cardIndex: index))
         case 13: .duplicates(duplicates(cardIndex: index, image: "photo-coast"))
+        case 0: .photo(livePhoto())
         default: .photo(photo())
         }
     }
@@ -138,6 +141,16 @@ private struct Factory {
             isFavorite: isFavorite,
             image: .bundled(image)
         )
+    }
+
+    /// The page's first card: a Live Photo whose still and motion are the bundled pair (`MockLivePhoto`).
+    /// Drawn like any photo, so the rest of the deck doesn't shift.
+    private mutating func livePhoto() -> LibraryItem {
+        let drawn = photo()
+        var item = LibraryItem(id: drawn.id, kind: .photo, date: drawn.date, location: drawn.location, bytes: drawn.bytes,
+                               flags: drawn.flags, isFavorite: drawn.isFavorite, image: .bundled(MockImages.live))
+        item.isLivePhoto = true
+        return item
     }
 
     private mutating func video(bytes: Int64, duration: TimeInterval, image: String, location: String) -> LibraryItem {

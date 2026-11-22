@@ -33,6 +33,9 @@ struct LibraryItem: Identifiable, Hashable, Sendable, Codable {
     let image: ImageReference
     /// What the ranker saw when it picked this item. Nil for mock items and ones saved before ranking existed.
     var features: AssetFeatures?
+    /// A Live Photo: a still with a short motion clip, which the full-screen viewer plays on a press and hold.
+    /// Nil for items saved before this was recorded; ask `FeedViewModel.isLivePhoto` rather than reading it.
+    var isLivePhoto: Bool?
 
     var isVideo: Bool {
         if case .video = kind { true } else { false }
@@ -63,6 +66,7 @@ extension LibraryItem {
         isFavorite = try container.decode(Bool.self, forKey: .isFavorite)
         image = try container.decode(ImageReference.self, forKey: .image)
         features = try container.decodeIfPresent(AssetFeatures.self, forKey: .features)
+        isLivePhoto = try container.decodeIfPresent(Bool.self, forKey: .isLivePhoto)
     }
 }
 
