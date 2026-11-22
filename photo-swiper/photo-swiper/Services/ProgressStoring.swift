@@ -84,8 +84,8 @@ struct StoredDecision: Equatable, Sendable {
     var settlement: Settlement?
     /// What the item was decided as, from its card. Nil in decisions saved before categories existed.
     var category: CleanupCategory?
-    /// A video kept on the way to being trimmed or compressed. Only a keep carries one: any other decision
-    /// drops it, so a video binned after it was edited is deleted, not edited.
+    /// A video kept on the way to being trimmed or compressed, or a Live Photo on its way to a still. Only a keep
+    /// carries one: any other decision drops it, so an item binned after it was edited is deleted, not edited.
     var edit: PendingEdit?
 
     /// Keep and delete are final; "later" sits out for `laterCooldown`.
@@ -96,8 +96,8 @@ struct StoredDecision: Equatable, Sendable {
     var isPending: Bool { decision == .delete && settlement == nil }
     /// In the bin's Edits section.
     var isPendingEdit: Bool { savedEdit != nil && settlement == nil }
-    /// The edit as the stores save it: only a keep carries one, and one with neither a trim nor a
-    /// compression level is no edit at all.
+    /// The edit as the stores save it: only a keep carries one, and one with no trim, compression level or
+    /// flatten is no edit at all.
     var savedEdit: PendingEdit? {
         guard decision == .keep, let edit, !edit.isEmpty else { return nil }
         return edit

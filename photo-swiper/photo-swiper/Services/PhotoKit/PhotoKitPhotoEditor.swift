@@ -39,7 +39,8 @@ struct PhotoKitPhotoEditor: PhotoEditing {
         guard bytes > 0 else { throw EditError.unavailable }
 
         let copyID = try await LibraryCopy.save(url, as: .photo, uniformTypeIdentifier: still.uniformTypeIdentifier, like: id)
-        guard !PHAsset.byID([copyID]).isEmpty else { throw EditError.saveFailed }
+        // Checked, and a still: never a Live Photo again.
+        guard let copy = PHAsset.byID([copyID])[copyID], !copy.mediaSubtypes.contains(.photoLive) else { throw EditError.saveFailed }
         progress(1)
         return EditedCopy(id: copyID, bytes: bytes)
     }

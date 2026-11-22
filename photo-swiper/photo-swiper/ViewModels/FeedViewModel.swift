@@ -346,7 +346,7 @@ final class FeedViewModel {
         if let isLivePhoto = item.isLivePhoto { return isLivePhoto }
         return await builder.livePhotoIDs().contains(item.id)
     }
-    /// The edit waiting for this video, if there is one.
+    /// The edit waiting for this video or Live Photo, if there is one.
     func pendingEdit(for itemID: LibraryItem.ID) -> PendingEdit? {
         pendingEdits.first { $0.id == itemID }?.edit
     }
@@ -610,8 +610,8 @@ final class FeedViewModel {
     /// fit it (a flatten needs a Live Photo, anything else a video), or the edit is empty, nothing happens.
     /// An edit using a locked feature does nothing (the viewer opens the paywall before it gets here).
     func decideEdit(_ edit: PendingEdit, cardID: FeedCard.ID) {
-        // An edit that can't apply to the card on top is refused before a swipe is admitted.
-        guard !edit.isEmpty, phase == .feed, let top = currentCard, !isLockedEdit(edit),
+        // An edit for another card, or one that can't apply to this one, is refused before a swipe is admitted.
+        guard !edit.isEmpty, phase == .feed, let top = currentCard, top.id == cardID, !isLockedEdit(edit),
               Self.editable(top, by: edit) != nil else { return }
         // Admitting can credit a refill, which reorders the deck, so the card is only read after it.
         guard top.isAdminMock || admitSwipe(), let card = currentCard(matching: cardID),
@@ -620,20 +620,22 @@ final class FeedViewModel {
         showTrimToast(savedBytes: edit.savedBytes(from: item.bytes), isFlatten: edit.isFlatten)
     }
 
-    /// The card's item if `edit` can apply to it: a flatten to a Live Photo card (or one saved before
-    /// the flag, nil), any other edit to a video card.
+    /// The card's item if `edit` can apply to it (`fits`).
     private static func editable(_ card: FeedCard, by edit: PendingEdit) -> LibraryItem? {
         switch card {
-        case .video(let item): edit.isFlatten ? nil : item
-        case .photo(let item): edit.isFlatten && Self.canFlatten(item) ? item : nil
+        case .video(let item), .photo(let item): fits(edit, item) ? item : nil
         default: nil
         }
     }
 
-    /// A photo that may be a Live Photo. Items saved before `isLivePhoto` existed count; the still's maker
-    /// refuses anything that isn't, so its original is never deleted.
-    private static func canFlatten(_ item: LibraryItem) -> Bool {
-        !item.isVideo && item.isLivePhoto != false
+    /// Whether `edit` can apply to `item`: a flatten alone (no trim or level) to a photo that may be Live, any
+    /// other edit to a video. A photo saved before `isLivePhoto` existed (nil) may be Live: the viewer offers
+    /// Flatten only once `isLivePhoto(_:)` says so, and the still's maker refuses anything that isn't, so its
+    /// original is never deleted. `requireKnownLive` asks for the flag itself, where nothing has checked.
+    private static func fits(_ edit: PendingEdit, _ item: LibraryItem, requireKnownLive: Bool = false) -> Bool {
+        guard edit.isFlatten else { return item.isVideo }
+        guard !edit.isTrimmed, !edit.isCompressed, !item.isVideo else { return false }
+        return requireKnownLive ? item.isLivePhoto == true : item.isLivePhoto != false
     }
 
     /// Settles batch or similar-shots card `cardID` from a one-by-one review. Items left out
@@ -643,7 +645,8 @@ final class FeedViewModel {
     /// is kept as a draft and the wall or the pile notice opens.
     /// A locked bundle keeps the review as a draft and decides nothing.
     /// `edits` are flattens made in the review (JUN-79). Each applies only to an item of that card kept in
-    /// `outcome`, and not while flattening is locked; any other is dropped.
+    /// `outcome`, and not while flattening is locked; any other is dropped. When the review is kept as a draft
+    /// instead (out of swipes, a full pile), the view holds on to its flattens; the draft saves decisions only.
     func decideIndividually(_ outcome: [LibraryItem.ID: Decision], edits: [LibraryItem.ID: PendingEdit] = [:],
                             cardID: FeedCard.ID) {
         guard phase == .feed, let top = currentCard, completed(outcome, for: top) != nil else { return }
@@ -665,8 +668,8 @@ final class FeedViewModel {
         }
         let items = Dictionary(uniqueKeysWithValues: card.items.map { ($0.id, $0) })
         let kept = edits.filter { id, edit in
-            guard complete[id] == .keep, let item = items[id], !edit.isEmpty, edit.isFlatten, !isLockedEdit(edit) else { return false }
-            return Self.canFlatten(item)
+            guard complete[id] == .keep, let item = items[id], edit.isFlatten, !isLockedEdit(edit) else { return false }
+            return Self.fits(edit, item)
         }
         commit(complete, card: card, direction: complete.values.contains(.delete) ? .left : .right, edits: kept)
     }
@@ -715,12 +718,18 @@ final class FeedViewModel {
         keep(items, edits: [:])
     }
 
-    /// Sets, changes or cancels the edit waiting for `item`, from the bin. A video in the deletes moves to
-    /// the edits, kept, as `keep` would keep it. An edit already waiting is replaced, and nil (or an empty
-    /// edit) cancels it: the video stays kept, as it is. Costs no swipe. Anything else is left alone.
+    /// Sets, changes or cancels the edit waiting for `item`, from the bin: a video's trim or level, or a Live
+    /// Photo's flatten (only once the item is known to be Live). An item in the deletes moves to the edits,
+    /// kept, as `keep` would keep it. An edit already waiting is replaced, and nil (or an empty edit) cancels
+    /// it: the item stays kept, as it is. Costs no swipe. Anything else is left alone.
     func setEdit(_ edit: PendingEdit?, for item: LibraryItem) {
-        // A video's trim or level, or a Live Photo's flatten.
-        guard item.isVideo ? edit?.isFlatten != true : (edit?.isFlatten ?? true) && Self.canFlatten(item) else { return }
+        if let edit, !edit.isEmpty {
+            // A video's trim or level, or a known Live Photo's flatten: nothing upstream has checked it here.
+            guard Self.fits(edit, item, requireKnownLive: true) else { return }
+        } else {
+            // Cancelling works for any edit that's waiting.
+            guard item.isVideo || pendingEdit(for: item.id) != nil else { return }
+        }
         let edit = edit.flatMap { $0.isEmpty ? nil : $0 }
         if pendingItems.contains(where: { $0.id == item.id }) {
             guard let edit else { return }

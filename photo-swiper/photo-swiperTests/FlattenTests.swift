@@ -85,7 +85,7 @@ struct FlattenTests {
         let deletes: () -> [[LibraryItem.ID]]
     }
 
-    private func started(_ cards: [FeedCard], locked: [TierFeature] = []) async -> Setup {
+    private func started(_ cards: [FeedCard], locked: [TierFeature] = [], withPhotoEditor: Bool = true) async -> Setup {
         let library = FakeLibrary()
         var requests: [[LibraryItem.ID]] = []
         library.onDelete = { items in
@@ -100,7 +100,7 @@ struct FlattenTests {
         }))
         let vm = FeedViewModel(library: library, builder: FixedDeckBuilder(cards), store: store,
                                entitlements: TestEntitlements(isUnlocked: false), defaults: freshDefaults(), features: features,
-                               editor: videos, photoEditor: photos, now: { [now] in now })
+                               editor: videos, photoEditor: withPhotoEditor ? photos : nil, now: { [now] in now })
         await vm.start()
         await vm.waitForPage()
         return Setup(vm: vm, store: store, photos: photos, videos: videos, deletes: { requests })
@@ -160,6 +160,53 @@ struct FlattenTests {
         #expect(s.vm.currentCard?.id == video.id)
     }
 
+    @Test func aTrimOnALivePhotoOrAFlattenWithATrimDoesNothing() async throws {
+        let s = await started([live, plain])
+        s.vm.decideEdit(PendingEdit(range: TrimRange(start: 0, end: 1), originalDuration: 3), cardID: live.id)
+        var mixed = flatten
+        mixed.range = TrimRange(start: 0, end: 1)
+        s.vm.decideEdit(mixed, cardID: live.id)
+        #expect(s.vm.decisions.isEmpty)
+        #expect(s.vm.currentCard?.id == live.id)
+    }
+
+    @Test func aPhotoSavedBeforeTheLiveFlagCanBeFlattenedFromTheViewer() async throws {
+        let old = FeedCard.photo(photo("O", live: nil))
+        let s = await started([old, plain])
+        s.vm.decideEdit(flatten, cardID: old.id)
+        #expect(s.vm.pendingEdits.map(\.id) == ["O"], "The viewer has already asked isLivePhoto")
+        s.vm.setEdit(nil, for: photo("O", live: nil))
+        #expect(s.vm.pendingEdits.isEmpty, "And the bin can cancel it")
+    }
+
+    @Test func theBinFlattensOnlyKnownLivePhotos() async throws {
+        let s = await started([live, plain, .photo(photo("O", live: nil))])
+        s.vm.decide(.left, cardID: live.id)
+        s.vm.decide(.left, cardID: plain.id)
+        s.vm.decide(.left, cardID: FeedCard.photo(photo("O", live: nil)).id)
+
+        s.vm.setEdit(flatten, for: photo("P", live: false))
+        s.vm.setEdit(flatten, for: photo("O", live: nil))
+        s.vm.setEdit(PendingEdit(range: TrimRange(start: 0, end: 1), originalDuration: 3), for: photo("L", live: true))
+        #expect(s.vm.pendingEdits.isEmpty, "Not a plain photo, an unknown one, or a video's edit")
+
+        s.vm.setEdit(flatten, for: photo("L", live: true))
+        #expect(s.vm.pendingEdits.map(\.id) == ["L"])
+        #expect(Set(s.vm.pendingItems.map(\.id)) == ["P", "O"], "It moved from the deletes to the flattens")
+    }
+
+    @Test(arguments: ProgressStoreTests.Kind.allCases)
+    func storesSaveAFlattenOnlyWithAKeep(_ kind: ProgressStoreTests.Kind) throws {
+        let store: any ProgressStoring = kind == .inMemory ? InMemoryProgressStore() : try SwiftDataProgressStore.inMemory()
+        let item = photo("L", live: true)
+        store.save([item.id: StoredDecision(decision: .keep, decidedAt: now, sessionNumber: 1, item: item, edit: flatten)])
+        #expect(store.pendingEdits() == [EditedItem(item: item, edit: flatten)])
+
+        store.save([item.id: StoredDecision(decision: .delete, decidedAt: now, sessionNumber: 1, item: item, edit: flatten)])
+        #expect(store.pendingEdits().isEmpty)
+        #expect(store.decisions(for: [item.id])[item.id]?.edit == nil)
+    }
+
     @Test func aFlattenForACardNoLongerOnTopDoesNothing() async throws {
         let s = await started([plain, live])
         s.vm.decideEdit(flatten, cardID: live.id)
@@ -207,9 +254,9 @@ struct FlattenTests {
         let s = await started([similar, plain])
 
         s.vm.decideIndividually(["S1": .keep, "S2": .delete, "S3": .keep],
-                                edits: ["S1": flatten, "S2": flatten, "P": flatten], cardID: similar.id)
+                                edits: ["S1": flatten, "S2": flatten, "S3": flatten, "P": flatten], cardID: similar.id)
 
-        #expect(s.vm.pendingEdits.map(\.id) == ["S1"], "Not a deleted item, nor one outside the card")
+        #expect(s.vm.pendingEdits.map(\.id) == ["S1"], "Not a deleted item, a plain photo, nor one outside the card")
         #expect(s.vm.pendingItems.map(\.id) == ["S2"])
         #expect(s.vm.decisions["P"] == nil)
         #expect(s.vm.currentCard?.id == plain.id)
@@ -247,6 +294,18 @@ struct FlattenTests {
         let videoFreed = 400_000_000 - s.videos.copyBytes
         #expect(freed == Self.liveBytes + flattenFreed + videoFreed, "The photo whole, each original less its copy")
         #expect(s.vm.pendingEdits.isEmpty)
+    }
+
+    @Test func withoutAPhotoEditorFlattensWaitWhileVideoEditsGoThrough() async throws {
+        let s = await started([live, video, plain], withPhotoEditor: false)
+        s.vm.decideEdit(flatten, cardID: live.id)
+        s.vm.decideEdit(PendingEdit(range: TrimRange(start: 0, end: 25), originalDuration: 100), cardID: video.id)
+
+        _ = await s.vm.deleteNow([])
+
+        #expect(s.videos.calls.map(\.id) == ["V"])
+        #expect(s.deletes() == [["V"]], "Never a Live original with no still")
+        #expect(s.vm.pendingEdits.map(\.id) == ["L"])
     }
 
     @Test func aStillThatFailsKeepsItsOriginalInTheBin() async throws {
