@@ -436,6 +436,8 @@
 				ENABLE_PREVIEWS = YES;
 				EXCLUDED_SOURCE_FILE_NAMES = (
 					MockAssets.xcassets,
+					"mock-live.heic",
+					"mock-live.mov",
 					"mock-video.mp4",
 				);
 				GENERATE_INFOPLIST_FILE = YES;

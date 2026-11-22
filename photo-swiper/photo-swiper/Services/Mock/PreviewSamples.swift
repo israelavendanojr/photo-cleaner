@@ -10,7 +10,12 @@ enum PreviewSamples {
     }
 
     static var plainPhoto: LibraryItem {
-        session.items.first { !$0.isVideo && $0.flags.isEmpty }!
+        session.items.first { !$0.isVideo && $0.flags.isEmpty && $0.isLivePhoto != true }!
+    }
+
+    /// The mock deck's Live Photo (its first card).
+    static var livePhoto: LibraryItem {
+        session.items.first { $0.isLivePhoto == true }!
     }
 
     static var video: LibraryItem {

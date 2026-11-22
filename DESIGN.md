@@ -197,6 +197,10 @@ It has no "Not now": Close is the way out. It says nothing about when free swipe
 - **Edit summary**, above the panel once trimmed or compressed: "0:08 · 1.23 GB → 0:05 · ~752 MB" in footnote semibold, "saves ~476 MB" (trim and compression together) in subheadline bold under it, and while the edit differs from what's saved, Reset (frosted capsule) and Save (brick capsule), both 44pt tall.
 - **Leaving** with an unsaved trim or level uses a system `.confirmationDialog`, "Save changes?": Save changes, Discard (destructive), Keep editing (cancel).
 
+### The full-screen photo and Live Photos
+
+`PhotoPreviewView`, forced dark like the video. Its top bar is the round frosted Close, then, for a Live Photo, a frosted `Chip` reading "LIVE" with `livephoto`, and the size, place and date on the right. Pressing and holding a Live Photo plays its motion with sound (`LivePhotoPlayer`) and a light haptic, like the video's 2x; letting go goes back to the still. While the motion is still downloading, "Loading Live Photo" sits where the 2x pill goes (`DS.Preview.pillTop`, shared by every status pill in the viewers), as a frosted `Chip` with a small white spinner. VoiceOver's "Play Live Photo" action plays it once through.
+
 ### The bin's edits and clearing
 
 - **Edits section** in `PendingPileView`, under the photo grid: one `EditRow` per video on `card` at `DS.Radius.tile`, with the thumbnail, then the marks ("Trimmed", "Compressed · Balanced", or both) as `caption` semibold ink labels with their symbols, the change ("1:42 → 0:12 · 380 MB → ~45 MB") in subheadline semibold, and "saves ~X" in brick footnote. Swiping a row left cancels the edit.

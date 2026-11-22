@@ -115,6 +115,22 @@ struct FeedBuilderTests {
         #expect(scan.indexedCount == library.candidates.count)
     }
 
+    /// Cards say which of their photos are Live, singles and bundles alike (JUN-105).
+    @Test func pagesMarkTheirLivePhotos() async {
+        let stills = library.candidates.filter { !$0.features.isVideo }.map(\.id)
+        let live = Set(stills.enumerated().filter { $0.offset.isMultiple(of: 3) }.map(\.element))
+        let catalog = FakeCatalog(candidates: library.candidates, live: live)
+        let session = await builder(FakeIndex(library), catalog: catalog).makeSession(number: 1, options: options())
+        let items = session.items
+        #expect(items.contains { $0.isLivePhoto == true })
+        #expect(session.cards.contains { card in
+            if case .photo = card { false } else if case .video = card { false } else { card.items.contains { $0.isLivePhoto == true } }
+        }, "Photos inside bundles are marked too")
+        for item in items {
+            #expect(item.isLivePhoto == live.contains(item.id), "\(item.id)")
+        }
+    }
+
     @Test func excludedItemsNeverAppear() async {
         let first = await builder(FakeIndex(library)).makeSession(number: 1, options: options())
         let excluded = Set(ids(first))
