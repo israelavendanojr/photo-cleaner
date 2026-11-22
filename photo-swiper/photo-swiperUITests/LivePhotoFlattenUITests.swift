@@ -111,6 +111,44 @@ final class LivePhotoFlattenUITests: XCTestCase {
     }
 
     @MainActor
+    func testADecisionSwipeWithAnotherFramePickedAsksAndDiscardDecidesAsSwiped() throws {
+        let app = launch()
+        let position = topCard(app)
+        openTopCard(app)
+        XCTAssertTrue(app.buttons["photo.flatten"].waitForExistence(timeout: 3))
+        pickEarlyFrame(app)
+        XCTAssertTrue(waitForLabel(app.buttons["photo.flatten"], "Change & Flatten"))
+
+        app.descendants(matching: .any)["photoPreview"].swipeLeft()
+        XCTAssertTrue(app.buttons["Discard"].waitForExistence(timeout: 3), "A decision swipe asks first too")
+        app.buttons["Discard"].tap()
+
+        XCTAssertTrue(waitForTopCard(app, not: position))
+        tapCenter(element(app, containing: "to clear"))
+        XCTAssertTrue(app.descendants(matching: .any)["pendingTile"].waitForExistence(timeout: 3), "Binned, as swiped")
+        XCTAssertFalse(app.descendants(matching: .any)["pile.flattenRow"].exists, "Nothing flattened")
+    }
+
+    @MainActor
+    func testADecisionSwipeWithAnotherFramePickedCanSaveTheFlattenInstead() throws {
+        let app = launch()
+        let position = topCard(app)
+        openTopCard(app)
+        XCTAssertTrue(app.buttons["photo.flatten"].waitForExistence(timeout: 3))
+        pickEarlyFrame(app)
+        XCTAssertTrue(waitForLabel(app.buttons["photo.flatten"], "Change & Flatten"))
+
+        app.descendants(matching: .any)["photoPreview"].swipeLeft()
+        XCTAssertTrue(app.buttons["Save changes"].waitForExistence(timeout: 3))
+        app.buttons["Save changes"].tap()
+
+        XCTAssertTrue(waitForTopCard(app, not: position))
+        tapCenter(element(app, containing: "to clear"))
+        XCTAssertTrue(app.descendants(matching: .any)["pile.flattenRow"].waitForExistence(timeout: 3), "Kept and flattened")
+        XCTAssertFalse(app.descendants(matching: .any)["pendingTile"].exists, "Not binned")
+    }
+
+    @MainActor
     func testChangeAndFlattenQueuesTheChosenFrame() throws {
         let app = launch()
         let position = topCard(app)

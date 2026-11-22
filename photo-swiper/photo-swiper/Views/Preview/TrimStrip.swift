@@ -20,6 +20,9 @@ struct TrimStrip: View {
     var roundsLeading = false
     /// How far VoiceOver's adjustable action moves the playhead.
     var step: TimeInterval = 5
+    /// What VoiceOver calls the stills, and where the playhead is, when not a timeline's "0:01 of 0:03".
+    var label = "Timeline"
+    var value: String?
 
     @State private var isScrubbing = false
     @ScaledMetric(relativeTo: .body) private var height = DS.Trim.stripHeight
@@ -104,8 +107,8 @@ struct TrimStrip: View {
         .contentShape(Rectangle())
         .gesture(seekGesture(width: width))
         .accessibilityElement()
-        .accessibilityLabel("Timeline")
-        .accessibilityValue("\(Format.duration(playback.currentTime)) of \(Format.duration(playback.duration))")
+        .accessibilityLabel(label)
+        .accessibilityValue(value ?? "\(Format.duration(playback.currentTime)) of \(Format.duration(playback.duration))")
         .accessibilityAdjustableAction { direction in
             switch direction {
             case .increment: playback.skip(by: step)

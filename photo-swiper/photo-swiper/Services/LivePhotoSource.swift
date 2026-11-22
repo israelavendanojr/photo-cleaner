@@ -116,10 +116,17 @@ enum LivePhotoSource {
         }
     }
 
-    /// The motion's frame at `time`, small, for the bin's row of a flatten with a chosen key photo.
+    /// The motion's frame at `time`, small, for the bin's row of a flatten with a chosen key photo. Kept for
+    /// the launch, so reopening the bin doesn't fetch the motion again.
     static func frame(for item: LibraryItem, at time: TimeInterval, maxSide: CGFloat) async -> UIImage? {
+        let key = "\(item.id)@\(time)" as NSString
+        if let cached = frames.object(forKey: key) { return cached }
         guard let url = await motionFile(for: item) else { return nil }
         defer { try? FileManager.default.removeItem(at: url) }
-        return await FrameStill.thumbnail(of: url, at: time, maxSide: maxSide).map(UIImage.init(cgImage:))
+        guard let image = await FrameStill.thumbnail(of: url, at: time, maxSide: maxSide).map(UIImage.init(cgImage:)) else { return nil }
+        frames.setObject(image, forKey: key)
+        return image
     }
+
+    private static let frames = NSCache<NSString, UIImage>()
 }

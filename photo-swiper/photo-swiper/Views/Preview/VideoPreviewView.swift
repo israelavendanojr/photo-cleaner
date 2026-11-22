@@ -657,6 +657,8 @@ final class VideoPlayback {
         if let frame = await Self.frameDuration(of: playerItem.asset) {
             frameDuration = frame
         }
+        // Closed meanwhile: `stop()` has run, so nothing would remove the observers.
+        guard !Task.isCancelled else { return }
         observe(playerItem)
         isReady = true
     }

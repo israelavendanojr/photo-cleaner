@@ -434,6 +434,7 @@ private struct EditRow: View {
                 .clipShape(RoundedRectangle(cornerRadius: DS.Radius.thumb, style: .continuous))
                 .accessibilityHidden(true)
                 .task(id: chosenTime) {
+                    chosenFrame = nil
                     guard let chosenTime else { return }
                     chosenFrame = await LivePhotoSource.frame(for: edited.item, at: chosenTime, maxSide: thumbSize * displayScale)
                 }

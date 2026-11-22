@@ -230,17 +230,27 @@ struct PhotoPreviewView: View {
         if offersFlatten { await loadMotion() }
     }
 
-    /// The key photo's time and the motion, for the frame strip. Neither, and there's only Flatten.
+    /// The motion and the key photo's time, for the frame strip. Without either, or with a time outside the
+    /// motion, there's only Flatten. The motion comes first, so an unreachable iCloud stops there.
     private func loadMotion() async {
-        guard let time = await LivePhotoSource.keyFrameTime(for: item), !Task.isCancelled,
-              let url = await LivePhotoSource.motionFile(for: item) else { return }
+        guard let url = await LivePhotoSource.motionFile(for: item) else { return }
         guard !Task.isCancelled else {
             try? FileManager.default.removeItem(at: url)
             return
         }
         motionURL = url
-        photoTime = time
+        guard !Task.isCancelled, let time = await LivePhotoSource.keyFrameTime(for: item), !Task.isCancelled else { return }
         await motion.load(motion: url, at: time)
+        guard (0...motion.duration).contains(time) else { return }
+        photoTime = time
+    }
+
+    /// Where the playhead is, for VoiceOver: "Key photo", or how far before or after it.
+    private var frameValue: String {
+        guard let photoTime, !isOriginalFrame else { return "Key photo" }
+        let offset = motion.currentTime - photoTime
+        let seconds = abs(offset).formatted(.number.precision(.fractionLength(1)))
+        return "\(seconds) seconds \(offset < 0 ? "before" : "after") the key photo"
     }
 
     /// Holding means something only for a Live Photo; otherwise a long press stays an ordinary touch.
@@ -331,7 +341,7 @@ struct PhotoPreviewView: View {
             }
             if showsStrip {
                 TrimStrip(playback: motion, draft: .constant(nil), marker: photoTime, roundsLeading: true,
-                          step: motion.frameDuration * 3)
+                          step: motion.frameDuration * 3, label: "Key photo", value: frameValue)
                     .padding(.top, DS.Spacing.xs)
                     .transition(.opacity)
             }
