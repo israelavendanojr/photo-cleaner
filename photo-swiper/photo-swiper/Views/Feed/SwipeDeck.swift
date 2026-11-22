@@ -29,11 +29,13 @@ struct SwipeDeck: View {
     var onRefused: (SwipeDirection, FeedCard) -> Void = { _, _ in }
     /// Shown in place of the top card while the deck waits on more, e.g. "Finding more…".
     var waitingText: String?
-    /// A trim saved in the full-screen video. The card flies off right, as kept, and this is called in
-    /// place of `onDecide`. Nil offers no trimming.
+    /// An edit saved full screen: a video's trim or compression, or a Live Photo's flatten. The card flies off
+    /// right, as kept, and this is called in place of `onDecide`. Nil offers no editing.
     var onEdit: ((PendingEdit, FeedCard) -> Void)?
     /// What the full-screen video offers for editing.
     var videoEditOptions = VideoEditOptions()
+    /// What the full-screen photo offers a Live Photo (Flatten).
+    var photoEditOptions = PhotoEditOptions()
 
     /// How far the top card is toward committing, 0...1.
     @State private var progress = 0.0
@@ -133,10 +135,15 @@ struct SwipeDeck: View {
             }, options: videoEditOptions)
         }
         .fullScreenCover(item: $previewingPhoto, onDismiss: flyOutPreviewDecision) { item in
-            PhotoPreviewView(item: item, label: previewLabel) { direction in
+            PhotoPreviewView(item: item, label: previewLabel, onDecide: { direction in
                 previewDecision = (direction, item.id, nil)
                 previewingPhoto = nil
-            }
+            }, onEdit: onEdit.map { _ in
+                { edit in
+                    previewDecision = (.right, item.id, edit)
+                    previewingPhoto = nil
+                }
+            }, options: photoEditOptions)
         }
         .onChange(of: returning) { _, returning in
             // Undo can bring back a card that is still flying; it's the top card again.

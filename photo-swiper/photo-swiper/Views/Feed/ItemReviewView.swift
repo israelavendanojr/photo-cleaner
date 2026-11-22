@@ -5,25 +5,31 @@ import SwiftUI
 ///
 /// Decisions go out together through `onFinish` once the last item is swiped.
 /// Closing early keeps them as a draft on the view model, and reopening picks up where it left off.
+/// A Live Photo flattened full screen (JUN-79) counts as kept here, and its flatten goes out with the
+/// decisions; it costs no swipe of its own, and the review's Undo takes it back.
 struct ItemReviewView: View {
     @Environment(FeedViewModel.self) private var vm
     @Environment(\.dismiss) private var dismiss
     let set: ReviewSet
-    let onFinish: ([LibraryItem.ID: Decision]) -> Void
+    let onFinish: ([LibraryItem.ID: Decision], [LibraryItem.ID: PendingEdit]) -> Void
 
     /// The set in the order the deck shows it: drafted items first, so undo can reach them.
     private let items: [LibraryItem]
     @State private var index: Int
     @State private var decisions: [LibraryItem.ID: Decision]
+    /// Flattens, by the item they're for.
+    @State private var edits: [LibraryItem.ID: PendingEdit]
     @State private var request: SwipeDirection?
     @State private var addedBytes: Int64?
     @State private var returning: ReturningCard?
 
-    init(set: ReviewSet, draft: [LibraryItem.ID: Decision] = [:], onFinish: @escaping ([LibraryItem.ID: Decision]) -> Void) {
+    init(set: ReviewSet, draft: [LibraryItem.ID: Decision] = [:], draftEdits: [LibraryItem.ID: PendingEdit] = [:],
+         onFinish: @escaping ([LibraryItem.ID: Decision], [LibraryItem.ID: PendingEdit]) -> Void) {
         self.set = set
         self.onFinish = onFinish
         items = set.visitOrder(draft: draft)
         _decisions = State(initialValue: draft)
+        _edits = State(initialValue: draftEdits)
         _index = State(initialValue: items.firstIndex { draft[$0.id] == nil } ?? items.count)
     }
 
@@ -43,8 +49,12 @@ struct ItemReviewView: View {
                 index: index,
                 returning: returning,
                 label: vm.swipeLabel,
-                onDecide: decide,
-                request: $request
+                onDecide: { decide($0, card: $1) },
+                request: $request,
+                onEdit: { edit, card in decide(.right, card: card, edit: edit) },
+                // Bundles hold photos; a review never edits a video.
+                videoEditOptions: VideoEditOptions(canTrim: false, canCompress: false),
+                photoEditOptions: vm.photoEditOptions
             )
         }
         #if DEBUG
@@ -78,7 +88,8 @@ struct ItemReviewView: View {
         }
     }
 
-    private func decide(_ direction: SwipeDirection, card: FeedCard) {
+    /// `edit` is a flatten from full screen, which keeps the photo.
+    private func decide(_ direction: SwipeDirection, card: FeedCard, edit: PendingEdit? = nil) {
         guard let item = card.items.first else { return }
         let decision: Decision = switch direction {
         case .left: .delete
@@ -87,10 +98,11 @@ struct ItemReviewView: View {
         }
         if decision == .delete { Haptics.delete() }
         decisions[item.id] = decision
+        edits[item.id] = decision == .keep && edit?.isFlatten == true ? edit : nil
         returning = nil
         addedBytes = decision == .delete ? item.bytes : nil
         index += 1
-        if index >= items.count { onFinish(decisions) } else { vm.saveDraft(decisions, for: set.id) }
+        if index >= items.count { onFinish(decisions, edits) } else { vm.saveDraft(decisions, edits: edits, for: set.id) }
     }
 
     private func undo() {
@@ -106,9 +118,10 @@ struct ItemReviewView: View {
             }
             returning = ReturningCard(cardID: FeedCard(item: item).id, direction: direction)
             decisions[item.id] = nil
+            edits[item.id] = nil
             addedBytes = nil
         }
-        vm.saveDraft(decisions, for: set.id)
+        vm.saveDraft(decisions, edits: edits, for: set.id)
     }
 }
 
@@ -130,12 +143,12 @@ private struct BestPickMarker: View {
 }
 
 #Preview("Batch") {
-    ItemReviewView(set: ReviewSet(batch: PreviewSamples.screenshotBatch)) { print($0) }
+    ItemReviewView(set: ReviewSet(batch: PreviewSamples.screenshotBatch)) { _, _ in }
         .environment(FeedViewModel.mock())
 }
 
 #Preview("Similar") {
-    ItemReviewView(set: ReviewSet(group: PreviewSamples.similarGroup, startingAt: PreviewSamples.similarGroup.bestID)) { print($0) }
+    ItemReviewView(set: ReviewSet(group: PreviewSamples.similarGroup, startingAt: PreviewSamples.similarGroup.bestID)) { _, _ in }
         .environment(FeedViewModel.mock())
 }
 #endif

@@ -16,14 +16,17 @@ enum FileSizeReader {
 
     /// For callers that already fetched the asset's resources.
     static func bytes(for asset: PHAsset, resources: [PHAssetResource]) -> Int64 {
-        let total = resources.reduce(Int64(0)) { sum, resource in
-            let size = (resource.value(forKey: "fileSize") as? NSNumber)?.int64Value
-            #if DEBUG
-            if size == nil { MissingKeyLog.once() }
-            #endif
-            return sum + (size ?? 0)
-        }
+        let total = resources.reduce(Int64(0)) { $0 + (bytes(of: $1) ?? 0) }
         return total > 0 ? total : estimate(for: asset)
+    }
+
+    /// One resource's size, e.g. the still a flattened Live Photo keeps. Nil if it can't be read.
+    static func bytes(of resource: PHAssetResource) -> Int64? {
+        let size = (resource.value(forKey: "fileSize") as? NSNumber)?.int64Value
+        #if DEBUG
+        if size == nil { MissingKeyLog.once() }
+        #endif
+        return size
     }
 
     #if DEBUG

@@ -5,8 +5,8 @@ import SwiftUI
 /// waiting, the button clears the bin instead: it saves every edited copy, then deletes the marked
 /// photos and the edited originals in one system prompt, keeping the screen awake while copies are made.
 /// After a delete it says how much was freed, then closes. Videos waiting to be trimmed or compressed are
-/// listed under Edits, with the space each saves; swiping one away cancels the edit and keeps the video
-/// as it is.
+/// listed under Edits, and Live Photos waiting to become stills under Flattens (JUN-79), with the space each
+/// saves; swiping one away cancels it and keeps the item as it is.
 ///
 /// Opens as a sheet from the feed's "to clear" counter, or pushed from the overview's Pending row.
 /// Admin Tools' mock items can be in the pile too; deleting them only drops them, and never reaches the
@@ -63,8 +63,11 @@ struct PendingPileView: View {
                         .foregroundStyle(DS.Palette.secondary)
                         .padding(.top, DS.Spacing.l)
                 }
-                if !vm.pendingEdits.isEmpty {
+                if !vm.pendingVideoEdits.isEmpty {
                     edits
+                }
+                if !vm.pendingFlattens.isEmpty {
+                    flattens
                 }
             }
             .padding(.horizontal, DS.Spacing.l)
@@ -153,13 +156,18 @@ struct PendingPileView: View {
         return "Clear the bin?"
     }
 
-    /// "Saves 2 edited videos, then deletes their originals and 12 photos. This frees about 1.2 GB. …"
+    /// "Saves 2 edited videos and 1 flattened photo, then deletes their originals and 12 photos. This frees
+    /// about 1.2 GB. …"
     private var confirmMessage: String {
         let edits = vm.pendingEdits.count
         guard edits > 0 else { return "This frees \(Format.size(selectedBytes)). They'll stay in Recently Deleted for 30 days." }
-        let videos = "\(edits) edited \(edits == 1 ? "video" : "videos")"
+        let videos = vm.pendingVideoEdits.count, flattens = vm.pendingFlattens.count
+        let copies = [
+            videos > 0 ? "\(videos) edited \(videos == 1 ? "video" : "videos")" : nil,
+            flattens > 0 ? "\(flattens) flattened \(flattens == 1 ? "photo" : "photos")" : nil,
+        ].compactMap { $0 }.joined(separator: " and ")
         let photos = selected.isEmpty ? "" : " and \(selected.count) \(selected.count == 1 ? "photo" : "photos")"
-        return "Saves \(videos), then deletes \(edits == 1 ? "its original" : "their originals")\(photos). "
+        return "Saves \(copies), then deletes \(edits == 1 ? "its original" : "their originals")\(photos). "
             + "This frees about \(Format.size(clearBytes)). Deleted items stay in Recently Deleted for 30 days."
     }
 
@@ -222,13 +230,16 @@ struct PendingPileView: View {
         }
     }
 
-    /// "to clear from 12 photos and 2 edits"
+    /// "to clear from 12 photos, 2 edits and 1 flatten"
     private var summary: String {
         var parts: [String] = []
         if count > 0 || vm.pendingEdits.isEmpty { parts.append("\(count) \(count == 1 ? "photo" : "photos")") }
-        let editCount = vm.pendingEdits.count
+        let editCount = vm.pendingVideoEdits.count
         if editCount > 0 { parts.append("\(editCount) \(editCount == 1 ? "edit" : "edits")") }
-        return "to clear from " + parts.joined(separator: " and ")
+        let flattenCount = vm.pendingFlattens.count
+        if flattenCount > 0 { parts.append("\(flattenCount) \(flattenCount == 1 ? "flatten" : "flattens")") }
+        let last = parts.popLast() ?? ""
+        return "to clear from " + (parts.isEmpty ? last : parts.joined(separator: ", ") + " and " + last)
     }
 
     /// Videos waiting to be trimmed or compressed. Swiping one away cancels its edit.
@@ -238,7 +249,7 @@ struct PendingPileView: View {
                 .font(.headline)
                 .foregroundStyle(DS.Palette.ink)
                 .accessibilityAddTraits(.isHeader)
-            ForEach(vm.pendingEdits) { edited in
+            ForEach(vm.pendingVideoEdits) { edited in
                 EditRow(edited: edited) { cancelEdit(edited) }
                     .transition(reduceMotion ? .opacity : .move(edge: .leading).combined(with: .opacity))
             }
@@ -250,9 +261,29 @@ struct PendingPileView: View {
         .padding(.top, DS.Spacing.xl)
     }
 
+    /// Live Photos waiting to become stills. Swiping one away cancels its flatten and keeps it Live.
+    private var flattens: some View {
+        VStack(alignment: .leading, spacing: DS.Spacing.s) {
+            Text("Flattens")
+                .font(.headline)
+                .foregroundStyle(DS.Palette.ink)
+                .accessibilityAddTraits(.isHeader)
+            ForEach(vm.pendingFlattens) { edited in
+                EditRow(edited: edited) { cancelEdit(edited) }
+                    .transition(reduceMotion ? .opacity : .move(edge: .leading).combined(with: .opacity))
+            }
+            Text("Each Live Photo is replaced by its still when you clear the bin. Swipe one away to keep it Live.")
+                .font(.footnote)
+                .foregroundStyle(DS.Palette.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.top, DS.Spacing.xl)
+    }
+
     private func cancelEdit(_ edited: EditedItem) {
         withAnimation(DS.Motion.calm) { vm.setEdit(nil, for: edited.item) }
-        AccessibilityNotification.Announcement("Edit cancelled. The video stays as it is.").post()
+        let announcement = edited.edit.isFlatten ? "Flatten cancelled. The Live Photo stays as it is." : "Edit cancelled. The video stays as it is."
+        AccessibilityNotification.Announcement(announcement).post()
     }
 
     private var hasDeleteNotice: Binding<Bool> {
@@ -368,7 +399,8 @@ private struct FreedConfirmation: View {
 }
 
 /// A video waiting to be edited: its thumbnail, what's done to it (trimmed, compressed or both), its new
-/// length and size, and the space that saves. Swiping it left past a threshold cancels the edit; VoiceOver
+/// length and size, and the space that saves. Or a Live Photo waiting to be flattened (JUN-79): "Flattened",
+/// its size as a still, and what that saves. Swiping it left past a threshold cancels the edit; VoiceOver
 /// and the context menu offer the same.
 private struct EditRow: View {
     let edited: EditedItem
@@ -397,10 +429,12 @@ private struct EditRow: View {
                     .monospacedDigit()
                     .foregroundStyle(DS.Palette.ink)
                     .fixedSize(horizontal: false, vertical: true)
-                Text("saves ~\(Format.size(edited.savedBytes))")
-                    .font(.footnote.weight(.semibold))
-                    .monospacedDigit()
-                    .foregroundStyle(DS.Palette.brick)
+                if !isUnknownStill {
+                    Text("saves ~\(Format.size(edited.savedBytes))")
+                        .font(.footnote.weight(.semibold))
+                        .monospacedDigit()
+                        .foregroundStyle(DS.Palette.brick)
+                }
             }
             Spacer(minLength: 0)
         }
@@ -429,17 +463,25 @@ private struct EditRow: View {
                 }
         )
         .contextMenu {
-            Button("Cancel edit", systemImage: "xmark", action: onCancel)
+            Button(cancelTitle, systemImage: "xmark", action: onCancel)
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityText)
-        .accessibilityAction(named: "Cancel edit", onCancel)
-        .accessibilityIdentifier("pile.editRow")
+        .accessibilityAction(named: cancelTitle, onCancel)
+        .accessibilityIdentifier(edit.isFlatten ? "pile.flattenRow" : "pile.editRow")
     }
 
-    /// "Trimmed · Compressed · Balanced", each with its symbol.
+    private var cancelTitle: String { edit.isFlatten ? "Cancel flatten" : "Cancel edit" }
+
+    /// A flatten whose still's size couldn't be read: it says nothing about what it saves.
+    private var isUnknownStill: Bool { edit.isFlatten && edit.live?.stillBytes == nil }
+
+    /// "Trimmed · Compressed · Balanced", or "Flattened", each with its symbol.
     private var marks: some View {
         HStack(spacing: DS.Spacing.s) {
+            if edit.isFlatten {
+                Label("Flattened", systemImage: "livephoto.slash")
+            }
             if edit.isTrimmed {
                 Label("Trimmed", systemImage: "scissors")
             }
@@ -453,8 +495,11 @@ private struct EditRow: View {
         .accessibilityIdentifier("pile.editMarks")
     }
 
-    /// "1:42 → 0:12 · 380 MB → ~45 MB", or "1:42 · 380 MB → ~120 MB" when the length doesn't change.
+    /// "1:42 → 0:12 · 380 MB → ~45 MB", or "1:42 · 380 MB → ~120 MB" when the length doesn't change, or
+    /// "Live Photo · 4.1 MB → ~1.7 MB".
     private var change: String {
+        if isUnknownStill { return "Live Photo · \(Format.size(edited.item.bytes)) → still" }
+        if edit.isFlatten { return "Live Photo · \(Format.size(edited.item.bytes)) → ~\(Format.size(edited.newBytes))" }
         let length = edit.isTrimmed
             ? "\(Format.duration(edit.originalDuration)) → \(Format.duration(edit.newDuration))"
             : Format.duration(edit.originalDuration)
@@ -462,6 +507,11 @@ private struct EditRow: View {
     }
 
     private var accessibilityText: String {
+        if isUnknownStill { return "Live Photo flattened to a still, \(Format.size(edited.item.bytes))" }
+        if edit.isFlatten {
+            return "Live Photo flattened to a still, \(Format.size(edited.item.bytes)) to about \(Format.size(edited.newBytes)), "
+                + "saves about \(Format.size(edited.savedBytes))"
+        }
         var what: [String] = []
         if edit.isTrimmed {
             what.append("trimmed from \(Format.duration(edit.originalDuration)) to \(Format.duration(edit.newDuration))")
