@@ -248,6 +248,13 @@ struct FlattenTests {
         #expect(s.store.decisions(for: ["L"]).isEmpty)
     }
 
+    @Test func changingTheKeyPhotoWhileLockedRecordsNothing() async throws {
+        let s = await started([live, plain], locked: [.livePhotoFlatten])
+        s.vm.decideEdit(PendingEdit(originalDuration: 0, live: LiveEdit(keyFrameTime: 0.5, stillBytes: 600_000)), cardID: live.id)
+        #expect(s.vm.pendingEdits.isEmpty)
+        #expect(s.vm.currentCard?.id == live.id)
+    }
+
     // MARK: Inside a bundle
 
     @Test func aFlattenFromABundleReviewAppliesOnlyToTheItemItNames() async throws {
@@ -306,6 +313,31 @@ struct FlattenTests {
         #expect(s.videos.calls.map(\.id) == ["V"])
         #expect(s.deletes() == [["V"]], "Never a Live original with no still")
         #expect(s.vm.pendingEdits.map(\.id) == ["L"])
+    }
+
+    @Test func aChosenFrameMakesOneStillFromThatFrameBeforeItsOriginalIsDeleted() async throws {
+        let s = await started([live, plain])
+        let chosen = PendingEdit(originalDuration: 0, live: LiveEdit(keyFrameTime: 0.5, stillBytes: 600_000))
+        s.vm.decideEdit(chosen, cardID: live.id)
+        s.vm.decide(.left, cardID: plain.id)
+
+        _ = await s.vm.deleteNow(s.vm.pendingItems)
+
+        #expect(s.photos.calls.count == 1)
+        #expect(s.photos.calls.first?.edit.live?.keyFrameTime == 0.5, "The still is made from the chosen frame")
+        #expect(s.deletes().count == 1, "One system prompt")
+        #expect(Set(s.deletes().first ?? []) == ["P", "L"])
+    }
+
+    @Test func aChosenFrameThatFailsKeepsItsOriginal() async throws {
+        let s = await started([live, plain])
+        s.vm.decideEdit(PendingEdit(originalDuration: 0, live: LiveEdit(keyFrameTime: 0.5, stillBytes: 600_000)), cardID: live.id)
+        s.photos.fail(["L"])
+
+        _ = await s.vm.deleteNow([])
+
+        #expect(s.deletes().allSatisfy { !$0.contains("L") })
+        #expect(s.vm.pendingEdits.first?.edit.live?.keyFrameTime == 0.5, "It waits in the bin, frame and all")
     }
 
     @Test func aStillThatFailsKeepsItsOriginalInTheBin() async throws {

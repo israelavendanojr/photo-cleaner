@@ -407,7 +407,10 @@ private struct EditRow: View {
     let onCancel: () -> Void
 
     @State private var offset: CGFloat = 0
+    /// A flatten's chosen key photo (JUN-106), so the row shows the still it will become. Nil until made.
+    @State private var chosenFrame: UIImage?
     @ScaledMetric(relativeTo: .body) private var thumbSize: CGFloat = 56
+    @Environment(\.displayScale) private var displayScale
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// How far left a swipe has to go to cancel.
@@ -419,9 +422,22 @@ private struct EditRow: View {
         HStack(spacing: DS.Spacing.s) {
             Color.clear
                 .frame(width: thumbSize, height: thumbSize)
-                .overlay { ItemImage(edited.item.image) }
+                .overlay {
+                    if let chosenFrame {
+                        Image(uiImage: chosenFrame)
+                            .resizable()
+                            .scaledToFill()
+                    } else {
+                        ItemImage(edited.item.image)
+                    }
+                }
                 .clipShape(RoundedRectangle(cornerRadius: DS.Radius.thumb, style: .continuous))
                 .accessibilityHidden(true)
+                .task(id: chosenTime) {
+                    chosenFrame = nil
+                    guard let chosenTime else { return }
+                    chosenFrame = await LivePhotoSource.frame(for: edited.item, at: chosenTime, maxSide: thumbSize * displayScale)
+                }
             VStack(alignment: .leading, spacing: DS.Spacing.xxs) {
                 marks
                 Text(change)
@@ -471,6 +487,9 @@ private struct EditRow: View {
         .accessibilityIdentifier(edit.isFlatten ? "pile.flattenRow" : "pile.editRow")
     }
 
+    /// The key photo a flatten picked from the motion, if any.
+    private var chosenTime: TimeInterval? { edit.live?.keyFrameTime }
+
     private var cancelTitle: String { edit.isFlatten ? "Cancel flatten" : "Cancel edit" }
 
     /// A flatten whose still's size couldn't be read: it says nothing about what it saves.
@@ -480,7 +499,7 @@ private struct EditRow: View {
     private var marks: some View {
         HStack(spacing: DS.Spacing.s) {
             if edit.isFlatten {
-                Label("Flattened", systemImage: "livephoto.slash")
+                Label(chosenTime == nil ? "Flattened" : "Flattened · new key photo", systemImage: "livephoto.slash")
             }
             if edit.isTrimmed {
                 Label("Trimmed", systemImage: "scissors")
@@ -507,9 +526,10 @@ private struct EditRow: View {
     }
 
     private var accessibilityText: String {
-        if isUnknownStill { return "Live Photo flattened to a still, \(Format.size(edited.item.bytes))" }
+        let still = chosenTime == nil ? "a still" : "a new key photo"
+        if isUnknownStill { return "Live Photo flattened to \(still), \(Format.size(edited.item.bytes))" }
         if edit.isFlatten {
-            return "Live Photo flattened to a still, \(Format.size(edited.item.bytes)) to about \(Format.size(edited.newBytes)), "
+            return "Live Photo flattened to \(still), \(Format.size(edited.item.bytes)) to about \(Format.size(edited.newBytes)), "
                 + "saves about \(Format.size(edited.savedBytes))"
         }
         var what: [String] = []

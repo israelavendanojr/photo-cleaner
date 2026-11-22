@@ -11,6 +11,11 @@ import SwiftUI
 /// gesture join in, so a plain photo's taps behave as before. With `onEdit`, a bar at the bottom offers to
 /// flatten it to its still (JUN-79), saying what that saves; Flatten hands the edit to the caller, which
 /// closes the viewer and keeps the card with it.
+///
+/// Under it, a strip of the motion's frames picks a different key photo (JUN-106). A dot marks the original,
+/// and scrubbing shows the frame over the still. Any other frame turns Flatten into Change & Flatten, which
+/// flattens to that frame, with Reset to go back. Leaving with another frame picked asks first: save,
+/// discard, or keep editing, like the video editor.
 struct PhotoPreviewView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var systemColorScheme
@@ -41,6 +46,19 @@ struct PhotoPreviewView: View {
     @State private var stillBytes: Int64?
     /// Flattening while it's locked opens the paywall here, over the viewer.
     @State private var isUnlockPresented = false
+    /// The motion as a paused clip, for the frame strip. Ready once loaded.
+    @State private var motion = VideoPlayback()
+    /// The motion's temporary file, removed on the way out.
+    @State private var motionURL: URL?
+    /// Where the key photo sits in the motion. Nil until read; there's no strip without it.
+    @State private var photoTime: TimeInterval?
+    /// A way out the user took with another frame picked, held while the dialog asks about it.
+    @State private var pendingExit: Exit?
+
+    private enum Exit: Equatable {
+        case close
+        case decide(SwipeDirection)
+    }
     #if DEBUG
     /// How many times the motion has started, for UI tests, which can't look while a press is held.
     @State private var livePlayCount = 0
@@ -96,6 +114,13 @@ struct PhotoPreviewView: View {
                     .transition(.opacity)
             }
         }
+        .confirmationDialog("Save changes?", isPresented: isAskingToLeave, titleVisibility: .visible, presenting: pendingExit) { exit in
+            Button("Save changes", action: commitFlatten)
+            Button("Discard", role: .destructive) { leave(exit) }
+            Button("Keep editing", role: .cancel) {}
+        } message: { _ in
+            Text("You picked a different key photo. Saving flattens this Live Photo to that frame when you clear the bin.")
+        }
         .environment(\.colorScheme, .dark)
         // Over the viewer, since RootView's sheets can't show above a full-screen cover.
         .sheet(isPresented: $isUnlockPresented) {
@@ -108,6 +133,10 @@ struct PhotoPreviewView: View {
         .statusBarHidden(!showsChrome)
         .presentationBackground(.clear)
         .task { await loadLive() }
+        .onDisappear {
+            motion.stop()
+            if let motionURL { try? FileManager.default.removeItem(at: motionURL) }
+        }
         #if DEBUG
         .overlay(alignment: .bottom) { LivePlaybackMarker(count: livePlayCount) }
         #endif
@@ -116,6 +145,13 @@ struct PhotoPreviewView: View {
     private var photo: some View {
         ItemImage(item.image, contentMode: .fit) { imageSize = $0 }
             .frame(width: photoSize.width, height: photoSize.height)
+            .overlay {
+                // A picked frame, over the still; the key photo's own frame shows the sharper still.
+                if !isOriginalFrame {
+                    PlayerLayerView(player: motion.player)
+                        .accessibilityHidden(true)
+                }
+            }
             .overlay {
                 // Over the still, at the same size, and shown only while playing: at rest the still is sharper.
                 if let livePhoto {
@@ -140,13 +176,37 @@ struct PhotoPreviewView: View {
 
     private func finish(_ outcome: PreviewDrag.Outcome) {
         switch outcome {
-        case .dismiss: dismiss()
-        case .decide(let direction): decide(direction)
+        case .dismiss: requestExit(.close)
+        case .decide(let direction): requestExit(.decide(direction))
         }
     }
 
     private func decide(_ direction: SwipeDirection) {
-        swipe.flyOut(direction) { onDecide(direction) }
+        requestExit(.decide(direction))
+    }
+
+    // MARK: Leaving
+
+    private var isAskingToLeave: Binding<Bool> {
+        Binding(get: { pendingExit != nil }, set: { if !$0 { pendingExit = nil } })
+    }
+
+    /// Every way out comes through here. With another frame picked, the photo settles back and the dialog asks.
+    private func requestExit(_ exit: Exit) {
+        guard isOriginalFrame else {
+            swipe.cancel()
+            pendingExit = exit
+            return
+        }
+        leave(exit)
+    }
+
+    private func leave(_ exit: Exit) {
+        pendingExit = nil
+        switch exit {
+        case .close: dismiss()
+        case .decide(let direction): swipe.flyOut(direction) { onDecide(direction) }
+        }
     }
 
     // MARK: Live Photo
@@ -167,6 +227,30 @@ struct PhotoPreviewView: View {
         // It can't load (iCloud unreachable): the still stays, and holding does nothing more.
         let starts = withAnimation(DS.Motion.calm) { hold.loaded(livePhoto != nil) }
         if starts { didStartLive() }
+        if offersFlatten { await loadMotion() }
+    }
+
+    /// The motion and the key photo's time, for the frame strip. Without either, or with a time outside the
+    /// motion, there's only Flatten. The motion comes first, so an unreachable iCloud stops there.
+    private func loadMotion() async {
+        guard let url = await LivePhotoSource.motionFile(for: item) else { return }
+        guard !Task.isCancelled else {
+            try? FileManager.default.removeItem(at: url)
+            return
+        }
+        motionURL = url
+        guard !Task.isCancelled, let time = await LivePhotoSource.keyFrameTime(for: item), !Task.isCancelled else { return }
+        await motion.load(motion: url, at: time)
+        guard (0...motion.duration).contains(time) else { return }
+        photoTime = time
+    }
+
+    /// Where the playhead is, for VoiceOver: "Key photo", or how far before or after it.
+    private var frameValue: String {
+        guard let photoTime, !isOriginalFrame else { return "Key photo" }
+        let offset = motion.currentTime - photoTime
+        let seconds = abs(offset).formatted(.number.precision(.fractionLength(1)))
+        return "\(seconds) seconds \(offset < 0 ? "before" : "after") the key photo"
     }
 
     /// Holding means something only for a Live Photo; otherwise a long press stays an ordinary touch.
@@ -213,33 +297,57 @@ struct PhotoPreviewView: View {
 
     private var offersFlatten: Bool { isLive && onEdit != nil && options.canFlatten }
 
-    private var flatten: PendingEdit { PendingEdit(originalDuration: 0, live: LiveEdit(stillBytes: stillBytes)) }
+    /// The frame strip shows once the motion and the key photo's time are in.
+    private var showsStrip: Bool { offersFlatten && photoTime != nil && motion.isReady }
+
+    /// Whether the strip rests on the key photo's own frame (always, with no strip).
+    private var isOriginalFrame: Bool {
+        !showsStrip || KeyFrame.isOriginal(time: motion.currentTime, photoTime: photoTime, frameDuration: motion.frameDuration)
+    }
+
+    /// The original still, or the picked frame.
+    private var flatten: PendingEdit {
+        guard showsStrip else { return PendingEdit(originalDuration: 0, live: LiveEdit(stillBytes: stillBytes)) }
+        return KeyFrame.flatten(at: motion.currentTime, photoTime: photoTime, frameDuration: motion.frameDuration,
+                                frameSize: motion.videoSize, stillBytes: stillBytes)
+    }
 
     /// "Live Photo · 4.5 MB → ~1.8 MB" and "saves ~2.7 MB" beside Flatten, as the video editor's summary sits
-    /// beside Save.
+    /// beside Save; then, for another frame, the note on its resolution; then the frame strip.
     private var flattenBar: some View {
-        HStack(spacing: DS.Spacing.s) {
-            let lines = Self.summary(flatten, bytes: item.bytes)
-            VStack(alignment: .leading, spacing: DS.Spacing.xxs) {
-                Text(lines.change)
-                    .font(.footnote.weight(.semibold))
-                if let saves = lines.saves {
-                    Text(saves)
-                        .font(.subheadline.weight(.bold))
+        VStack(alignment: .leading, spacing: DS.Spacing.s) {
+            // Side by side when they fit; at large text sizes the buttons go under the summary.
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: DS.Spacing.s) {
+                    flattenSummary
+                    flattenButtons
+                }
+                VStack(alignment: .leading, spacing: DS.Spacing.s) {
+                    flattenSummary
+                    // At the largest sizes Reset and Change & Flatten stack too.
+                    ViewThatFits(in: .horizontal) {
+                        HStack(spacing: DS.Spacing.s) { flattenButtons }
+                        VStack(alignment: .leading, spacing: DS.Spacing.s) { flattenButtons }
+                    }
                 }
             }
-            .monospacedDigit()
-            .foregroundStyle(.white)
-            .fixedSize(horizontal: false, vertical: true)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel([lines.change, lines.saves].compactMap { $0 }.joined(separator: ", "))
-            .accessibilityIdentifier("photo.flattenSummary")
-            Button("Flatten", action: commitFlatten)
-                .buttonStyle(TrimButtonStyle(isPrimary: true))
-                .accessibilityHint(options.flattenLocked ? "Opens the unlock" : "Keeps the still and removes the motion, when you clear the bin")
-                .accessibilityIdentifier("photo.flatten")
+            if !isOriginalFrame {
+                Text("Frames from the motion are lower resolution than the original photo.")
+                    .font(.footnote)
+                    .foregroundStyle(.white.opacity(0.8))
+                    .fixedSize(horizontal: false, vertical: true)
+                    .transition(.opacity)
+                    .accessibilityIdentifier("photo.frameNote")
+            }
+            if showsStrip {
+                TrimStrip(playback: motion, draft: .constant(nil), marker: photoTime, roundsLeading: true,
+                          step: motion.frameDuration * 3, label: "Key photo", value: frameValue)
+                    .padding(.top, DS.Spacing.xs)
+                    .transition(.opacity)
+            }
         }
+        .animation(reduceMotion ? nil : DS.Motion.calm, value: isOriginalFrame)
+        .animation(reduceMotion ? nil : DS.Motion.calm, value: showsStrip)
         .padding(.horizontal, DS.Spacing.l)
         .padding(.top, DS.Spacing.xl)
         .padding(.bottom, DS.Spacing.s)
@@ -247,6 +355,48 @@ struct PhotoPreviewView: View {
             LinearGradient(colors: [.clear, .black.opacity(0.55)], startPoint: .top, endPoint: .bottom)
                 .ignoresSafeArea()
         }
+    }
+
+    private var flattenSummary: some View {
+        let lines = Self.summary(flatten, bytes: item.bytes)
+        return VStack(alignment: .leading, spacing: DS.Spacing.xxs) {
+            Text(lines.change)
+                .font(.footnote.weight(.semibold))
+            if let saves = lines.saves {
+                Text(saves)
+                    .font(.subheadline.weight(.bold))
+            }
+        }
+        .monospacedDigit()
+        .foregroundStyle(.white)
+        .fixedSize(horizontal: false, vertical: true)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel([lines.change, lines.saves].compactMap { $0 }.joined(separator: ", "))
+        .accessibilityIdentifier("photo.flattenSummary")
+    }
+
+    /// Reset, for another frame, and Flatten, which reads Change & Flatten then: picking a frame always flattens.
+    @ViewBuilder private var flattenButtons: some View {
+        if !isOriginalFrame {
+            Button("Reset", action: resetFrame)
+                .buttonStyle(TrimButtonStyle(isPrimary: false))
+                .fixedSize()
+                .accessibilityHint("Goes back to the original key photo")
+                .accessibilityIdentifier("photo.frameReset")
+        }
+        Button(isOriginalFrame ? "Flatten" : "Change & Flatten", action: commitFlatten)
+            .buttonStyle(TrimButtonStyle(isPrimary: true))
+            .fixedSize()
+            .accessibilityHint(options.flattenLocked ? "Opens the unlock" : isOriginalFrame
+                ? "Keeps the still and removes the motion, when you clear the bin"
+                : "Keeps this frame as the photo and removes the motion, when you clear the bin")
+            .accessibilityIdentifier("photo.flatten")
+    }
+
+    private func resetFrame() {
+        guard let photoTime else { return }
+        motion.scrub(toTime: photoTime)
     }
 
     /// "Live Photo · 4.5 MB → ~1.8 MB", and "saves ~2.7 MB" when the still's size is known.
@@ -258,6 +408,7 @@ struct PhotoPreviewView: View {
 
     /// Locked, the paywall opens instead, and the photo stays as it is.
     private func commitFlatten() {
+        pendingExit = nil
         if options.flattenLocked {
             isUnlockPresented = true
             return
@@ -269,7 +420,7 @@ struct PhotoPreviewView: View {
 
     private var topBar: some View {
         HStack(alignment: .center, spacing: DS.Spacing.s) {
-            Button { dismiss() } label: {
+            Button { requestExit(.close) } label: {
                 Image(systemName: "xmark")
                     .font(.system(size: 18, weight: .medium))
                     .foregroundStyle(.white)
@@ -279,6 +430,7 @@ struct PhotoPreviewView: View {
             }
             .buttonStyle(PressScaleStyle())
             .accessibilityLabel("Close")
+            .accessibilityIdentifier("photo.close")
             if isLive {
                 Chip(text: "LIVE", systemImage: "livephoto", style: .frosted, size: .footnote)
                     .fixedSize()

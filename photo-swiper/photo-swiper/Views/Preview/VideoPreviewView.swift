@@ -614,10 +614,38 @@ final class VideoPlayback {
         return CGSize(width: abs(rotated.width), height: abs(rotated.height))
     }
 
+    /// How long one frame lasts, for telling a Live Photo's key frame from its neighbours. 30 fps until loaded.
+    private(set) var frameDuration: TimeInterval = 1.0 / 30
+
+    /// One frame's length in the clip's video track. Off the main actor, like the size.
+    private nonisolated static func frameDuration(of asset: AVAsset) async -> TimeInterval? {
+        guard let track = try? await asset.loadTracks(withMediaType: .video).first,
+              let frame = try? await track.load(.minFrameDuration), frame.isNumeric, frame.seconds > 0 else { return nil }
+        return frame.seconds
+    }
+
     func load(_ item: LibraryItem) async {
         duration = item.duration ?? 0
         guard let playerItem = await VideoSource.playerItem(for: item), !Task.isCancelled else { return }
         try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback)
+        await prepare(playerItem)
+        play()
+        frames = await Self.frames(of: playerItem.asset, duration: duration, count: Self.frameCount)
+    }
+
+    /// A Live Photo's motion for its frame strip (JUN-106), muted and paused at `time`, the key photo. It
+    /// leaves the audio session alone: nothing plays.
+    func load(motion url: URL, at time: TimeInterval) async {
+        isMuted = true
+        player.isMuted = true
+        let playerItem = AVPlayerItem(url: url)
+        await prepare(playerItem)
+        guard !Task.isCancelled else { return }
+        seek(to: min(max(time, 0), duration))
+        frames = await Self.frames(of: playerItem.asset, duration: duration, count: Self.frameCount)
+    }
+
+    private func prepare(_ playerItem: AVPlayerItem) async {
         player.replaceCurrentItem(with: playerItem)
         asset = playerItem.asset
         if let loaded = try? await playerItem.asset.load(.duration), loaded.isNumeric, loaded.seconds > 0 {
@@ -626,10 +654,13 @@ final class VideoPlayback {
         if let size = await Self.uprightSize(of: playerItem.asset) {
             videoSize = size
         }
+        if let frame = await Self.frameDuration(of: playerItem.asset) {
+            frameDuration = frame
+        }
+        // Closed meanwhile: `stop()` has run, so nothing would remove the observers.
+        guard !Task.isCancelled else { return }
         observe(playerItem)
         isReady = true
-        play()
-        frames = await Self.frames(of: playerItem.asset, duration: duration, count: Self.frameCount)
     }
 
     /// How many stills the trim strip shows.
@@ -829,8 +860,9 @@ final class SampleLoop {
     }
 }
 
-/// An `AVPlayerLayer` with no system controls, so the preview's own controls are the only ones.
-private struct PlayerLayerView: UIViewRepresentable {
+/// An `AVPlayerLayer` with no system controls, so the preview's own controls are the only ones. The photo
+/// viewer shows a Live Photo's chosen frame with it too.
+struct PlayerLayerView: UIViewRepresentable {
     let player: AVPlayer
 
     func makeUIView(context: Context) -> LayerView {

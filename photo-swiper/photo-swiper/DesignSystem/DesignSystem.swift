@@ -199,6 +199,8 @@ enum DS {
         /// The frame around what's kept.
         static let frameWidth: CGFloat = 3
         static let playheadWidth: CGFloat = 3
+        /// The dot over a Live Photo's key photo on its frame strip.
+        static let markerSize: CGFloat = 6
     }
 
     /// The full-screen photo and video viewers.

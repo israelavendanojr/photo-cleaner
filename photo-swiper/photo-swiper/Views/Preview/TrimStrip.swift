@@ -8,9 +8,21 @@ import SwiftUI
 /// the viewer loops it. The handles sit outside the stills, so a drag near either end of the stills
 /// still seeks. Before a handle moves there's no frame, only white chevrons on the bar's frosted ground;
 /// once trimmed the frame and handles turn brick and what's cut is dimmed. With `draft` nil there are no handles: a plain seek bar.
+///
+/// A Live Photo's frame strip (JUN-106) is that seek bar on its own: `marker` puts a dot over the key photo's
+/// frame, `roundsLeading` rounds the end where the play button would sit, and VoiceOver steps by `step`.
 struct TrimStrip: View {
     let playback: VideoPlayback
     @Binding var draft: TrimDraft?
+    /// A time to mark with a dot above the stills.
+    var marker: TimeInterval?
+    /// With no play button beside it, the bar's leading corners are rounded too.
+    var roundsLeading = false
+    /// How far VoiceOver's adjustable action moves the playhead.
+    var step: TimeInterval = 5
+    /// What VoiceOver calls the stills, and where the playhead is, when not a timeline's "0:01 of 0:03".
+    var label = "Timeline"
+    var value: String?
 
     @State private var isScrubbing = false
     @ScaledMetric(relativeTo: .body) private var height = DS.Trim.stripHeight
@@ -23,6 +35,7 @@ struct TrimStrip: View {
     /// The frame and handles: none until trimmed, so the handles sit on the bar's own frosted ground like
     /// the play button; then brick, the color of space to clear.
     private var accent: Color { isTrimmed ? DS.Palette.brick : .clear }
+    private var leadingCorner: CGFloat { roundsLeading ? DS.Trim.cornerRadius : 0 }
     private static let space = "trimStrip"
 
     var body: some View {
@@ -31,7 +44,8 @@ struct TrimStrip: View {
             ZStack(alignment: .leading) {
                 // The same frosted ground as the play button, so the bar reads as one piece, and the
                 // handle slots a moved handle leaves aren't see-through.
-                UnevenRoundedRectangle(bottomTrailingRadius: DS.Trim.cornerRadius, topTrailingRadius: DS.Trim.cornerRadius,
+                UnevenRoundedRectangle(topLeadingRadius: leadingCorner, bottomLeadingRadius: leadingCorner,
+                                       bottomTrailingRadius: DS.Trim.cornerRadius, topTrailingRadius: DS.Trim.cornerRadius,
                                        style: .continuous)
                     .fill(.ultraThinMaterial)
                     .frame(height: height)
@@ -40,6 +54,16 @@ struct TrimStrip: View {
                 if let draft {
                     cut(draft, width: width)
                     selection(draft, width: width)
+                }
+                if let marker {
+                    Circle()
+                        .fill(.white)
+                        .frame(width: DS.Trim.markerSize, height: DS.Trim.markerSize)
+                        .offset(x: handles + x(marker, in: width) - DS.Trim.markerSize / 2,
+                                y: -(height + DS.Trim.markerSize) / 2 - DS.Spacing.xs)
+                        .opacity(playback.isReady ? 1 : 0)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
                 }
                 playhead
                     .offset(x: handles + x(playback.currentTime, in: width) - DS.Trim.playheadWidth / 2)
@@ -74,6 +98,8 @@ struct TrimStrip: View {
         .frame(width: width, height: height)
         // With no handles, the stills end the bar, so they take its rounded trailing corners.
         .clipShape(UnevenRoundedRectangle(
+            topLeadingRadius: leadingCorner,
+            bottomLeadingRadius: leadingCorner,
             bottomTrailingRadius: draft == nil ? DS.Trim.cornerRadius : 0,
             topTrailingRadius: draft == nil ? DS.Trim.cornerRadius : 0,
             style: .continuous
@@ -81,12 +107,12 @@ struct TrimStrip: View {
         .contentShape(Rectangle())
         .gesture(seekGesture(width: width))
         .accessibilityElement()
-        .accessibilityLabel("Timeline")
-        .accessibilityValue("\(Format.duration(playback.currentTime)) of \(Format.duration(playback.duration))")
+        .accessibilityLabel(label)
+        .accessibilityValue(value ?? "\(Format.duration(playback.currentTime)) of \(Format.duration(playback.duration))")
         .accessibilityAdjustableAction { direction in
             switch direction {
-            case .increment: playback.skip(by: 5)
-            case .decrement: playback.skip(by: -5)
+            case .increment: playback.skip(by: step)
+            case .decrement: playback.skip(by: -step)
             @unknown default: break
             }
         }

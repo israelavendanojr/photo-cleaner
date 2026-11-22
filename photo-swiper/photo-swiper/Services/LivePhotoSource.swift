@@ -1,4 +1,5 @@
 @preconcurrency import Photos
+import UIKit
 
 /// Turns a Live Photo item into something the full-screen viewer can play (JUN-105). The single place an
 /// `ImageReference` becomes a `PHLivePhoto`, like `VideoSource` for videos, so the viewer doesn't care
@@ -55,4 +56,77 @@ enum LivePhotoSource {
             return still.flatMap(FileSizeReader.bytes(of:))
         }
     }
+
+    // MARK: Frames (JUN-106)
+
+    /// The motion as a movie file of its own in the temporary folder, for the frame strip and the bin's
+    /// chosen frame. The caller removes it. It's the rendered motion if the photo was edited in Photos, the
+    /// same one the still is later made from. It may come from iCloud, for display, like `livePhoto(for:)`.
+    static func motionFile(for item: LibraryItem) async -> URL? {
+        let url = FileManager.default.temporaryDirectory.appending(path: "motion-\(UUID().uuidString).mov")
+        switch item.image {
+        case .bundled:
+            #if DEBUG
+            guard let mock = MockLivePhoto.resourceURLs.first(where: { $0.pathExtension == "mov" }),
+                  (try? FileManager.default.copyItem(at: mock, to: url)) != nil else { return nil }
+            return url
+            #else
+            return nil
+            #endif
+        case .photoKit(let id):
+            guard let asset = PHAsset.byID([id])[id] else { return nil }
+            let resources = PHAssetResource.assetResources(for: asset)
+            guard let motion = resources.first(where: { $0.type == .fullSizePairedVideo })
+                ?? resources.first(where: { $0.type == .pairedVideo }) else { return nil }
+            let options = PHAssetResourceRequestOptions()
+            options.isNetworkAccessAllowed = true
+            do {
+                try await PHAssetResourceManager.default().writeData(for: motion, toFile: url, options: options)
+                return url
+            } catch {
+                try? FileManager.default.removeItem(at: url)
+                return nil
+            }
+        }
+    }
+
+    /// Where the key photo sits in the motion, in seconds, to mark it on the strip. Nil when it can't be
+    /// read; then no other frame can be chosen.
+    static func keyFrameTime(for item: LibraryItem) async -> TimeInterval? {
+        switch item.image {
+        case .bundled:
+            #if DEBUG
+            return MockLivePhoto.keyFrameTime
+            #else
+            return nil
+            #endif
+        case .photoKit(let id):
+            guard let asset = PHAsset.byID([id])[id], asset.mediaSubtypes.contains(.photoLive) else { return nil }
+            let options = PHContentEditingInputRequestOptions()
+            options.isNetworkAccessAllowed = true
+            // The rendered Live Photo if it was edited in Photos, matching the rendered motion the strip shows.
+            options.canHandleAdjustmentData = { _ in false }
+            let seconds: Double? = await withCheckedContinuation { continuation in
+                asset.requestContentEditingInput(with: options) { input, _ in
+                    let context = input.flatMap { PHLivePhotoEditingContext(livePhotoEditingInput: $0) }
+                    continuation.resume(returning: context?.photoTime.seconds)
+                }
+            }
+            return seconds.flatMap { $0.isFinite && $0 >= 0 ? $0 : nil }
+        }
+    }
+
+    /// The motion's frame at `time`, small, for the bin's row of a flatten with a chosen key photo. Kept for
+    /// the launch, so reopening the bin doesn't fetch the motion again.
+    static func frame(for item: LibraryItem, at time: TimeInterval, maxSide: CGFloat) async -> UIImage? {
+        let key = "\(item.id)@\(time)" as NSString
+        if let cached = frames.object(forKey: key) { return cached }
+        guard let url = await motionFile(for: item) else { return nil }
+        defer { try? FileManager.default.removeItem(at: url) }
+        guard let image = await FrameStill.thumbnail(of: url, at: time, maxSide: maxSide).map(UIImage.init(cgImage:)) else { return nil }
+        frames.setObject(image, forKey: key)
+        return image
+    }
+
+    private static let frames = NSCache<NSString, UIImage>()
 }
