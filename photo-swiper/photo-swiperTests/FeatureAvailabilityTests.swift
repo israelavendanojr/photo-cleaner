@@ -2,78 +2,145 @@ import Foundation
 import Testing
 @testable import photo_swiper
 
-/// Developer mode's feature availability: who gets each bundle card, and that a bundle a user
-/// doesn't get turns into single cards instead of going missing.
+/// Developer mode's feature access: what each plan gets of every feature (off, locked or unlocked),
+/// that saved overrides from before JUN-87 carry over, and that a bundle that's off for a user turns
+/// into single cards instead of going missing, while a locked one stays a bundle.
 @MainActor
 struct FeatureAvailabilityTests {
     private func tunables(defaults: UserDefaults, devMode: DistributionEnvironment = .debug) -> FeatureAvailabilityTunables {
         FeatureAvailabilityTunables(defaults: defaults, devMode: DevMode(environment: devMode, defaults: defaults))
     }
 
-    // MARK: Availability
+    // MARK: Access
 
-    @Test func eachAvailabilityAllowsTheRightTier() {
-        #expect(FeatureAvailability.universal.allows(isUnlocked: false))
-        #expect(FeatureAvailability.universal.allows(isUnlocked: true))
-        #expect(!FeatureAvailability.paidOnly.allows(isUnlocked: false))
-        #expect(FeatureAvailability.paidOnly.allows(isUnlocked: true))
-        #expect(FeatureAvailability.freeOnly.allows(isUnlocked: false))
-        #expect(!FeatureAvailability.freeOnly.allows(isUnlocked: true))
-        #expect(!FeatureAvailability.off.allows(isUnlocked: false))
-        #expect(!FeatureAvailability.off.allows(isUnlocked: true))
+    @Test func eachPlanReadsItsOwnAccess() {
+        let access = PlanAccess(free: .locked, paid: .off)
+        #expect(access.access(isUnlocked: false) == .locked)
+        #expect(access.access(isUnlocked: true) == .off)
+        #expect(FeatureAccess.locked.isVisible)
+        #expect(FeatureAccess.unlocked.isVisible)
+        #expect(!FeatureAccess.off.isVisible)
+    }
+
+    @Test func theFilterPillAndTopCategoriesAreLockedForFreeAndTheRestWorkForEveryone() {
+        let features = tunables(defaults: freshDefaults())
+        for feature in [TierFeature.feedFilters, .topCategories] {
+            #expect(features.planAccess(feature) == PlanAccess(free: .locked, paid: .unlocked))
+        }
+        for feature in [TierFeature.similarShots, .duplicates, .screenshotBatches, .videoTrimmer, .videoCompression] {
+            #expect(features.planAccess(feature) == .everyone)
+        }
+        #expect(features.visible(isUnlocked: false) == Set(TierFeature.allCases), "Locked still shows")
+        #expect(features.visible(isUnlocked: true) == Set(TierFeature.allCases))
+        #expect(!features.isCustomized)
     }
 
     // MARK: Tunables
 
-    @Test func everyoneGetsEveryFeatureByDefault() {
-        let features = tunables(defaults: freshDefaults())
-        #expect(TierFeature.allCases.allSatisfy { features.availability($0) == .universal })
-        #expect(features.enabled(isUnlocked: false) == Set(TierFeature.allCases))
-        #expect(features.enabled(isUnlocked: true) == Set(TierFeature.allCases))
-        #expect(!features.isCustomized)
-    }
-
-    @Test func anOverrideIsSavedAndApplies() {
+    @Test func anOverrideIsSavedPerPlanAndApplies() {
         let defaults = freshDefaults()
         let features = tunables(defaults: defaults)
-        features.set(.similarShots, .paidOnly)
-        features.set(.duplicates, .freeOnly)
+        features.set(.similarShots, on: .free, .off)
+        features.set(.duplicates, on: .paid, .locked)
 
-        let video: Set<TierFeature> = [.videoTrimmer, .videoCompression]
-        #expect(features.enabled(isUnlocked: false) == Set<TierFeature>([.duplicates, .screenshotBatches]).union(video))
-        #expect(features.enabled(isUnlocked: true) == Set<TierFeature>([.similarShots, .screenshotBatches]).union(video))
+        #expect(features.access(.similarShots, isUnlocked: false) == .off)
+        #expect(features.access(.similarShots, isUnlocked: true) == .unlocked, "The other plan is untouched")
+        #expect(features.access(.duplicates, isUnlocked: true) == .locked)
+        #expect(!features.visible(isUnlocked: false).contains(.similarShots))
         #expect(features.isCustomized)
-        #expect(tunables(defaults: defaults).availability(.similarShots) == .paidOnly, "Remembered across launches")
+        #expect(tunables(defaults: defaults).planAccess(.similarShots) == PlanAccess(free: .off, paid: .unlocked),
+                "Remembered across launches")
     }
 
     @Test func settingTheDefaultClearsTheOverride() {
         let defaults = freshDefaults()
         let features = tunables(defaults: defaults)
-        features.set(.screenshotBatches, .paidOnly)
-        features.set(.screenshotBatches, .universal)
+        features.set(.screenshotBatches, on: .free, .locked)
+        features.set(.screenshotBatches, on: .free, .unlocked)
 
         #expect(!features.isCustomized)
-        #expect(defaults.string(forKey: TierFeature.screenshotBatches.defaultsKey) == nil)
+        #expect(defaults.string(forKey: TierFeature.screenshotBatches.defaultsKey(.free)) == nil)
     }
 
     @Test func overridesAreIgnoredWithDeveloperModeOff() {
         let defaults = freshDefaults()
-        tunables(defaults: defaults).set(.similarShots, .paidOnly)
+        tunables(defaults: defaults).set(.similarShots, on: .free, .off)
 
         let features = tunables(defaults: defaults, devMode: .production)
-        #expect(features.availability(.similarShots) == .universal)
-        #expect(features.enabled(isUnlocked: false) == Set(TierFeature.allCases))
+        #expect(features.planAccess(.similarShots) == .everyone)
+        #expect(features.visible(isUnlocked: false) == Set(TierFeature.allCases))
     }
 
     @Test func resetForgetsEveryOverride() {
         let defaults = freshDefaults()
         let features = tunables(defaults: defaults)
-        features.set(.similarShots, .paidOnly)
-        features.set(.duplicates, .paidOnly)
+        features.set(.similarShots, on: .free, .off)
+        features.set(.feedFilters, on: .paid, .locked)
         features.resetToDefaults()
 
         #expect(!features.isCustomized)
         #expect(!tunables(defaults: defaults).isCustomized)
+    }
+
+    // MARK: Migration (JUN-87)
+
+    @Test(arguments: [
+        ("universal", PlanAccess(free: .unlocked, paid: .unlocked)),
+        ("freeOnly", PlanAccess(free: .unlocked, paid: .off)),
+        ("paidOnly", PlanAccess(free: .off, paid: .unlocked)),
+        ("off", PlanAccess(free: .off, paid: .off)),
+    ])
+    func anOldOverrideMovesToBothPlans(_ old: String, _ expected: PlanAccess) {
+        let defaults = freshDefaults()
+        defaults.set(old, forKey: TierFeature.duplicates.legacyDefaultsKey)
+
+        #expect(tunables(defaults: defaults).planAccess(.duplicates) == expected)
+        #expect(defaults.string(forKey: TierFeature.duplicates.legacyDefaultsKey) == nil, "The old key is gone")
+        #expect(tunables(defaults: defaults).planAccess(.duplicates) == expected, "And it's still there next launch")
+        for plan in Plan.allCases where expected[plan] == .unlocked {
+            #expect(defaults.string(forKey: TierFeature.duplicates.defaultsKey(plan)) == nil, "A plan left at its default isn't saved")
+        }
+    }
+
+    @Test func anOldUniversalOverrideIsntACustomization() {
+        let defaults = freshDefaults()
+        defaults.set("universal", forKey: TierFeature.duplicates.legacyDefaultsKey)
+        #expect(!tunables(defaults: defaults).isCustomized)
+    }
+
+    /// Migration rewrites the keys whatever the Developer mode setting; they only apply once it's on.
+    @Test func anOldOverrideMigratesWithDeveloperModeOffAndAppliesOnceItsOn() {
+        let defaults = freshDefaults()
+        defaults.set("paidOnly", forKey: TierFeature.duplicates.legacyDefaultsKey)
+
+        #expect(tunables(defaults: defaults, devMode: .production).planAccess(.duplicates) == .everyone)
+        #expect(defaults.string(forKey: TierFeature.duplicates.legacyDefaultsKey) == nil)
+        #expect(tunables(defaults: defaults).planAccess(.duplicates) == PlanAccess(free: .off, paid: .unlocked))
+    }
+
+    @Test func anOldOverrideOnANewlyLockedFeatureKeepsItsMeaning() {
+        let defaults = freshDefaults()
+        // Not possible before JUN-87, but the mapping must not fall back to today's locked default.
+        defaults.set("universal", forKey: TierFeature.feedFilters.legacyDefaultsKey)
+        #expect(tunables(defaults: defaults).planAccess(.feedFilters) == .everyone)
+    }
+
+    @Test func anUnknownOldValueIsDropped() {
+        let defaults = freshDefaults()
+        defaults.set("everyone", forKey: TierFeature.similarShots.legacyDefaultsKey)
+
+        let features = tunables(defaults: defaults)
+        #expect(features.planAccess(.similarShots) == .everyone)
+        #expect(!features.isCustomized)
+        #expect(defaults.string(forKey: TierFeature.similarShots.legacyDefaultsKey) == nil)
+    }
+
+    @Test func aNewOverrideWinsOverAnOldOne() {
+        let defaults = freshDefaults()
+        defaults.set("off", forKey: TierFeature.similarShots.legacyDefaultsKey)
+        defaults.set("locked", forKey: TierFeature.similarShots.defaultsKey(.free))
+
+        #expect(tunables(defaults: defaults).planAccess(.similarShots) == PlanAccess(free: .locked, paid: .off))
     }
 
     // MARK: Unbundling
@@ -87,7 +154,7 @@ struct FeatureAvailabilityTests {
     }
 
     @Test(arguments: [TierFeature.similarShots, .duplicates, .screenshotBatches])
-    func aBundleWithoutItsFeatureSplitsIntoSingles(_ feature: TierFeature) throws {
+    func aBundleWhoseFeatureIsOffSplitsIntoSingles(_ feature: TierFeature) throws {
         let card = try #require(MockFeedBuilder().makeSessionNow(number: 1).cards.first { $0.feature == feature })
         let split = card.unbundled(unless: Set(TierFeature.allCases).subtracting([feature]))
 
@@ -106,19 +173,21 @@ struct FeatureAvailabilityTests {
                                defaults: freshDefaults(), features: features)
         #expect(vm.videoEditOptions.canTrim && vm.videoEditOptions.canCompress)
 
-        features.set(.videoTrimmer, .off)
+        for plan in Plan.allCases { features.set(.videoTrimmer, on: plan, .off) }
         #expect(!vm.videoEditOptions.canTrim)
         #expect(vm.videoEditOptions.canCompress)
 
-        features.set(.videoTrimmer, .universal)
-        features.set(.videoCompression, .off)
+        for plan in Plan.allCases {
+            features.set(.videoTrimmer, on: plan, .unlocked)
+            features.set(.videoCompression, on: plan, .off)
+        }
         #expect(vm.videoEditOptions.canTrim)
         #expect(!vm.videoEditOptions.canCompress)
     }
 
-    @Test func compressionCanBeLimitedToATier() async {
+    @Test func compressionCanBeOffForOnePlan() async {
         let features = tunables(defaults: freshDefaults())
-        features.set(.videoCompression, .paidOnly)
+        features.set(.videoCompression, on: .free, .off)
         let free = FeedViewModel(library: FakeLibrary(), builder: MockFeedBuilder(), entitlements: TestEntitlements(isUnlocked: false),
                                  defaults: freshDefaults(), features: features)
         let paid = FeedViewModel(library: FakeLibrary(), builder: MockFeedBuilder(), entitlements: TestEntitlements(isUnlocked: true),
@@ -134,9 +203,17 @@ struct FeatureAvailabilityTests {
 
     // MARK: Feed
 
-    @Test func aFreeUserGetsPaidOnlyBundlesAsSinglesUntilUnlocked() async {
+    @Test func aLockedVideoEditStillShows() async {
+        let locked = PlanAccess(free: .locked, paid: .unlocked)
+        let features = FeatureAvailabilityTunables.fixed([.videoTrimmer: locked, .videoCompression: locked])
+        let vm = FeedViewModel(library: FakeLibrary(), builder: MockFeedBuilder(), entitlements: TestEntitlements(isUnlocked: false),
+                               defaults: freshDefaults(), features: features)
+        #expect(vm.videoEditOptions.canTrim && vm.videoEditOptions.canCompress)
+    }
+
+    @Test func aFreeUserGetsBundlesThatAreOffForThemAsSinglesUntilUnlocked() async {
         let entitlements = TestEntitlements(isUnlocked: false)
-        let features = FeatureAvailabilityTunables.fixed([.similarShots: .paidOnly, .duplicates: .universal, .screenshotBatches: .universal])
+        let features = FeatureAvailabilityTunables.fixed([.similarShots: PlanAccess(free: .off, paid: .unlocked)])
         let vm = FeedViewModel(
             library: FakeLibrary(), builder: MockFeedBuilder(), entitlements: entitlements,
             defaults: freshDefaults(), features: features
@@ -149,6 +226,14 @@ struct FeatureAvailabilityTests {
 
         entitlements.isUnlocked = true
         await vm.admin.adminRebuildDeck()
+        #expect(vm.session?.cards.contains { $0.feature == .similarShots } == true)
+    }
+
+    @Test func aLockedBundleIsDealtWhole() async {
+        let features = FeatureAvailabilityTunables.fixed([.similarShots: PlanAccess(free: .locked, paid: .unlocked)])
+        let vm = FeedViewModel(library: FakeLibrary(), builder: MockFeedBuilder(), entitlements: TestEntitlements(isUnlocked: false),
+                               defaults: freshDefaults(), features: features)
+        await vm.start()
         #expect(vm.session?.cards.contains { $0.feature == .similarShots } == true)
     }
 }
