@@ -399,7 +399,8 @@ private struct FreedConfirmation: View {
 }
 
 /// A video waiting to be edited: its thumbnail, what's done to it (trimmed, compressed or both), its new
-/// length and size, and the space that saves. Swiping it left past a threshold cancels the edit; VoiceOver
+/// length and size, and the space that saves. Or a Live Photo waiting to be flattened (JUN-79): "Flattened",
+/// its size as a still, and what that saves. Swiping it left past a threshold cancels the edit; VoiceOver
 /// and the context menu offer the same.
 private struct EditRow: View {
     let edited: EditedItem
@@ -428,10 +429,12 @@ private struct EditRow: View {
                     .monospacedDigit()
                     .foregroundStyle(DS.Palette.ink)
                     .fixedSize(horizontal: false, vertical: true)
-                Text("saves ~\(Format.size(edited.savedBytes))")
-                    .font(.footnote.weight(.semibold))
-                    .monospacedDigit()
-                    .foregroundStyle(DS.Palette.brick)
+                if !isUnknownStill {
+                    Text("saves ~\(Format.size(edited.savedBytes))")
+                        .font(.footnote.weight(.semibold))
+                        .monospacedDigit()
+                        .foregroundStyle(DS.Palette.brick)
+                }
             }
             Spacer(minLength: 0)
         }
@@ -470,6 +473,9 @@ private struct EditRow: View {
 
     private var cancelTitle: String { edit.isFlatten ? "Cancel flatten" : "Cancel edit" }
 
+    /// A flatten whose still's size couldn't be read: it says nothing about what it saves.
+    private var isUnknownStill: Bool { edit.isFlatten && edit.live?.stillBytes == nil }
+
     /// "Trimmed · Compressed · Balanced", or "Flattened", each with its symbol.
     private var marks: some View {
         HStack(spacing: DS.Spacing.s) {
@@ -492,6 +498,7 @@ private struct EditRow: View {
     /// "1:42 → 0:12 · 380 MB → ~45 MB", or "1:42 · 380 MB → ~120 MB" when the length doesn't change, or
     /// "Live Photo · 4.1 MB → ~1.7 MB".
     private var change: String {
+        if isUnknownStill { return "Live Photo · \(Format.size(edited.item.bytes)) → still" }
         if edit.isFlatten { return "Live Photo · \(Format.size(edited.item.bytes)) → ~\(Format.size(edited.newBytes))" }
         let length = edit.isTrimmed
             ? "\(Format.duration(edit.originalDuration)) → \(Format.duration(edit.newDuration))"
@@ -500,6 +507,7 @@ private struct EditRow: View {
     }
 
     private var accessibilityText: String {
+        if isUnknownStill { return "Live Photo flattened to a still, \(Format.size(edited.item.bytes))" }
         if edit.isFlatten {
             return "Live Photo flattened to a still, \(Format.size(edited.item.bytes)) to about \(Format.size(edited.newBytes)), "
                 + "saves about \(Format.size(edited.savedBytes))"

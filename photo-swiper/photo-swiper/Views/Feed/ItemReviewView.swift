@@ -52,6 +52,8 @@ struct ItemReviewView: View {
                 onDecide: { decide($0, card: $1) },
                 request: $request,
                 onEdit: { edit, card in decide(.right, card: card, edit: edit) },
+                // Bundles hold photos; a review never edits a video.
+                videoEditOptions: VideoEditOptions(canTrim: false, canCompress: false),
                 photoEditOptions: vm.photoEditOptions
             )
         }

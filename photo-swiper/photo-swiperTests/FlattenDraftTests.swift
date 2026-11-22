@@ -93,6 +93,56 @@ struct FlattenDraftTests {
         #expect(vm.draftEdits(for: "S") == ["S1": flatten])
     }
 
+    private func topGroup(_ vm: FeedViewModel) throws -> SimilarGroup {
+        guard case .similar(let group) = vm.currentCard else { throw CancellationError() }
+        return group
+    }
+
+    @Test func swipingTheCardItselfKeepsADraftsFlatten() async throws {
+        let vm = await started()
+        vm.saveDraft(["S1": .keep], edits: ["S1": flatten], for: "S")
+
+        vm.decide(.right, cardID: "S")
+
+        #expect(vm.pendingEdits.map(\.id) == ["S1"], "Never a plain keep")
+        #expect(vm.draftEdits(for: "S").isEmpty)
+    }
+
+    @Test func clearingTheMarkedShotsFromTheCardNeverBinsAFlattenedOne() async throws {
+        let vm = await started()
+        vm.saveDraft(["S1": .keep, "S2": .keep], edits: ["S2": flatten], for: "S")
+        #expect(vm.markedForClearing(in: try topGroup(vm)) == ["S3"], "The card shows the draft")
+
+        vm.decide(.left, cardID: "S")
+
+        #expect(vm.pendingItems.map(\.id) == ["S3"])
+        #expect(vm.pendingEdits.isEmpty, "S2 isn't a Live Photo, so its flatten can't apply")
+        #expect(vm.decisions["S2"] == .keep)
+    }
+
+    @Test func markingAFlattenedShotForClearingDropsItsFlatten() async throws {
+        let vm = await started()
+        let group = try topGroup(vm)
+        vm.saveDraft(["S1": .keep], edits: ["S1": flatten], for: "S")
+
+        vm.toggleMark("S1", in: group)
+
+        #expect(vm.draft(for: "S")["S1"] == .delete)
+        #expect(vm.draftEdits(for: "S").isEmpty)
+    }
+
+    @Test func undoingTheCardBringsItsFlattenBack() async throws {
+        let vm = await started()
+        vm.saveDraft(["S1": .keep], edits: ["S1": flatten], for: "S")
+        vm.decide(.right, cardID: "S")
+
+        vm.undo()
+
+        #expect(vm.pendingEdits.isEmpty)
+        #expect(vm.draftEdits(for: "S") == ["S1": flatten])
+        #expect(vm.draft(for: "S")["S1"] == .keep)
+    }
+
     @Test func theViewerOffersFlattenUnlessItsOffAndAsksToUnlockWhenLocked() async throws {
         let open = await started()
         #expect(open.photoEditOptions == PhotoEditOptions(canFlatten: true, flattenLocked: false))

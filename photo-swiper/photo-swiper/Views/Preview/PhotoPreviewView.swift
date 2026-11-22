@@ -237,7 +237,7 @@ struct PhotoPreviewView: View {
             .accessibilityIdentifier("photo.flattenSummary")
             Button("Flatten", action: commitFlatten)
                 .buttonStyle(TrimButtonStyle(isPrimary: true))
-                .accessibilityHint("Keeps the still and removes the motion, when you clear the bin")
+                .accessibilityHint(options.flattenLocked ? "Opens the unlock" : "Keeps the still and removes the motion, when you clear the bin")
                 .accessibilityIdentifier("photo.flatten")
         }
         .padding(.horizontal, DS.Spacing.l)

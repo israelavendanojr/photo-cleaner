@@ -58,7 +58,8 @@ struct FeedView: View {
     /// an edit from full screen.
     @ViewBuilder private var trimToast: some View {
         if let toast = vm.trimToast {
-            Toast(text: "\(toast.isFlatten ? "Flatten" : "Edit") queued · saves ~\(Format.size(toast.savedBytes))", actionTitle: "Undo") {
+            Toast(text: "\(toast.isFlatten ? "Flatten" : "Edit") queued" + (toast.savedBytes > 0 ? " · saves ~\(Format.size(toast.savedBytes))" : ""),
+                  actionTitle: "Undo") {
                 withAnimation(DS.Motion.calm) { vm.undo() }
             }
             .padding(.horizontal, DS.Spacing.l)
