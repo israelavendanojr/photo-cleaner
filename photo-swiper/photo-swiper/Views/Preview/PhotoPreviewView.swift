@@ -195,7 +195,7 @@ struct PhotoPreviewView: View {
             if isLive {
                 Chip(text: "LIVE", systemImage: "livephoto", style: .frosted, size: .footnote)
                     .fixedSize()
-                    .accessibilityLabel("Live Photo. Press and hold to play.")
+                    .accessibilityLabel("Live Photo")
                     .accessibilityIdentifier("photo.liveChip")
             }
             Spacer(minLength: DS.Spacing.xs)
