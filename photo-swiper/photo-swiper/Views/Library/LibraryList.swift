@@ -1,89 +1,64 @@
 import SwiftUI
 
-/// The dashboard's two ruled lists. "Ready to clear" is what clearing would free, by kind, biggest first,
-/// with what it comes to; "Also in your library" is the library's own kinds and what's saved for later.
-/// A row opens the feed on just that kind, and that's all it does.
+/// The dashboard's Top Categories (JUN-88): the few kinds of thing taking the most space that are worth
+/// a look, biggest first (`DashboardSnapshot.topCategories`), as many as Admin Tools says. A row opens the
+/// feed on just that kind. While the section is locked for the plan, only the first few rows do
+/// (`TopCategoriesLimits.opensFeed`) and the rest open the paywall; off, the section isn't shown. There's
+/// no total: the kinds overlap (a blurry shot can also be a similar one), so their sizes don't add up.
 ///
-/// A row's ticks show its size against the biggest in its list. The first time the lists are seen each
-/// launch, their rows fade up one after another; `entered` says they have.
+/// A row's ticks show its size against the biggest. The first time the rows are seen each launch, they
+/// fade up one after another; `entered` says they have.
 struct LibraryList: View {
     @Environment(FeedViewModel.self) private var vm
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// The dashboard's numbers, or a stand-in while they load.
     let snapshot: DashboardSnapshot
     var isLoading = false
     /// False until the rows' entrance should play.
     var entered = true
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: DS.Spacing.xl) {
-            section(
-                "Ready to clear", rows: snapshot.toClearRows, tint: DS.Palette.brick, total: snapshot.toClearBytes, firstIndex: 0
-            ) {
-                Text(snapshot.scanPercent == nil
-                    ? "Nothing obvious left to clear."
-                    : "Still looking through your library. Suggestions show up as it's analyzed.")
-                    .font(.callout)
-                    .foregroundStyle(DS.Palette.ink)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            if !snapshot.otherRows.isEmpty {
-                section(
-                    "Also in your library", rows: snapshot.otherRows, tint: DS.Palette.ink, total: nil,
-                    firstIndex: snapshot.toClearRows.count
-                ) { EmptyView() }
-            }
-        }
-        .disabled(isLoading)
-    }
+    private var access: FeatureAccess { vm.featureAccess(.topCategories) }
+    private var rows: [DashboardSnapshot.Row] { snapshot.topCategories(count: vm.topCategories.limits.count) }
 
-    private func section(
-        _ title: String, rows: [DashboardSnapshot.Row], tint: Color, total: Int64?, firstIndex: Int,
-        @ViewBuilder empty: () -> some View
-    ) -> some View {
-        VStack(alignment: .leading, spacing: DS.Spacing.s) {
-            header(title, total: rows.isEmpty ? nil : total, showsStatus: firstIndex == 0)
-            if rows.isEmpty {
-                empty()
-            } else {
-                let largest = rows.map(\.bytes).max() ?? 0
-                VStack(spacing: 0) {
-                    ForEach(Array(rows.enumerated()), id: \.element.id) { offset, row in
-                        VStack(spacing: 0) {
-                            Rule()
-                            button(row, share: largest > 0 ? Double(row.bytes) / Double(largest) : 0, tint: tint)
+    var body: some View {
+        if access.isVisible {
+            VStack(alignment: .leading, spacing: DS.Spacing.s) {
+                header
+                if rows.isEmpty {
+                    Text(snapshot.scanPercent == nil
+                        ? "Nothing obvious left to clear."
+                        : "Still looking through your library. Suggestions show up as it's analyzed.")
+                        .font(.callout)
+                        .foregroundStyle(DS.Palette.ink)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    let largest = rows.map(\.bytes).max() ?? 0
+                    VStack(spacing: 0) {
+                        ForEach(Array(rows.enumerated()), id: \.element.id) { offset, row in
+                            VStack(spacing: 0) {
+                                Rule()
+                                button(row, at: offset, share: largest > 0 ? Double(row.bytes) / Double(largest) : 0)
+                            }
+                            .modifier(RowEntrance(entered: entered, index: offset))
                         }
-                        .modifier(RowEntrance(entered: entered, index: firstIndex + offset))
+                        Rule()
                     }
-                    Rule()
+                    .redacted(reason: isLoading ? .placeholder : [])
                 }
-                .redacted(reason: isLoading ? .placeholder : [])
             }
+            .disabled(isLoading)
         }
     }
 
     // MARK: Header
 
-    private func header(_ title: String, total: Int64?, showsStatus: Bool) -> some View {
+    private var header: some View {
         VStack(alignment: .leading, spacing: DS.Spacing.xxs) {
-            HStack(alignment: .firstTextBaseline, spacing: DS.Spacing.xs) {
-                Text(title)
-                    .dsSerif(22, relativeTo: .title3, weight: .medium)
-                    .foregroundStyle(DS.Palette.ink)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityAddTraits(.isHeader)
-                Spacer(minLength: 0)
-                if let total, !isLoading {
-                    Text(Format.size(total))
-                        .font(.subheadline.weight(.semibold))
-                        .monospacedDigit()
-                        .foregroundStyle(DS.Palette.brick)
-                        .contentTransition(.numericText(value: Double(total)))
-                        .accessibilityLabel("\(Format.size(total)) in all")
-                        .accessibilityIdentifier("library.toClearTotal")
-                }
-            }
-            if showsStatus, let percent = snapshot.scanPercent, !isLoading {
+            Text("Top Categories")
+                .dsSerif(22, relativeTo: .title3, weight: .medium)
+                .foregroundStyle(DS.Palette.ink)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityAddTraits(.isHeader)
+            if let percent = snapshot.scanPercent, !isLoading {
                 status(percent)
             }
         }
@@ -107,18 +82,24 @@ struct LibraryList: View {
 
     // MARK: Rows
 
-    private func button(_ row: DashboardSnapshot.Row, share: Double, tint: Color) -> some View {
-        Button {
+    /// Opens the feed on the row's kind, or the paywall for a row past the free ones while locked.
+    private func button(_ row: DashboardSnapshot.Row, at index: Int, share: Double) -> some View {
+        let opensFeed = vm.topCategories.limits.opensFeed(rowAt: index, access: access)
+        return Button {
             Haptics.advance()
-            vm.focusFeed(on: row.focus)
+            if opensFeed {
+                vm.focusFeed(on: row.focus)
+            } else {
+                vm.requestUnlock(.topCategories)
+            }
         } label: {
-            TallyRow(title: row.focus.title, count: row.count, share: share, bytes: row.bytes, tint: tint)
+            TallyRow(title: row.focus.title, count: row.count, share: share, bytes: row.bytes)
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(row.focus.title)
                 .accessibilityValue("\(row.focus.count(row.count)), \(Format.size(row.bytes))")
         }
         .buttonStyle(.plain)
-        .accessibilityHint("Shows only \(row.focus.phrase) in the feed")
+        .accessibilityHint(opensFeed ? "Shows only \(row.focus.phrase) in the feed" : "Unlock to show only \(row.focus.phrase)")
         .accessibilityIdentifier("library.row.\(row.focus.identifier)")
     }
 }

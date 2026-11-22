@@ -124,9 +124,9 @@ struct TallyRow: View {
         Rule()
         TallyRow(title: "Bin", count: 12, share: 0.18, showsTrack: true, bytes: 184_000_000, tint: DS.Palette.brick)
         Rule()
-        TallyRow(title: "Duplicates", count: 214, share: 1, bytes: 1_870_000_000, tint: DS.Palette.brick)
+        TallyRow(title: "Duplicates", count: 214, share: 1, bytes: 1_870_000_000)
         Rule()
-        TallyRow(title: "Accidental shots", count: 140, share: 0.22, bytes: 410_000_000, tint: DS.Palette.brick)
+        TallyRow(title: "Accidental shots", count: 140, share: 0.22, bytes: 410_000_000)
         Rule()
         TallyRow(title: "Videos", count: 1_120, share: 0.6, bytes: 18_700_000_000)
         Rule()
@@ -138,7 +138,7 @@ struct TallyRow: View {
 #Preview("Dark") {
     VStack(spacing: 0) {
         Rule()
-        TallyRow(title: "Duplicates", count: 214, share: 1, bytes: 1_870_000_000, tint: DS.Palette.brick)
+        TallyRow(title: "Duplicates", count: 214, share: 1, bytes: 1_870_000_000)
         Rule()
         TallyRow(title: "Videos", count: 1_120, share: 0.6, bytes: 18_700_000_000)
         Rule()
@@ -151,7 +151,7 @@ struct TallyRow: View {
 #Preview("Large text") {
     VStack(spacing: 0) {
         Rule()
-        TallyRow(title: "Accidental shots", count: 140, share: 0.22, bytes: 410_000_000, tint: DS.Palette.brick,
+        TallyRow(title: "Bin", count: 140, share: 1, showsTrack: true, bytes: 1_000_000_000, tint: DS.Palette.brick,
                  note: "Full at 1 GB. Delete these to keep clearing.")
         Rule()
     }

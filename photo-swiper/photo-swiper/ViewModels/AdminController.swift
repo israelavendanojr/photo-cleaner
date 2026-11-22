@@ -223,6 +223,17 @@ final class AdminController {
         vm.compression.resetToDefaults()
     }
 
+    // MARK: Top Categories
+
+    /// Changes one Top Categories limit. The Library follows it at once.
+    func setTopCategoriesValue(_ tunable: TopCategoriesTunable, _ value: Int) {
+        vm.topCategories.set(tunable, value)
+    }
+
+    func resetTopCategoriesToDefaults() {
+        vm.topCategories.resetToDefaults()
+    }
+
     // MARK: Feature availability
 
     /// Changes what one plan gets of a feature. The next page follows it; `adminRebuildDeck()` applies it now.
