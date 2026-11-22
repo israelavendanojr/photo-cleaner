@@ -52,7 +52,8 @@ struct MockFeedBuilder: FeedBuilding {
         var factory = Factory(session: number, options: options)
         let cards = (0..<Self.cardsPerSession).map { factory.card(at: $0) }.enumerated().filter { offset, card in
             guard let focus = options.focus else { return true }
-            // The mock has no Live Photos of its own: single photos at even positions stand in for them.
+            // Each page's first card is the mock's one real Live Photo; under this focus, single photos at
+            // even positions stand in for more, though without a LIVE chip or motion.
             if focus == .livePhotos, case .photo = card { return offset.isMultiple(of: 2) }
             return card.matches(focus, only: options.only)
         }.map(\.element)

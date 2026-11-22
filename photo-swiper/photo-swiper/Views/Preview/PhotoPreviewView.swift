@@ -30,9 +30,7 @@ struct PhotoPreviewView: View {
     @State private var isLive = false
     /// The still and its motion, once loaded. Nil while loading, or if it couldn't be.
     @State private var livePhoto: PHLivePhoto?
-    @State private var liveLoadFailed = false
-    @State private var isHoldingLive = false
-    @State private var isPlayingLive = false
+    @State private var hold = LiveHold()
     #if DEBUG
     /// How many times the motion has started, for UI tests, which can't look while a press is held.
     @State private var livePlayCount = 0
@@ -62,12 +60,12 @@ struct PhotoPreviewView: View {
                     }
                     // No holding under VoiceOver: it plays once through.
                     if livePhoto != nil {
-                        Button("Play Live Photo", action: startLive)
+                        Button("Play Live Photo") { if hold.playOnce() { didStartLive() } }
                     }
                 }
         }
         .overlay(alignment: .top) {
-            if isLiveLoading {
+            if hold.isWaiting {
                 loadingPill
                     .padding(.top, DS.Preview.pillTop)
                     .allowsHitTesting(false)
@@ -96,8 +94,8 @@ struct PhotoPreviewView: View {
             .overlay {
                 // Over the still, at the same size, and shown only while playing: at rest the still is sharper.
                 if let livePhoto {
-                    LivePhotoPlayer(livePhoto: livePhoto, isPlaying: $isPlayingLive)
-                        .opacity(isPlayingLive ? 1 : 0)
+                    LivePhotoPlayer(livePhoto: livePhoto, isPlaying: isPlayingLive)
+                        .opacity(hold.isPlaying ? 1 : 0)
                         .accessibilityHidden(true)
                 }
             }
@@ -128,8 +126,10 @@ struct PhotoPreviewView: View {
 
     // MARK: Live Photo
 
-    /// A hold that's waiting for the motion to download.
-    private var isLiveLoading: Bool { isHoldingLive && livePhoto == nil && !liveLoadFailed }
+    /// The player stops itself at the end of the motion; that's all it ever sets.
+    private var isPlayingLive: Binding<Bool> {
+        Binding(get: { hold.isPlaying }, set: { if !$0 { hold.ended() } })
+    }
 
     private func loadLive() async {
         isLive = await vm.isLivePhoto(item)
@@ -139,8 +139,8 @@ struct PhotoPreviewView: View {
         livePhoto = await LivePhotoSource.livePhoto(for: item, targetSize: CGSize(width: side, height: side))
         guard !Task.isCancelled else { return }
         // It can't load (iCloud unreachable): the still stays, and holding does nothing more.
-        withAnimation(DS.Motion.calm) { liveLoadFailed = livePhoto == nil }
-        if isHoldingLive { startLive() }
+        let starts = withAnimation(DS.Motion.calm) { hold.loaded(livePhoto != nil) }
+        if starts { didStartLive() }
     }
 
     /// Holding means something only for a Live Photo; otherwise a long press stays an ordinary touch.
@@ -150,15 +150,20 @@ struct PhotoPreviewView: View {
     }
 
     private func holdLive(_ isDown: Bool) {
-        withAnimation(DS.Motion.calm) { isHoldingLive = isDown }
-        if isDown { startLive() } else { isPlayingLive = false }
+        let starts = withAnimation(DS.Motion.calm) {
+            guard isDown else {
+                hold.release()
+                return false
+            }
+            return hold.press()
+        }
+        if starts { didStartLive() }
     }
 
-    private func startLive() {
-        guard livePhoto != nil, !isPlayingLive else { return }
+    /// What starting the motion does besides showing the player.
+    private func didStartLive() {
         // Ambient follows the silent switch. The full-screen video sets its own category when it loads.
         try? AVAudioSession.sharedInstance().setCategory(.ambient)
-        isPlayingLive = true
         Haptics.advance()
         #if DEBUG
         livePlayCount += 1

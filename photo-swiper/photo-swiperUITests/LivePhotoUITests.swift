@@ -22,6 +22,7 @@ final class LivePhotoUITests: XCTestCase {
         XCTAssertTrue(waitForPlayCount(app, atLeast: 1), "Holding plays the motion")
         attachScreenshot(app, "after hold")
         XCTAssertTrue(preview.exists, "Holding doesn't close or decide")
+        XCTAssertTrue(emptyPile(app).exists, "Holding decides nothing")
         XCTAssertTrue(onScreen(app, "Close").isHittable, "A hold isn't a tap: the top bar stays up")
     }
 

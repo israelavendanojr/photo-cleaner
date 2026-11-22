@@ -29,6 +29,8 @@ struct LivePhotoPlayer: UIViewRepresentable {
             view.startPlayback(with: .full)
         } else if !isPlaying, coordinator.isStarted {
             coordinator.isStarted = false
+            // Stopping ends playback too, maybe after a new press has started it again; that end isn't news.
+            coordinator.pendingStops += 1
             view.stopPlayback()
         }
     }
@@ -39,13 +41,18 @@ struct LivePhotoPlayer: UIViewRepresentable {
         var isPlaying: Binding<Bool>
         /// Whether playback was started and hasn't ended, so updates don't restart it.
         var isStarted = false
+        /// End callbacks still due from our own `stopPlayback` calls, which can arrive late.
+        var pendingStops = 0
 
         init(isPlaying: Binding<Bool>) {
             self.isPlaying = isPlaying
         }
 
         func livePhotoView(_ livePhotoView: PHLivePhotoView, didEndPlaybackWith playbackStyle: PHLivePhotoViewPlaybackStyle) {
-            // Also called after `stopPlayback`, when there's nothing left to do.
+            if pendingStops > 0 {
+                pendingStops -= 1
+                return
+            }
             guard isStarted else { return }
             isStarted = false
             isPlaying.wrappedValue = false
