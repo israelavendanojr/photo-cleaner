@@ -53,7 +53,8 @@ struct CardStackView: View {
         return vm.canDecide(direction, cardID: card.id)
     }
 
-    /// Out of swipes or a full pile. A finished one-by-one review waits as a draft for the next swipe.
+    /// Out of swipes, a full pile or a locked bundle. A finished one-by-one review waits as a draft for the
+    /// next swipe.
     private func refused(_ direction: SwipeDirection, card: FeedCard) {
         if let review = finishedReview {
             vm.saveDraft(review.outcome, for: review.cardID)

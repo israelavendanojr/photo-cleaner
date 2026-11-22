@@ -71,8 +71,8 @@ enum Plan: String, CaseIterable, Identifiable, Sendable {
 enum FeatureAccess: String, CaseIterable, Identifiable, Sendable {
     /// The feature isn't there at all.
     case off
-    /// The feature shows and can be tried, but its commit or apply action is meant to open the paywall.
-    /// For now it works like `unlocked`; holding the commit back is still to come.
+    /// The feature shows and can be tried, but its commit or apply action opens the paywall instead
+    /// (`FeedViewModel.isLocked`, `lockedPrompt`).
     case locked
     /// The feature works.
     case unlocked
