@@ -53,6 +53,14 @@ struct SettingsView: View {
                             }
                         }
                     }
+                    // The library is still being analyzed: a quiet note here, not in the feed (JUN-87).
+                    if let percent = vm.dashboardSnapshot?.scanPercent {
+                        Text("Still scanning · \(Format.percent(Double(percent) / 100))")
+                            .font(.footnote)
+                            .foregroundStyle(DS.Palette.secondary)
+                            .padding(.horizontal, DS.Spacing.m)
+                            .accessibilityIdentifier("settings.scanning")
+                    }
                     SettingsSection("Support") {
                         launchRow(AppInfo.supportEmail, icon: "envelope", title: "Contact support", id: "settings.support") {
                             contactSupport($0)

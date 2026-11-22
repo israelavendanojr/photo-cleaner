@@ -14,15 +14,4 @@ extension CleanupCategory {
         }
     }
 
-    /// "Only videos", the feed's focus chip.
-    var focusTitle: String {
-        switch self {
-        case .duplicate: "Only duplicates"
-        case .similar: "Only similar shots"
-        case .screenshot: "Only screenshots"
-        case .video: "Only videos"
-        case .burst: "Only bursts"
-        case .photo: "Only photos"
-        }
-    }
 }

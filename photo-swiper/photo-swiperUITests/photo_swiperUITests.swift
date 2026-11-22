@@ -667,7 +667,7 @@ final class photo_swiperUITests: XCTestCase {
         let app = launch("-swipesLeft", "1", "-unlocked", "NO")
         let keep = onScreen(app, "Keep")
         XCTAssertTrue(keep.waitForExistence(timeout: 5))
-        XCTAssertTrue(app.buttons["feed.swipesLeft"].waitForExistence(timeout: 3), "Few left shows the pill")
+        XCTAssertFalse(app.buttons["feed.swipesLeft"].exists, "No swipes-left pill (JUN-87); the wall says it")
         let first = topCard(app)
         tapAndWait(keep)
         XCTAssertTrue(waitForTopCard(app, not: first))
@@ -693,10 +693,7 @@ final class photo_swiperUITests: XCTestCase {
         app.buttons["paywall.close"].tap()
         XCTAssertTrue(unlock.waitForNonExistence(timeout: 3))
         XCTAssertEqual(cardMarker(app).label, second, "Nothing was committed; the deck stays")
-        let pill = app.buttons["feed.swipesLeft"]
-        XCTAssertTrue(pill.isHittable)
-        XCTAssertEqual(pill.label, "0 swipes left", "At zero the pill says 0 left, no countdown")
-        XCTAssertFalse(element(app, containing: "+10 in").exists)
+        XCTAssertFalse(element(app, containing: "+10 in").exists, "No countdown in the feed")
 
         tapCenter(onScreen(app, "Delete"))
         XCTAssertTrue(unlock.waitForExistence(timeout: 5), "The next swipe asks again")
@@ -733,6 +730,91 @@ final class photo_swiperUITests: XCTestCase {
         XCTAssertTrue(terms.exists, "Terms sits under the unlock")
         XCTAssertEqual(terms.label, "Terms of use")
         XCTAssertEqual(app.buttons["legal.privacy"].label, "Privacy policy")
+    }
+
+    // MARK: Feed filter (JUN-87)
+
+    @MainActor
+    func testTheFilterPillOpensTheMenuAndFocusesTheFeed() throws {
+        let app = launch("-unlocked", "YES")
+        let pill = app.buttons["feed.filter"]
+        XCTAssertTrue(pill.waitForExistence(timeout: 5))
+        XCTAssertEqual(pill.label, "Showing everything")
+        let photoOnTop = topCard(app)
+        attachScreenshot(app, "feed top bar, unlocked")
+
+        pill.tap()
+        let menu = app.descendants(matching: .any)["feed.filter.menu"]
+        XCTAssertTrue(menu.waitForExistence(timeout: 3), "The menu opens")
+        XCTAssertTrue(app.buttons["feed.filter.option.everything"].isSelected, "Everything is checked")
+        XCTAssertTrue(app.buttons["feed.filter.option.video"].exists, "Large videos is offered")
+        attachScreenshot(app, "filter menu open")
+
+        app.buttons["feed.filter.option.allVideos"].tap()
+        XCTAssertTrue(menu.waitForNonExistence(timeout: 3), "Choosing closes it")
+        XCTAssertTrue(waitForLabel(pill, containing: "videos", timeout: 3), "The pill names the focus")
+        XCTAssertTrue(waitForTopCard(app, not: photoOnTop, timeout: 5), "The photo on top gives way to a video (JUN-78)")
+        attachScreenshot(app, "focused on videos")
+
+        pill.tap()
+        XCTAssertTrue(menu.waitForExistence(timeout: 3))
+        app.buttons["feed.filter.option.everything"].tap()
+        XCTAssertTrue(waitForLabel(pill, containing: "everything", timeout: 3), "Everything is always a way back")
+    }
+
+    @MainActor
+    func testATapOutsideClosesTheFilterMenuWithoutSwiping() throws {
+        let app = launch("-unlocked", "YES")
+        let pill = app.buttons["feed.filter"]
+        XCTAssertTrue(pill.waitForExistence(timeout: 5))
+        let top = topCard(app)
+        pill.tap()
+        let menu = app.descendants(matching: .any)["feed.filter.menu"]
+        XCTAssertTrue(menu.waitForExistence(timeout: 3))
+
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.85)).tap()
+        XCTAssertTrue(menu.waitForNonExistence(timeout: 3), "A tap outside closes it")
+        XCTAssertEqual(topCard(app), top, "And swipes nothing")
+    }
+
+    /// A free user focused from the Library can always get back to Everything, though the filter is locked.
+    @MainActor
+    func testALockedFilterStillLetsAFocusedFeedBackToEverything() throws {
+        let app = launch("-unlocked", "NO", "-showLibrary", "YES")
+        let row = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "library.row.")).firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 8))
+        row.tap()
+        let pill = app.buttons["feed.filter"]
+        XCTAssertTrue(pill.waitForExistence(timeout: 5))
+
+        pill.tap()
+        let menu = app.descendants(matching: .any)["feed.filter.menu"]
+        XCTAssertTrue(menu.waitForExistence(timeout: 3), "Focused, the menu opens, not the paywall")
+        attachScreenshot(app, "filter menu, locked and focused")
+        app.buttons["feed.filter.option.allVideos"].tap()
+        let close = app.buttons["paywall.close"]
+        XCTAssertTrue(close.waitForExistence(timeout: 5), "Another focus asks to unlock")
+        close.tap()
+        XCTAssertTrue(close.waitForNonExistence(timeout: 3))
+
+        pill.tap()
+        XCTAssertTrue(menu.waitForExistence(timeout: 3))
+        app.buttons["feed.filter.option.everything"].tap()
+        XCTAssertTrue(waitForLabel(pill, containing: "everything", timeout: 3), "Everything always works")
+        XCTAssertFalse(close.exists)
+    }
+
+    @MainActor
+    func testALockedFilterPillOpensThePaywall() throws {
+        let app = launch("-unlocked", "NO")
+        let pill = app.buttons["feed.filter"]
+        XCTAssertTrue(pill.waitForExistence(timeout: 5), "Locked still shows the pill")
+        attachScreenshot(app, "feed top bar, locked")
+        pill.tap()
+        XCTAssertTrue(app.buttons["paywall.close"].waitForExistence(timeout: 5), "The paywall, not the menu")
+        XCTAssertFalse(app.descendants(matching: .any)["feed.filter.menu"].exists)
+        app.buttons["paywall.close"].tap()
+        XCTAssertTrue(pill.waitForExistence(timeout: 3))
     }
 
     // MARK: Settings

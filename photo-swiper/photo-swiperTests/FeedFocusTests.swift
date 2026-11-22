@@ -45,6 +45,21 @@ private final class GatedBuilder: FeedBuilding, @unchecked Sendable {
     }
 }
 
+/// Two photos, then a video for a page focused on videos and nothing otherwise. `@unchecked` is safe:
+/// one page at a time.
+private final class NoVideosYetBuilder: FeedBuilding, @unchecked Sendable {
+    private var dealt = false
+
+    func makeSession(number: Int, options: FeedOptions) async -> Session {
+        defer { dealt = true }
+        if !dealt { return Session(number: number, cards: [.photo(GatedBuilder.photo("a")), .photo(GatedBuilder.photo("b"))]) }
+        guard options.focus == .allVideos else { return Session(number: number, cards: []) }
+        let video = LibraryItem(id: "v", kind: .video(duration: 30), date: .now, location: nil, bytes: 1_000_000,
+                                image: .bundled("photo-sunset"))
+        return Session(number: number, cards: [.video(video)])
+    }
+}
+
 /// Deals photo cards for whatever a focused page is limited to (`FeedOptions.only`), leaving out what's
 /// excluded, as the real builder's pool does. Unfocused, nothing. `@unchecked` is safe: one page at a time.
 private final class OnlyBuilder: FeedBuilding, @unchecked Sendable {
@@ -57,8 +72,9 @@ private final class OnlyBuilder: FeedBuilding, @unchecked Sendable {
     }
 }
 
-/// A dashboard row focuses the feed on one kind of clutter. The card on top never changes, and
-/// decisions still land on the card the user acted on (CLAUDE.md → Rules).
+/// The filter focuses the feed on one kind of clutter. A card on top that doesn't fit is replaced by the
+/// first one that does (JUN-78); one that fits stays, and clearing the focus never moves it. Nothing is
+/// decided, and decisions still land on the card the user acted on (CLAUDE.md → Rules).
 @MainActor
 struct FeedFocusTests {
     private func started(_ builder: any FeedBuilding = MockFeedBuilder()) async -> FeedViewModel {
@@ -71,35 +87,125 @@ struct FeedFocusTests {
         { $0.cards.dropFirst($0.index + 1) }
     }
 
-    @Test func theCardOnTopStaysAndOnlyMatchingCardsFollow() async throws {
+    @Test func aTopCardThatDoesntFitIsReplacedByTheFirstThatDoes() async throws {
         let vm = await started()
         let top = try #require(vm.currentCard)
         #expect(!top.matches(.video), "The mock deck starts on a photo")
+        let firstVideo = try #require(vm.cards.first { $0.matches(.video) })
+        let swipesBefore = vm.swipesLeft
 
         vm.focusFeed(on: .category(.video))
-        #expect(vm.currentCard?.id == top.id)
+        #expect(vm.currentCard?.id == firstVideo.id)
         #expect(vm.index == 0)
         await vm.waitForPage()
 
-        #expect(vm.currentCard?.id == top.id, "A page landing after the focus doesn't move it either")
-        #expect(!upcoming(vm).isEmpty)
-        #expect(upcoming(vm).allSatisfy { $0.matches(.video) })
+        #expect(vm.currentCard?.id == firstVideo.id, "A page landing after the focus doesn't move it")
+        #expect(vm.cards.dropFirst(vm.index).allSatisfy { $0.matches(.video) })
+        #expect(!vm.cards.contains { $0.id == top.id })
+        #expect(vm.decisions.isEmpty, "Dropping it decides nothing")
+        #expect(vm.swipesLeft == swipesBefore)
+        #expect(!vm.canUndo)
         #expect(vm.feedFocus == .category(.video))
         #expect(vm.feedRequests == 1, "It asks for the Feed tab")
     }
 
-    @Test func aDecisionAfterFocusingLandsOnTheCardActedOn() async throws {
+    @Test func aTopCardThatFitsStays() async throws {
         let vm = await started()
         let top = try #require(vm.currentCard)
-        let dropped = try #require(vm.cards.dropFirst().first { !$0.matches(.video) })
+        let focus = try #require(FocusTarget.listOrder.first { !$0.isByID && top.matches($0, only: nil) })
+
+        vm.focusFeed(on: focus)
+        #expect(vm.currentCard?.id == top.id)
+        await vm.waitForPage()
+        #expect(vm.currentCard?.id == top.id)
+        #expect(upcoming(vm).allSatisfy { $0.matches(focus, only: nil) })
+    }
+
+    @Test func aDecisionForTheDroppedTopCardIsRefused() async throws {
+        let vm = await started()
+        let top = try #require(vm.currentCard)
+        let swipesBefore = vm.swipesLeft
 
         vm.focusFeed(on: .category(.video))
-        vm.decide(.left, cardID: dropped.id)
-        #expect(vm.decisions.isEmpty, "A card no longer in the deck can't be decided")
-
+        #expect(!vm.canDecide(.left, cardID: top.id))
         vm.decide(.left, cardID: top.id)
-        #expect(Set(vm.decisions.keys) == Set(top.items.map(\.id)))
-        #expect(vm.currentCard?.matches(.video) == true)
+        vm.decideIndividually(Dictionary(uniqueKeysWithValues: top.items.map { ($0.id, .delete) }), cardID: top.id)
+
+        #expect(vm.decisions.isEmpty, "Never applied to the new top card")
+        #expect(vm.swipesLeft == swipesBefore)
+        #expect(!vm.canUndo)
+
+        let newTop = try #require(vm.currentCard)
+        vm.decide(.left, cardID: newTop.id)
+        #expect(Set(vm.decisions.keys) == Set(newTop.items.map(\.id)))
+    }
+
+    @Test func theShortenedDeckIsSavedSoARelaunchResumesOnTheNewTop() async throws {
+        let store = InMemoryProgressStore()
+        let vm = FeedViewModel(library: FakeLibrary(), builder: MockFeedBuilder(), store: store, entitlements: TestEntitlements(),
+                               defaults: freshDefaults())
+        await vm.start()
+        let top = try #require(vm.currentCard)
+
+        vm.focusFeed(on: .category(.video))
+        let newTop = try #require(vm.currentCard)
+        let saved = try #require(store.loadSession())
+        #expect(saved.index == vm.index)
+        #expect(!saved.session.cards.contains { $0.id == top.id }, "A relaunch doesn't bring the dropped card back")
+        #expect(saved.session.cards[saved.index].id == newTop.id)
+    }
+
+    @Test func theDroppedTopCardsReviewAndEditGoWithIt() async throws {
+        let vm = await started()
+        let top = try #require(vm.currentCard)
+        let item = try #require(top.items.first)
+        vm.saveDraft([item.id: .delete], for: top.id)
+
+        vm.focusFeed(on: .category(.video))
+        #expect(vm.draft(for: top.id).isEmpty)
+        vm.decideEdit(PendingEdit(range: TrimRange(start: 0, end: 5), originalDuration: 100), cardID: top.id)
+        #expect(vm.decisions.isEmpty, "An edit naming the dropped card does nothing")
+
+        let newTop = try #require(vm.currentCard)
+        vm.decide(.right, cardID: newTop.id)
+        #expect(vm.decisions[item.id] == nil, "Its review never reaches the new top card")
+    }
+
+    @Test func clearingTheFocusNeverChangesTheTopCard() async throws {
+        let vm = await started()
+        vm.focusFeed(on: .category(.video))
+        await vm.waitForPage()
+        let top = try #require(vm.currentCard)
+
+        vm.focusFeed(on: nil)
+        #expect(vm.currentCard?.id == top.id)
+        await vm.waitForPage()
+        #expect(vm.currentCard?.id == top.id)
+    }
+
+    @Test func undoStillReachesACardDecidedBeforeTheFocus() async throws {
+        let vm = await started()
+        let decided = try #require(vm.currentCard)
+        vm.decideCurrent(.right)
+
+        vm.focusFeed(on: .category(.video))
+        #expect(vm.canUndo)
+        vm.undo()
+        #expect(vm.currentCard?.id == decided.id, "Even though it doesn't fit the focus")
+        #expect(vm.decisions.isEmpty)
+    }
+
+    @Test func withNothingLeftThatFitsTheNextPageLoads() async throws {
+        let vm = await started(NoVideosYetBuilder())
+        await vm.waitForPage()
+        #expect(vm.currentCard?.items.first?.id == "a")
+
+        vm.focusFeed(on: .allVideos)
+        #expect(vm.currentCard == nil)
+        #expect(vm.isFindingMore, "The deck says it's finding more, not caught up")
+        await vm.waitForPage()
+        #expect(vm.currentCard?.items.first?.id == "v")
+        #expect(vm.decisions.isEmpty)
     }
 
     @Test func pagesAreBuiltForTheFocusAndForEverythingOnceCleared() async throws {
@@ -181,6 +287,13 @@ struct FeedFocusTests {
         )
     }
 
+    @Test func theFilterOffersEveryFocusWithLargeVideosAfterVideos() {
+        #expect(FocusTarget.filterOrder == [
+            .category(.duplicate), .category(.similar), .accidental, .blurry, .allVideos, .category(.video), .livePhotos,
+            .category(.screenshot), .category(.burst), .documents, .category(.photo), .savedForLater,
+        ])
+    }
+
     @Test func noFocusChangesNothing() {
         #expect(FeedFocus.apply(input, focus: nil) == input)
     }
@@ -227,12 +340,12 @@ struct FeedFocusTests {
 
     // MARK: Live Photos and saved for later
 
-    @Test func aLivePhotoFocusKeepsTheTopCardAndDealsOnlyPhotos() async throws {
+    @Test func aLivePhotoFocusDealsOnlyPhotos() async throws {
         let vm = await started()
-        let top = try #require(vm.currentCard)
         vm.focusFeed(on: .livePhotos)
         await vm.waitForPage()
-        #expect(vm.currentCard?.id == top.id)
+        let top = try #require(vm.currentCard)
+        #expect({ if case .photo = top { true } else { false } }())
         #expect(!upcoming(vm).isEmpty)
         #expect(upcoming(vm).allSatisfy { if case .photo = $0 { true } else { false } })
     }
@@ -256,8 +369,11 @@ struct FeedFocusTests {
         #expect(focused.only == [saved.id])
         #expect(!focused.excluding.contains(saved.id))
 
+        // The focus dropped the photo on top and found nothing to deal, so the feed is caught up, and
+        // clearing it checks again in its own task.
+        let pagesBefore = builder.options.count
         vm.focusFeed(on: nil)
-        await vm.waitForPage()
+        await until { builder.options.count > pagesBefore }
         let unfocused = try #require(builder.options.last)
         #expect(unfocused.only == nil)
         #expect(unfocused.excluding.contains(saved.id), "The cooldown applies again")

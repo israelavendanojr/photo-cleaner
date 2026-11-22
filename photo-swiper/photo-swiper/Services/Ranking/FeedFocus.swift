@@ -29,6 +29,10 @@ enum FocusTarget: Hashable, Codable, Sendable {
         .category(.screenshot), .category(.burst), .documents, .category(.photo), .savedForLater,
     ]
 
+    /// The feed filter's choices after Everything (JUN-87): every focus, with Large videos right after
+    /// Videos. Unlike the Library, the filter offers both, since picking one is a choice, not a total.
+    static let filterOrder: [FocusTarget] = listOrder.flatMap { $0 == .allVideos ? [$0, .category(.video)] : [$0] }
+
     /// Whether the focus is a set of IDs the feed builder can't tell from features alone, so a page is
     /// limited to `FeedOptions.only`.
     var isByID: Bool {
