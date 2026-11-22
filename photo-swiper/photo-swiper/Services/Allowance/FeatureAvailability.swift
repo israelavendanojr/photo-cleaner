@@ -12,6 +12,8 @@ enum TierFeature: String, CaseIterable, Identifiable, Sendable {
     case videoTrimmer
     /// The compression button in the full-screen video (JUN-50). Off hides it.
     case videoCompression
+    /// Flatten and Change & Flatten in the full-screen photo of a Live Photo (JUN-79, JUN-106). Off hides them.
+    case livePhotoFlatten
     /// The feed's filter pill and its menu (JUN-87).
     case feedFilters
     /// The Library's Top Categories rows (JUN-88).
@@ -26,6 +28,7 @@ enum TierFeature: String, CaseIterable, Identifiable, Sendable {
         case .screenshotBatches: "Screenshot batches"
         case .videoTrimmer: "Video Trimmer"
         case .videoCompression: "Video Compression"
+        case .livePhotoFlatten: "Live Photo flatten"
         case .feedFilters: "Feed filters"
         case .topCategories: "Top categories"
         }
@@ -38,6 +41,7 @@ enum TierFeature: String, CaseIterable, Identifiable, Sendable {
         case .screenshotBatches: "iphone"
         case .videoTrimmer: "scissors"
         case .videoCompression: "arrow.down.right.and.arrow.up.left"
+        case .livePhotoFlatten: "livephoto"
         case .feedFilters: "line.3.horizontal.decrease"
         case .topCategories: "chart.bar"
         }
@@ -114,7 +118,7 @@ extension [TierFeature: PlanAccess] {
         Dictionary(uniqueKeysWithValues: TierFeature.allCases.map { feature in
             switch feature {
             case .feedFilters, .topCategories: (feature, PlanAccess(free: .locked, paid: .unlocked))
-            case .similarShots, .duplicates, .screenshotBatches, .videoTrimmer, .videoCompression: (feature, .everyone)
+            case .similarShots, .duplicates, .screenshotBatches, .videoTrimmer, .videoCompression, .livePhotoFlatten: (feature, .everyone)
             }
         })
     }

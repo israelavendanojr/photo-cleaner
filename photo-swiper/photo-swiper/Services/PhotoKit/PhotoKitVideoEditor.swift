@@ -6,7 +6,7 @@ import Photos
 ///
 /// Each video is exported once (`ExportPlan`): a trim alone without re-encoding, any compression in one
 /// `VideoEncoder` pass. The copy is saved with the original's creation date, location, favorite status
-/// and albums, then fetched back to check it's there. Nothing is deleted here; the original goes with
+/// and albums (`LibraryCopy`), then fetched back to check it's there. Nothing is deleted here; the original goes with
 /// the rest of the bin, in `PhotoKitLibrary.delete`.
 ///
 /// An iCloud-only original is downloaded first. That's Apple's iCloud, which the privacy copy allows,
@@ -42,7 +42,7 @@ struct PhotoKitVideoEditor: VideoEditing {
         let bytes = Int64((try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)
         guard bytes > 0 else { throw VideoEditError.exportFailed }
 
-        let copyID = try await Self.save(url, like: id)
+        let copyID = try await LibraryCopy.save(url, as: .video, like: id)
         guard !PHAsset.byID([copyID]).isEmpty else { throw VideoEditError.saveFailed }
 
         // Sizes and timings only, never identifiers, so levels can be tuned from a device's log.
@@ -90,43 +90,4 @@ struct PhotoKitVideoEditor: VideoEditing {
         try await session.export(to: url, as: .mov)
         progress(1)
     }
-
-    /// Saves the file as a new video with the original's details, and returns its identifier. The
-    /// original is fetched again inside the change block, where PhotoKit wants its reads.
-    private static func save(_ url: URL, like originalID: LibraryItem.ID) async throws -> LibraryItem.ID {
-        let created = CreatedID()
-        do {
-            try await PHPhotoLibrary.shared().performChanges {
-                guard let original = PHAsset.byID([originalID])[originalID] else { return }
-                let request = PHAssetCreationRequest.forAsset()
-                let options = PHAssetResourceCreationOptions()
-                options.shouldMoveFile = true
-                request.addResource(with: .video, fileURL: url, options: options)
-                request.creationDate = original.creationDate
-                request.location = original.location
-                request.isFavorite = original.isFavorite
-                guard let placeholder = request.placeholderForCreatedAsset else { return }
-                created.set(placeholder.localIdentifier)
-                // The user's own albums the original is in; smart albums fill themselves.
-                PHAssetCollection.fetchAssetCollectionsContaining(original, with: .album, options: nil).enumerateObjects { album, _, _ in
-                    guard album.canPerform(.addContent) else { return }
-                    PHAssetCollectionChangeRequest(for: album)?.addAssets([placeholder] as NSArray)
-                }
-            }
-        } catch {
-            log.error("Saving an edited copy failed: \(error)")
-            throw VideoEditError.saveFailed
-        }
-        guard let id = created.value else { throw VideoEditError.saveFailed }
-        return id
-    }
-}
-
-/// The new asset's identifier, handed out of PhotoKit's change block.
-private final class CreatedID: @unchecked Sendable {
-    private let lock = NSLock()
-    private var id: String?
-
-    var value: String? { lock.withLock { id } }
-    func set(_ value: String) { lock.withLock { id = value } }
 }
