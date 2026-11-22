@@ -83,6 +83,9 @@ final class FeedViewModel {
     private var marks: [SimilarGroup.ID: Set<LibraryItem.ID>] = [:]
     /// One-by-one decisions for cards reviewed partway, by card. Applied when the card is swiped.
     private var drafts: [FeedCard.ID: [LibraryItem.ID: Decision]] = [:]
+    /// Flattens from unfinished bundle reviews, by card (JUN-79). Memory only: drafts save decisions, so these
+    /// photos are left out of the saved draft and come back undecided after a relaunch, never as plain keeps.
+    private var draftEdits: [FeedCard.ID: [LibraryItem.ID: PendingEdit]] = [:]
     private var history: [Snapshot] = []
     /// Pending deletes that are no longer in the deck: from earlier decks, or trimmed from behind this one.
     private var carriedPending: [LibraryItem] = []
@@ -323,6 +326,10 @@ final class FeedViewModel {
     var pendingEdits: [EditedItem] {
         savedEdits.filter { !settledIDs.contains($0.id) && !outOfReachIDs.contains($0.id) }
     }
+    /// The bin's Edits section: videos waiting to be trimmed or compressed.
+    var pendingVideoEdits: [EditedItem] { pendingEdits.filter { !$0.edit.isFlatten } }
+    /// The bin's Flattens section: Live Photos waiting to become stills.
+    var pendingFlattens: [EditedItem] { pendingEdits.filter(\.edit.isFlatten) }
     /// Space the pending edits give back, estimated.
     var editSavedBytes: Int64 { pendingEdits.reduce(0) { $0 + $1.savedBytes } }
     /// What confirming the bin frees: the deletes plus what the edits save. The free pile limit counts
@@ -345,6 +352,12 @@ final class FeedViewModel {
         guard !item.isVideo else { return false }
         if let isLivePhoto = item.isLivePhoto { return isLivePhoto }
         return await builder.livePhotoIDs().contains(item.id)
+    }
+    /// What the full-screen photo offers a Live Photo: Flatten unless it's off for this plan, and whether
+    /// committing it asks to unlock first.
+    var photoEditOptions: PhotoEditOptions {
+        let flatten = featureAccess(.livePhotoFlatten)
+        return PhotoEditOptions(canFlatten: flatten.isVisible, flattenLocked: flatten == .locked)
     }
     /// The edit waiting for this video or Live Photo, if there is one.
     func pendingEdit(for itemID: LibraryItem.ID) -> PendingEdit? {
@@ -646,23 +659,23 @@ final class FeedViewModel {
     /// A locked bundle keeps the review as a draft and decides nothing.
     /// `edits` are flattens made in the review (JUN-79). Each applies only to an item of that card kept in
     /// `outcome`, and not while flattening is locked; any other is dropped. When the review is kept as a draft
-    /// instead (out of swipes, a full pile), the view holds on to its flattens; the draft saves decisions only.
+    /// instead (out of swipes, a full pile, locked), its flattens wait with it in memory (`saveDraft`).
     func decideIndividually(_ outcome: [LibraryItem.ID: Decision], edits: [LibraryItem.ID: PendingEdit] = [:],
                             cardID: FeedCard.ID) {
         guard phase == .feed, let top = currentCard, completed(outcome, for: top) != nil else { return }
         if isLocked(top) {
-            if top.id == cardID { saveDraft(outcome, for: top.id) }
+            if top.id == cardID { saveDraft(outcome, edits: edits, for: top.id) }
             return
         }
         // Admitting can credit a refill, which reorders the deck, so the card is only read after it.
         let admitted = top.isAdminMock || admitSwipe()
         guard let card = currentCard(matching: cardID), let complete = completed(outcome, for: card) else { return }
         guard admitted else {
-            saveDraft(outcome, for: card.id)
+            saveDraft(outcome, edits: edits, for: card.id)
             return
         }
         guard fitsInPile(complete, card: card) else {
-            saveDraft(outcome, for: card.id)
+            saveDraft(outcome, edits: edits, for: card.id)
             isPileFullNoticePresented = true
             return
         }
@@ -676,12 +689,25 @@ final class FeedViewModel {
 
     /// Decisions from an unfinished one-by-one review of this card.
     /// Batch drafts saved before similar sets had reviews are keyed by batch ID, which is the card ID.
+    /// Flattened photos count as kept here, from `draftEdits(for:)`.
     func draft(for cardID: FeedCard.ID) -> [LibraryItem.ID: Decision] {
-        drafts[cardID] ?? [:]
+        var draft = drafts[cardID] ?? [:]
+        for id in (draftEdits[cardID] ?? [:]).keys { draft[id] = .keep }
+        return draft
     }
 
-    func saveDraft(_ outcome: [LibraryItem.ID: Decision], for cardID: FeedCard.ID) {
-        drafts[cardID] = outcome.isEmpty ? nil : outcome
+    /// Flattens from an unfinished review of this card, kept for this launch only.
+    func draftEdits(for cardID: FeedCard.ID) -> [LibraryItem.ID: PendingEdit] {
+        draftEdits[cardID] ?? [:]
+    }
+
+    /// Saves a partial review. A flatten (`edits`) is held in memory with its photo's keep, and that photo
+    /// is left out of the saved draft; a flatten on a photo no longer kept is dropped.
+    func saveDraft(_ outcome: [LibraryItem.ID: Decision], edits: [LibraryItem.ID: PendingEdit] = [:], for cardID: FeedCard.ID) {
+        let flattened = edits.filter { outcome[$0.key] == .keep && $0.value.isFlatten }
+        draftEdits[cardID] = flattened.isEmpty ? nil : flattened
+        let saved = outcome.filter { flattened[$0.key] == nil }
+        drafts[cardID] = saved.isEmpty ? nil : saved
         saveProgress()
     }
 
@@ -1094,6 +1120,7 @@ final class FeedViewModel {
         current.cards.replaceSubrange(index...index, with: card.items.map(FeedCard.init(item:)))
         session = current
         drafts[card.id] = nil
+        draftEdits[card.id] = nil
         marks[card.id] = nil
         for i in history.indices {
             history[i].drafts[card.id] = nil
@@ -1308,6 +1335,7 @@ final class FeedViewModel {
         history.append(Snapshot(index: index, decisions: decisions, marks: marks, drafts: drafts, cardID: card.id, direction: direction, stored: stored, charged: charged))
         decisions.merge(outcome) { _, new in new }
         drafts[card.id] = nil
+        draftEdits[card.id] = nil
         returningCard = nil
         dismissTrimToast()
 

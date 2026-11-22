@@ -35,4 +35,24 @@ enum LivePhotoSource {
             )
         }
     }
+
+    /// The size of the still a flatten keeps (JUN-79): the one Photos shows, rendered if it was edited there.
+    /// What flattening saves is the item's size less this. Nil when it can't be read; metadata only, nothing
+    /// is downloaded.
+    static func stillBytes(for item: LibraryItem) -> Int64? {
+        switch item.image {
+        case .bundled:
+            #if DEBUG
+            // The mock's still is about two fifths of its Live Photo, a typical share.
+            return item.bytes * 2 / 5
+            #else
+            return nil
+            #endif
+        case .photoKit(let id):
+            guard let asset = PHAsset.byID([id])[id] else { return nil }
+            let resources = PHAssetResource.assetResources(for: asset)
+            let still = resources.first { $0.type == .fullSizePhoto } ?? resources.first { $0.type == .photo }
+            return still.flatMap(FileSizeReader.bytes(of:))
+        }
+    }
 }

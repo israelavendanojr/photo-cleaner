@@ -83,6 +83,13 @@ struct VideoEditOptions: Equatable {
     func needsUnlock(level: CompressionLevel?) -> Bool { compressLocked && level != nil }
 }
 
+/// What the full-screen photo offers a Live Photo (JUN-79): Flatten, unless it's off for this plan. Locked,
+/// it's still shown, and committing opens the paywall over the viewer instead.
+struct PhotoEditOptions: Equatable {
+    var canFlatten = false
+    var flattenLocked = false
+}
+
 /// The card an undo just restored, and the side it left from.
 struct ReturningCard: Equatable {
     let cardID: FeedCard.ID

@@ -201,9 +201,12 @@ It has no "Not now": Close is the way out. It says nothing about when free swipe
 
 `PhotoPreviewView`, forced dark like the video. Its top bar is the round frosted Close, then, for a Live Photo, a frosted `Chip` reading "LIVE" with `livephoto`, and the size, place and date on the right. Pressing and holding a Live Photo plays its motion with sound (`LivePhotoPlayer`) and a light haptic, like the video's 2x; letting go goes back to the still. While the motion is still downloading, "Loading Live Photo" sits where the 2x pill goes (`DS.Preview.pillTop`, shared by every status pill in the viewers), as a frosted `Chip` with a small white spinner. VoiceOver's "Play Live Photo" action plays it once through.
 
+Where flattening is offered (JUN-79), a bottom bar over a dark gradient, like the video editor's summary, reads "Live Photo · 4.5 MB → ~1.8 MB" (footnote semibold) over "saves ~2.7 MB" (subheadline bold), white, with a brick `TrimButtonStyle` "Flatten" capsule beside them: it clears space, like Save. Locked, Flatten opens `UnlockSheet` over the viewer. Flatten closes the viewer, and the card flies off right with a "Flatten queued · saves ~X · Undo" toast.
+
 ### The bin's edits and clearing
 
 - **Edits section** in `PendingPileView`, under the photo grid: one `EditRow` per video on `card` at `DS.Radius.tile`, with the thumbnail, then the marks ("Trimmed", "Compressed · Balanced", or both) as `caption` semibold ink labels with their symbols, the change ("1:42 → 0:12 · 380 MB → ~45 MB") in subheadline semibold, and "saves ~X" in brick footnote. Swiping a row left cancels the edit.
+- **Flattens section**, under Edits: the same `EditRow`, marked "Flattened" (`livephoto.slash`), with "Live Photo · 4.1 MB → ~1.7 MB" as the change and "saves ~X". Swiping a row left, or "Cancel flatten", keeps the Live Photo as it is. The summary counts both ("to clear from 12 photos, 2 edits and 1 flatten"), and the alert names them ("Saves 2 edited videos and 1 flattened photo, then deletes their originals…").
 - **Clearing.** With edits waiting, the bin's one brick pill reads "Clear bin · X" (the marked photos plus what the edits save), and the system alert says what happens: edited copies saved first, then the originals and photos deleted. While copies are made, "Saving edited video 1 of 2" sits above the buttons with ink `BristleTicks`, and the screen stays awake.
 
 ### The Library dashboard

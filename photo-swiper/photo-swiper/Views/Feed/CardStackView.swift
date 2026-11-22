@@ -26,14 +26,15 @@ struct CardStackView: View {
             onRefused: refused,
             waitingText: vm.isFindingMore ? "Finding more…" : nil,
             onEdit: edit,
-            videoEditOptions: vm.videoEditOptions
+            videoEditOptions: vm.videoEditOptions,
+            photoEditOptions: vm.photoEditOptions
         )
         #if DEBUG
         .overlay(alignment: .top) { CurrentCardMarker() }
         #endif
         .fullScreenCover(item: $reviewing, onDismiss: flyOutReviewedCard) { set in
-            ItemReviewView(set: set, draft: vm.draft(for: set.id)) { outcome in
-                finishedReview = FinishedReview(cardID: set.id, outcome: outcome)
+            ItemReviewView(set: set, draft: vm.draft(for: set.id), draftEdits: vm.draftEdits(for: set.id)) { outcome, edits in
+                finishedReview = FinishedReview(cardID: set.id, outcome: outcome, edits: edits)
                 reviewing = nil
             }
         }
@@ -57,7 +58,7 @@ struct CardStackView: View {
     /// next swipe.
     private func refused(_ direction: SwipeDirection, card: FeedCard) {
         if let review = finishedReview {
-            vm.saveDraft(review.outcome, for: review.cardID)
+            vm.saveDraft(review.outcome, edits: review.edits, for: review.cardID)
         }
         finishedReview = nil
         vm.refuse(direction, cardID: card.id)
@@ -68,7 +69,7 @@ struct CardStackView: View {
         hasSeenSwipeHint = true
         if let review = finishedReview {
             finishedReview = nil
-            vm.decideIndividually(review.outcome, cardID: review.cardID)
+            vm.decideIndividually(review.outcome, edits: review.edits, cardID: review.cardID)
             return
         }
         if direction == .left, vm.bytesToClear(for: card) > 0 {
@@ -77,7 +78,7 @@ struct CardStackView: View {
         vm.decide(direction, cardID: card.id)
     }
 
-    /// An edit saved in the full-screen video keeps its card and queues the edit in the bin.
+    /// An edit saved full screen (a video's, or a Live Photo's flatten) keeps its card and queues the edit in the bin.
     private func edit(_ edit: PendingEdit, card: FeedCard) {
         hasSeenSwipeHint = true
         vm.decideEdit(edit, cardID: card.id)
@@ -88,6 +89,8 @@ struct CardStackView: View {
 private struct FinishedReview {
     let cardID: FeedCard.ID
     let outcome: [LibraryItem.ID: Decision]
+    /// Flattens made in the review, for items it keeps.
+    let edits: [LibraryItem.ID: PendingEdit]
 }
 
 #if DEBUG

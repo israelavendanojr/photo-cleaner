@@ -8,9 +8,12 @@ import SwiftUI
 /// blur for flagged photos is dropped here, since this is where you judge whether it's blurry.
 ///
 /// A Live Photo plays its motion while pressed and held, like Photos (JUN-105). Only then does the hold
-/// gesture join in, so a plain photo's taps behave as before.
+/// gesture join in, so a plain photo's taps behave as before. With `onEdit`, a bar at the bottom offers to
+/// flatten it to its still (JUN-79), saying what that saves; Flatten hands the edit to the caller, which
+/// closes the viewer and keeps the card with it.
 struct PhotoPreviewView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var systemColorScheme
     @Environment(FeedViewModel.self) private var vm
     @Environment(\.displayScale) private var displayScale
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -19,6 +22,9 @@ struct PhotoPreviewView: View {
     var label: (SwipeDirection) -> String = { _ in "" }
     /// Called once a decision swipe has flown the photo off. The caller closes the preview.
     var onDecide: (SwipeDirection) -> Void = { _ in }
+    /// Called with a flatten. Nil offers no flattening.
+    var onEdit: ((PendingEdit) -> Void)?
+    var options = PhotoEditOptions()
 
     @State private var showsChrome = true
     @State private var zoom = ZoomTransform()
@@ -31,6 +37,10 @@ struct PhotoPreviewView: View {
     /// The still and its motion, once loaded. Nil while loading, or if it couldn't be.
     @State private var livePhoto: PHLivePhoto?
     @State private var hold = LiveHold()
+    /// The still a flatten keeps, for what it saves. Nil until read, or if it can't be.
+    @State private var stillBytes: Int64?
+    /// Flattening while it's locked opens the paywall here, over the viewer.
+    @State private var isUnlockPresented = false
     #if DEBUG
     /// How many times the motion has started, for UI tests, which can't look while a press is held.
     @State private var livePlayCount = 0
@@ -79,7 +89,22 @@ struct PhotoPreviewView: View {
                     .transition(.opacity)
             }
         }
+        .overlay(alignment: .bottom) {
+            if showsChrome, offersFlatten {
+                flattenBar
+                    .opacity(swipe.chromeOpacity)
+                    .transition(.opacity)
+            }
+        }
         .environment(\.colorScheme, .dark)
+        // Over the viewer, since RootView's sheets can't show above a full-screen cover.
+        .sheet(isPresented: $isUnlockPresented) {
+            UnlockSheet()
+                .environment(\.colorScheme, systemColorScheme)
+                .presentationDragIndicator(.visible)
+                .presentationBackground { PaperBackground() }
+                .presentationCornerRadius(DS.Radius.card)
+        }
         .statusBarHidden(!showsChrome)
         .presentationBackground(.clear)
         .task { await loadLive() }
@@ -134,6 +159,7 @@ struct PhotoPreviewView: View {
     private func loadLive() async {
         isLive = await vm.isLivePhoto(item)
         guard isLive else { return }
+        stillBytes = LivePhotoSource.stillBytes(for: item)
         // The screen's longer side in pixels; a phone-sized guess if it isn't measured yet.
         let side = size == .zero ? 2_048 : max(size.width, size.height) * displayScale
         livePhoto = await LivePhotoSource.livePhoto(for: item, targetSize: CGSize(width: side, height: side))
@@ -181,6 +207,62 @@ struct PhotoPreviewView: View {
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Loading Live Photo")
         .accessibilityIdentifier("photo.liveLoading")
+    }
+
+    // MARK: Flatten
+
+    private var offersFlatten: Bool { isLive && onEdit != nil && options.canFlatten }
+
+    private var flatten: PendingEdit { PendingEdit(originalDuration: 0, live: LiveEdit(stillBytes: stillBytes)) }
+
+    /// "Live Photo · 4.5 MB → ~1.8 MB" and "saves ~2.7 MB" beside Flatten, as the video editor's summary sits
+    /// beside Save.
+    private var flattenBar: some View {
+        HStack(spacing: DS.Spacing.s) {
+            let lines = Self.summary(flatten, bytes: item.bytes)
+            VStack(alignment: .leading, spacing: DS.Spacing.xxs) {
+                Text(lines.change)
+                    .font(.footnote.weight(.semibold))
+                if let saves = lines.saves {
+                    Text(saves)
+                        .font(.subheadline.weight(.bold))
+                }
+            }
+            .monospacedDigit()
+            .foregroundStyle(.white)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel([lines.change, lines.saves].compactMap { $0 }.joined(separator: ", "))
+            .accessibilityIdentifier("photo.flattenSummary")
+            Button("Flatten", action: commitFlatten)
+                .buttonStyle(TrimButtonStyle(isPrimary: true))
+                .accessibilityHint("Keeps the still and removes the motion, when you clear the bin")
+                .accessibilityIdentifier("photo.flatten")
+        }
+        .padding(.horizontal, DS.Spacing.l)
+        .padding(.top, DS.Spacing.xl)
+        .padding(.bottom, DS.Spacing.s)
+        .background {
+            LinearGradient(colors: [.clear, .black.opacity(0.55)], startPoint: .top, endPoint: .bottom)
+                .ignoresSafeArea()
+        }
+    }
+
+    /// "Live Photo · 4.5 MB → ~1.8 MB", and "saves ~2.7 MB" when the still's size is known.
+    static func summary(_ flatten: PendingEdit, bytes: Int64) -> (change: String, saves: String?) {
+        guard flatten.live?.stillBytes != nil else { return ("Live Photo · \(Format.size(bytes)) → still", nil) }
+        let still = flatten.estimatedBytes(from: bytes)
+        return ("Live Photo · \(Format.size(bytes)) → ~\(Format.size(still))", "saves ~\(Format.size(flatten.savedBytes(from: bytes)))")
+    }
+
+    /// Locked, the paywall opens instead, and the photo stays as it is.
+    private func commitFlatten() {
+        if options.flattenLocked {
+            isUnlockPresented = true
+            return
+        }
+        onEdit?(flatten)
     }
 
     // MARK: Top bar
@@ -255,8 +337,13 @@ private struct LivePlaybackMarker: View {
 }
 
 #Preview("Live Photo, XXL") {
-    PhotoPreviewView(item: PreviewSamples.livePhoto)
+    PhotoPreviewView(item: PreviewSamples.livePhoto, onEdit: { _ in }, options: PhotoEditOptions(canFlatten: true))
         .environment(FeedViewModel.mock())
         .dynamicTypeSize(.xxLarge)
+}
+
+#Preview("Live Photo, Flatten") {
+    PhotoPreviewView(item: PreviewSamples.livePhoto, onEdit: { _ in }, options: PhotoEditOptions(canFlatten: true))
+        .environment(FeedViewModel.mock())
 }
 #endif
