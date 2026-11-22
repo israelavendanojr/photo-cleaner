@@ -20,6 +20,8 @@ import SwiftUI
 struct VideoPreviewView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// The system's appearance. The viewer forces dark for itself; its paywall follows the system.
+    @Environment(\.colorScheme) private var systemColorScheme
     let item: LibraryItem
     /// Overlay text for each direction.
     var label: (SwipeDirection) -> String = { _ in "" }
@@ -55,6 +57,8 @@ struct VideoPreviewView: View {
     /// The original shows in place of the preview while the video is held.
     @State private var isComparing = false
     @State private var wasPlayingBeforeChoosing = false
+    /// Saving a locked trim or applying a locked compression level opens the paywall here, over the viewer.
+    @State private var isUnlockPresented = false
 
     /// The ways out of the viewer that ask first when the handles have moved.
     private enum Exit: Equatable {
@@ -135,6 +139,15 @@ struct VideoPreviewView: View {
             Button("Keep editing", role: .cancel) {}
         } message: { _ in
             Text("You changed this video's trim or compression. Nothing changes in your library until you clear the bin.")
+        }
+        // Over the viewer, since RootView's sheets can't show above a full-screen cover. Closing it
+        // leaves the edit as it was, so the user can keep previewing or discard it.
+        .sheet(isPresented: $isUnlockPresented) {
+            UnlockSheet()
+                .environment(\.colorScheme, systemColorScheme)
+                .presentationDragIndicator(.visible)
+                .presentationBackground { PaperBackground() }
+                .presentationCornerRadius(DS.Radius.card)
         }
         .overlay {
             // No scrim: the video stays live around the popup, for the preview and press-and-hold.
@@ -251,7 +264,12 @@ struct VideoPreviewView: View {
     private func saveEdit() {
         pendingExit = nil
         guard let draft, draft.hasUnsavedChanges else { return }
-        onEdit?(draft.result(compressedBytes: compressedBytes))
+        let edit = draft.result(compressedBytes: compressedBytes)
+        if options.needsUnlock(edit) {
+            isUnlockPresented = true
+            return
+        }
+        onEdit?(edit)
     }
 
     /// The edit once the clip's length is known, from what's saved. None without `onEdit`, for slow-motion
@@ -318,6 +336,10 @@ struct VideoPreviewView: View {
     }
 
     private func applyLevel() {
+        if options.needsUnlock(level: levelChoice) {
+            isUnlockPresented = true
+            return
+        }
         draft?.setCompression(levelChoice)
         isChoosingLevel = false
     }

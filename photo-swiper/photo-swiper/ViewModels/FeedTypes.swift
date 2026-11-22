@@ -53,12 +53,32 @@ struct EditProgress: Equatable {
     var fraction: Double
 }
 
+/// A locked feature the user tried to commit, which opens the paywall. `cardID` is the bundle card that
+/// was swiped or reviewed, or nil for a feature that isn't a card.
+struct LockedPrompt: Equatable {
+    let feature: TierFeature
+    let cardID: FeedCard.ID?
+}
+
 /// What the full-screen video offers for editing: trimming and compressing (each a feature that can be
-/// off), and the compression levels' current settings.
+/// off), whether either is locked (shown and previewed, but saving it opens the paywall), and the
+/// compression levels' current settings.
 struct VideoEditOptions: Equatable {
     var canTrim = true
     var canCompress = true
+    var trimLocked = false
+    var compressLocked = false
     var levels = CompressionLevels.standard
+
+    /// Saving `edit` needs the unlock first: it trims with the trimmer locked, or compresses with
+    /// compression locked. The viewer opens the paywall instead of saving it.
+    func needsUnlock(_ edit: PendingEdit?) -> Bool {
+        guard let edit else { return false }
+        return (trimLocked && edit.range != nil) || needsUnlock(level: edit.compression)
+    }
+
+    /// Applying `level` needs the unlock first. Choosing none never does.
+    func needsUnlock(level: CompressionLevel?) -> Bool { compressLocked && level != nil }
 }
 
 /// The card an undo just restored, and the side it left from.

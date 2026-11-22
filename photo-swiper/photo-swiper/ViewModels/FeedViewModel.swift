@@ -26,7 +26,7 @@ final class FeedViewModel {
         var index: Int
         var decisions: [LibraryItem.ID: Decision]
         var marks: [SimilarGroup.ID: Set<LibraryItem.ID>]
-        let drafts: [FeedCard.ID: [LibraryItem.ID: Decision]]
+        var drafts: [FeedCard.ID: [LibraryItem.ID: Decision]]
         let cardID: FeedCard.ID
         let direction: SwipeDirection
         /// Saved decisions for the card's items before the swipe; nil where there were none.
@@ -64,6 +64,9 @@ final class FeedViewModel {
     private(set) var isPreparingFirstSession = false
     /// A free user's swipe was refused because the pile is full. FeedView shows it.
     private(set) var isPileFullNoticePresented = false
+    /// The user tried to commit a locked feature (`FeatureAccess.locked`): RootView shows the paywall.
+    /// For a card, it names that card so closing the paywall unbundles only that one.
+    private(set) var lockedPrompt: LockedPrompt?
     /// Something about the last delete the user should know, e.g. items the system refused.
     private(set) var deleteNotice: String?
     /// Clearing the bin is making the edited copies. Nil otherwise.
@@ -324,9 +327,11 @@ final class FeedViewModel {
     /// What the full-screen video offers: trimming and compressing unless the feature is off for this
     /// plan, at the current compression settings.
     var videoEditOptions: VideoEditOptions {
-        VideoEditOptions(canTrim: features.access(.videoTrimmer, isUnlocked: isUnlocked).isVisible,
-                         canCompress: features.access(.videoCompression, isUnlocked: isUnlocked).isVisible,
-                         levels: compression.levels)
+        let trim = featureAccess(.videoTrimmer)
+        let compress = featureAccess(.videoCompression)
+        return VideoEditOptions(canTrim: trim.isVisible, canCompress: compress.isVisible,
+                                trimLocked: trim == .locked, compressLocked: compress == .locked,
+                                levels: compression.levels)
     }
     /// The edit waiting for this video, if there is one.
     func pendingEdit(for itemID: LibraryItem.ID) -> PendingEdit? {
@@ -534,28 +539,33 @@ final class FeedViewModel {
     }
 
     /// Whether swiping card `cardID` this way would go through. The deck asks before letting a card fly.
-    /// False out of swipes, for a free user when it would take the pile past its limit, or when
-    /// `cardID` is no longer the current card. Admin Tools' mock cards never need a swipe, but their
+    /// False out of swipes, for a free user when it would take the pile past its limit, for a locked
+    /// bundle (`isLocked`), or when `cardID` is no longer the current card. Admin Tools' mock cards never need a swipe, but their
     /// deletes count toward the free pile limit like any other.
     func canDecide(_ direction: SwipeDirection, cardID: FeedCard.ID) -> Bool {
         guard let card = currentCard else { return gate.admitsSwipe }
-        guard card.id == cardID, card.isAdminMock || gate.admitsSwipe else { return false }
+        guard card.id == cardID, !isLocked(card), card.isAdminMock || gate.admitsSwipe else { return false }
         return fitsInPile(itemDecisions(for: card, direction: direction), card: card)
     }
 
     /// Whether a finished one-by-one review of card `cardID` would go through, like `canDecide`.
     func canDecideIndividually(_ outcome: [LibraryItem.ID: Decision], cardID: FeedCard.ID) -> Bool {
         guard let card = currentCard else { return gate.admitsSwipe }
-        guard card.id == cardID, card.isAdminMock || gate.admitsSwipe else { return false }
+        guard card.id == cardID, !isLocked(card), card.isAdminMock || gate.admitsSwipe else { return false }
         guard let complete = completed(outcome, for: card) else { return true }
         return fitsInPile(complete, card: card)
     }
 
-    /// The deck refused a swipe on `cardID`: opens the wall when out of swipes, or says the pile is full.
-    /// Nothing happens if that card is no longer the current one. A mock card never costs a swipe, so it
-    /// can only have been refused for the pile, and never opens the wall.
+    /// The deck refused a swipe on `cardID`: opens the paywall when its feature is locked, the wall when
+    /// out of swipes, or says the pile is full. Nothing happens if that card is no longer the current one.
+    /// A mock card never costs a swipe, so it can only have been refused for the pile or a lock, and never
+    /// opens the wall.
     func refuse(_ direction: SwipeDirection, cardID: FeedCard.ID) {
         guard let card = currentCard, card.id == cardID else { return }
+        if isLocked(card), let feature = card.feature {
+            lockedPrompt = LockedPrompt(feature: feature, cardID: card.id)
+            return
+        }
         refreshAllowance()
         if !card.isAdminMock, !gate.admitsSwipe {
             presentWall()
@@ -567,10 +577,12 @@ final class FeedViewModel {
     /// Decides card `cardID`, the one the user swiped. If it's no longer the current card, nothing happens.
     /// Out of free swipes, nothing is committed and the wall opens instead.
     /// A free user's delete that won't fit in the pile is refused whole, and says so.
+    /// A locked bundle is never decided: nothing is charged, recorded or saved (the deck asks `canDecide`
+    /// first and opens the paywall through `refuse`).
     func decide(_ direction: SwipeDirection, cardID: FeedCard.ID) {
-        guard phase == .feed, let top = currentCard else { return }
+        guard phase == .feed, let top = currentCard, !isLocked(top) else { return }
         // Admitting can credit a refill, which reorders the deck, so the card is only read after it.
-        guard top.isAdminMock || admitSwipe(), let card = currentCard(matching: cardID) else { return }
+        guard top.isAdminMock || admitSwipe(), let card = currentCard(matching: cardID), !isLocked(card) else { return }
         let outcome = itemDecisions(for: card, direction: direction)
         guard fitsInPile(outcome, card: card) else {
             isPileFullNoticePresented = true
@@ -582,8 +594,10 @@ final class FeedViewModel {
     /// Keeps video card `cardID` and queues `edit` for it in the bin, as a right swipe would keep it.
     /// It costs a swipe like any keep, and undo takes the edit back with the decision. If that card is
     /// no longer the current one, or isn't a video, or the edit is empty, nothing happens.
+    /// A trim while the trimmer is locked, or a compression level while compression is locked, does nothing
+    /// (the viewer opens the paywall before it gets here).
     func decideEdit(_ edit: PendingEdit, cardID: FeedCard.ID) {
-        guard !edit.isEmpty, phase == .feed, let top = currentCard else { return }
+        guard !edit.isEmpty, phase == .feed, let top = currentCard, !isLockedEdit(edit) else { return }
         // Admitting can credit a refill, which reorders the deck, so the card is only read after it.
         guard top.isAdminMock || admitSwipe(), let card = currentCard(matching: cardID), case .video(let item) = card else { return }
         commit([item.id: .keep], card: card, direction: .right, edits: [item.id: edit])
@@ -595,8 +609,13 @@ final class FeedViewModel {
     /// the current one, nothing happens.
     /// It costs one swipe like any card; out of swipes, or past a free user's pile limit, the review
     /// is kept as a draft and the wall or the pile notice opens.
+    /// A locked bundle keeps the review as a draft and decides nothing.
     func decideIndividually(_ outcome: [LibraryItem.ID: Decision], cardID: FeedCard.ID) {
         guard phase == .feed, let top = currentCard, completed(outcome, for: top) != nil else { return }
+        if isLocked(top) {
+            if top.id == cardID { saveDraft(outcome, for: top.id) }
+            return
+        }
         // Admitting can credit a refill, which reorders the deck, so the card is only read after it.
         let admitted = top.isAdminMock || admitSwipe()
         guard let card = currentCard(matching: cardID), let complete = completed(outcome, for: card) else { return }
@@ -955,6 +974,53 @@ final class FeedViewModel {
         }
         await refreshLibraryTotal()
         fillIfNeeded()
+    }
+
+    // MARK: Locked features
+
+    /// What this user gets of `feature` right now.
+    func featureAccess(_ feature: TierFeature) -> FeatureAccess {
+        features.access(feature, isUnlocked: isUnlocked)
+    }
+
+    /// A bundle whose feature is locked for this user: it can be opened and browsed, not decided.
+    func isLocked(_ card: FeedCard) -> Bool {
+        guard let feature = card.feature else { return false }
+        return featureAccess(feature) == .locked
+    }
+
+    /// An edit that uses a locked trimmer or locked compression.
+    private func isLockedEdit(_ edit: PendingEdit) -> Bool {
+        (edit.range != nil && featureAccess(.videoTrimmer) == .locked)
+            || (edit.compression != nil && featureAccess(.videoCompression) == .locked)
+    }
+
+    /// Opens the paywall for a locked feature the user tried to use (the filter pill, a Top Categories row).
+    func requestUnlock(_ feature: TierFeature) {
+        guard featureAccess(feature) == .locked else { return }
+        lockedPrompt = LockedPrompt(feature: feature, cardID: nil)
+    }
+
+    /// The paywall from `lockedPrompt` closed. Unlocked meanwhile, the card stays a bundle and can be
+    /// swiped. Otherwise the locked card is dealt again as its photos, one card each, the way a bundle
+    /// that's off is dealt (D1). Only if it's still the current card and still locked: nothing is decided,
+    /// charged or added to undo. Its review goes with it, even a finished one, since single cards have no
+    /// review; undo's snapshots forget it too. A purchase still waiting (Ask to Buy) leaves it unbundled,
+    /// and a plan whose paid side is also locked can never keep it whole.
+    func lockedPromptDismissed() {
+        guard let prompt = lockedPrompt else { return }
+        lockedPrompt = nil
+        guard let cardID = prompt.cardID, var current = session, let card = currentCard, card.id == cardID, isLocked(card)
+        else { return }
+        current.cards.replaceSubrange(index...index, with: card.items.map(FeedCard.init(item:)))
+        session = current
+        drafts[card.id] = nil
+        marks[card.id] = nil
+        for i in history.indices {
+            history[i].drafts[card.id] = nil
+            history[i].marks[card.id] = nil
+        }
+        saveProgress()
     }
 
     // MARK: Swipe allowance

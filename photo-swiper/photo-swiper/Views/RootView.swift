@@ -65,6 +65,14 @@ struct RootView: View {
                 .presentationBackground { PaperBackground() }
                 .presentationCornerRadius(DS.Radius.card)
         }
+        // A locked feature the user tried to commit. Closing it without buying lets the view model
+        // deal a locked card as its photos (`lockedPromptDismissed`).
+        .sheet(isPresented: lockedPrompt) {
+            UnlockSheet()
+                .presentationDragIndicator(.visible)
+                .presentationBackground { PaperBackground() }
+                .presentationCornerRadius(DS.Radius.card)
+        }
         .sheet(isPresented: $isUpsellPresented) {
             UnlockSheet()
                 .presentationDragIndicator(.visible)
@@ -103,6 +111,11 @@ struct RootView: View {
             if UserDefaults.standard.bool(forKey: "showPile") { isPilePresented = true }
             #endif
         }
+    }
+
+    /// The paywall for a locked feature. Closing it tells the view model, which may unbundle the card.
+    private var lockedPrompt: Binding<Bool> {
+        Binding(get: { vm.lockedPrompt != nil }, set: { if !$0 { vm.lockedPromptDismissed() } })
     }
 
     /// Shown once when saved progress couldn't be opened at launch.

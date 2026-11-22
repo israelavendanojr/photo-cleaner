@@ -55,7 +55,7 @@ enum FeedCard: Identifiable, Hashable, Sendable, Codable {
     }
 
     /// Itself when its feature is in `visible` (unlocked or locked), otherwise a single card per item, in
-    /// the bundle's order. A locked bundle stays whole so it can be browsed.
+    /// the bundle's order. A locked bundle stays whole so it can be browsed; committing it opens the paywall.
     func unbundled(unless visible: Set<TierFeature>) -> [FeedCard] {
         guard let feature, !visible.contains(feature) else { return [self] }
         return items.map(FeedCard.init(item:))
