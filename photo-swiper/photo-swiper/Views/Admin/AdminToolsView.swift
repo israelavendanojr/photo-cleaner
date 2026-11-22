@@ -34,6 +34,7 @@ struct AdminToolsView: View {
                 #endif
                 FreeLimitsPanel()
                 FeatureAvailabilityPanel()
+                TopCategoriesPanel()
                 CompressionLevelsPanel()
             }
             .padding(.horizontal, DS.Spacing.l)

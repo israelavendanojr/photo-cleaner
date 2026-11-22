@@ -90,6 +90,47 @@ struct DashboardStatsTests {
                 "Even when it's the biggest")
     }
 
+    // MARK: Top Categories (JUN-88)
+
+    private func row(_ focus: FocusTarget, _ bytes: Int64, count: Int = 1) -> DashboardSnapshot.Row {
+        DashboardSnapshot.Row(focus: focus, count: count, bytes: bytes)
+    }
+
+    @Test func topCategoriesAreTheHeaviestContenders() {
+        let rows = [
+            row(.category(.photo), 99_000), row(.savedForLater, 98_000), row(.category(.video), 97_000),
+            row(.livePhotos, 5_000), row(.allVideos, 9_000), row(.category(.screenshot), 1_000), row(.documents, 3_000),
+        ]
+        #expect(DashboardStats.topCategories(rows, count: 3).map(\.focus) == [.allVideos, .livePhotos, .documents],
+                "Photos, saved for later and large videos never count, however big")
+    }
+
+    @Test func equalSizesKeepTheListOrderWhateverOrderTheyCameIn() {
+        let rows = [row(.documents, 500), row(.category(.burst), 500), row(.blurry, 500), row(.category(.duplicate), 500)]
+        #expect(DashboardStats.topCategories(rows, count: 4).map(\.focus)
+            == [.category(.duplicate), .blurry, .category(.burst), .documents])
+    }
+
+    @Test func emptyRowsAndCountsBeyondWhatsThereAreLeftOut() {
+        let rows = [row(.blurry, 0, count: 0), row(.accidental, 10), row(.category(.similar), 20)]
+        #expect(DashboardStats.topCategories(rows, count: 8).map(\.focus) == [.category(.similar), .accidental])
+        #expect(DashboardStats.topCategories(rows, count: 0).isEmpty)
+        #expect(DashboardStats.topCategories(rows, count: -1).isEmpty)
+    }
+
+    @Test func everyContenderCanBeATopCategory() {
+        let rows = DashboardStats.topCategoryContenders.enumerated().map { row($1, Int64(100 - $0)) }
+        #expect(DashboardStats.topCategories(rows, count: 20).map(\.focus) == DashboardStats.topCategoryContenders)
+        #expect(Set(DashboardStats.topCategoryContenders).isDisjoint(with: [.category(.photo), .savedForLater, .category(.video)]))
+    }
+
+    @Test func theMockLibrarysTopThree() {
+        let snapshot = make([], scan: MockFeedBuilder.scan)
+        let top = snapshot.topCategories(count: 3)
+        #expect(top.count == 3)
+        #expect(top.map(\.bytes) == top.map(\.bytes).sorted(by: >))
+    }
+
     @Test func theSnapshotCarriesEveryRowWithSomethingInIt() throws {
         let snapshot = make([], scan: MockFeedBuilder.scan)
         let rows = try #require(snapshot.rows)
@@ -181,9 +222,9 @@ struct LibraryScanTests {
         #expect(DashboardStats.rows(scan).map(\.focus).contains(.blurry))
     }
 
-    /// The dashboard's "Ready to clear" total. A blurry shot that's also a similar one is in both rows,
-    /// so the rows can't be summed; the total counts it once.
-    @Test func theToClearTotalCountsAnItemInTwoRowsOnce() {
+    /// A blurry shot that's also a similar one is in both rows, so the rows overlap and can't be summed,
+    /// which is why the Library shows no total.
+    @Test func anItemCanCountInTwoRows() {
         var softExtra = features(bytes: 4_000)
         softExtra.sharpness = 12
         var soft = features(bytes: 2_000)
@@ -202,26 +243,21 @@ struct LibraryScanTests {
         )
         #expect(scan.bucket(for: .category(.similar)) == .init(count: 1, bytes: 4_000))
         #expect(scan.bucket(for: .blurry) == .init(count: 2, bytes: 6_000), "The similar extra is blurry too")
-        #expect(scan.toClear == .init(count: 3, bytes: 7_000), "Counted once; large videos and plain photos aren't in it")
 
         let snapshot = DashboardStats.make(history: [], scan: scan, now: .now)
-        #expect(snapshot.toClearBytes == 7_000)
-        let toClear = Set(snapshot.toClearRows.map(\.focus))
-        let others = Set(snapshot.otherRows.map(\.focus))
-        #expect(toClear == [.category(.similar), .category(.screenshot), .blurry])
-        #expect(others == [.allVideos, .category(.photo)])
+        #expect(Set(snapshot.topCategories(count: 8).map(\.focus)) == [.category(.similar), .category(.screenshot), .blurry, .allVideos],
+                "Photos and large videos are never Top Categories")
     }
 
-    /// A snapshot cached before the total existed decodes, and shows no total rather than a wrong one.
-    @Test func anOlderCachedSnapshotHasNoToClearTotal() throws {
-        var snapshot = DashboardStats.make(history: [], scan: LibraryScan(), now: .now)
-        snapshot.toClearBytes = 5
+    /// A snapshot cached with the old to-clear total still decodes; the total is ignored.
+    @Test func aCachedSnapshotWithTheOldTotalStillDecodes() throws {
+        let snapshot = DashboardStats.make(history: [], scan: MockFeedBuilder.scan, now: .now)
         let data = try JSONEncoder().encode(snapshot)
         var json = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
-        json["toClearBytes"] = nil
+        json["toClearBytes"] = 5_510_000_000
         let older = try JSONSerialization.data(withJSONObject: json)
         let decoded = try JSONDecoder().decode(DashboardSnapshot.self, from: older)
-        #expect(decoded.toClearBytes == nil)
+        #expect(decoded.rows == snapshot.rows)
     }
 
     @Test func eachItemCountsOnceInTheFirstBucketItFits() {

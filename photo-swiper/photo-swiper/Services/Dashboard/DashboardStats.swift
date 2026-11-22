@@ -32,15 +32,14 @@ struct DashboardSnapshot: Equatable, Codable, Sendable {
     // gone now (health, cumulative, weekly, timeline, forecast, insights, composition, chips, and
     // `activity` and `reviews`, the old heatmaps) are ignored when decoding.
     /// Biggest first, saved for later last, only those with something in them (`DashboardStats.rows`).
+    /// A `toClearBytes` total cached by older builds is ignored: the rows overlap, so no total is shown.
     var rows: [Row]?
-    /// What the amount-to-clear rows come to, each item counted once (`LibraryScan.toClear`). Nil when the
-    /// scan didn't say, so no total is shown rather than a sum that counts some photos twice.
-    var toClearBytes: Int64?
 
-    /// The rows that are amounts to clear, and the rest: kinds of thing in the library, and what's saved
-    /// for later. Each keeps the order of `rows`.
-    var toClearRows: [Row] { (rows ?? []).filter(\.focus.isAmountToClear) }
-    var otherRows: [Row] { (rows ?? []).filter { !$0.focus.isAmountToClear } }
+    /// The Library's Top Categories (JUN-88): the `count` heaviest of `topCategoryContenders` by bytes,
+    /// only those with something in them. Equal sizes keep `FocusTarget.listOrder`.
+    func topCategories(count: Int) -> [Row] {
+        DashboardStats.topCategories(rows ?? [], count: count)
+    }
 
     var weeklyChange: WeeklyChange? { DashboardStats.weeklyChange(this: clearedThisWeek, last: clearedLastWeek) }
 }
@@ -56,7 +55,6 @@ enum DashboardStats {
         snapshot.clearedLastWeek = history.filter { $0.at > twoWeeksAgo && $0.at <= weekAgo }.reduce(0) { $0 + $1.bytes }
         if let scan {
             snapshot.rows = rows(scan)
-            snapshot.toClearBytes = scan.toClear?.bytes
             snapshot.scanPercent = scan.scanPercent
         }
         return snapshot
@@ -66,6 +64,25 @@ enum DashboardStats {
     static func weeklyChange(this: Int64, last: Int64) -> DashboardSnapshot.WeeklyChange? {
         guard this > 0 || last > 0 else { return nil }
         return DashboardSnapshot.WeeklyChange(delta: this - last, percent: last > 0 ? Double(this - last) / Double(last) : nil)
+    }
+
+    /// What can be a Top Category: what's worth looking through to clear. Photos (everything plain), saved
+    /// for later (what the user put off) and large videos (Videos already holds them) can't.
+    static let topCategoryContenders: [FocusTarget] = [
+        .category(.duplicate), .category(.similar), .accidental, .blurry, .allVideos, .livePhotos,
+        .category(.screenshot), .category(.burst), .documents,
+    ]
+
+    /// The `count` heaviest contenders in `rows`, by bytes, leaving out any with nothing in them. Equal sizes
+    /// keep `FocusTarget.listOrder`, whatever order `rows` came in.
+    static func topCategories(_ rows: [DashboardSnapshot.Row], count: Int) -> [DashboardSnapshot.Row] {
+        let order = Dictionary(uniqueKeysWithValues: FocusTarget.listOrder.enumerated().map { ($1, $0) })
+        let rank = { (row: DashboardSnapshot.Row) in order[row.focus] ?? Int.max }
+        return Array(
+            rows.filter { topCategoryContenders.contains($0.focus) && $0.count > 0 }
+                .sorted { $0.bytes != $1.bytes ? $0.bytes > $1.bytes : rank($0) < rank($1) }
+                .prefix(max(0, count))
+        )
     }
 
     /// The library card's rows, biggest first, leaving out any with nothing in them. Equal sizes keep
@@ -82,19 +99,5 @@ enum DashboardStats {
             if first.row.bytes != second.row.bytes { return first.row.bytes > second.row.bytes }
             return first.offset < second.offset
         }.map(\.row)
-    }
-}
-
-extension FocusTarget {
-    /// Whether this row's size is space that clearing it would free: the extras of duplicate and similar
-    /// sets, screenshots, burst leftovers, accidental and blurry shots. The library's own kinds (videos,
-    /// Live Photos, documents, photos) and what's saved for later are things to look through, not amounts
-    /// to clear, though large videos, which have no row of their own, would be.
-    var isAmountToClear: Bool {
-        switch self {
-        case .category(let category): category != .photo
-        case .accidental, .blurry: true
-        case .allVideos, .livePhotos, .documents, .savedForLater: false
-        }
     }
 }

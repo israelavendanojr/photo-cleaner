@@ -791,7 +791,8 @@ final class photo_swiperUITests: XCTestCase {
         let menu = app.descendants(matching: .any)["feed.filter.menu"]
         XCTAssertTrue(menu.waitForExistence(timeout: 3), "Focused, the menu opens, not the paywall")
         attachScreenshot(app, "filter menu, locked and focused")
-        app.buttons["feed.filter.option.allVideos"].tap()
+        // Documents is never one of the mock library's top three, so it's always a different focus.
+        app.buttons["feed.filter.option.documents"].tap()
         let close = app.buttons["paywall.close"]
         XCTAssertTrue(close.waitForExistence(timeout: 5), "Another focus asks to unlock")
         close.tap()
@@ -815,6 +816,45 @@ final class photo_swiperUITests: XCTestCase {
         XCTAssertFalse(app.descendants(matching: .any)["feed.filter.menu"].exists)
         app.buttons["paywall.close"].tap()
         XCTAssertTrue(pill.waitForExistence(timeout: 3))
+    }
+
+    // MARK: Top Categories (JUN-88)
+
+    @MainActor
+    private func topCategoryRows(_ app: XCUIApplication) -> XCUIElementQuery {
+        app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "library.row."))
+    }
+
+    @MainActor
+    func testATopCategoryFocusesTheFeed() throws {
+        let app = launch("-unlocked", "YES", "-showLibrary", "YES")
+        let first = topCategoryRows(app).firstMatch
+        XCTAssertTrue(first.waitForExistence(timeout: 8), "Top Categories shows")
+        XCTAssertEqual(topCategoryRows(app).count, 3, "Three by default")
+        XCTAssertFalse(app.descendants(matching: .any)["library.toClearTotal"].exists, "No total")
+        attachScreenshot(app, "library top categories")
+
+        let title = first.label
+        first.tap()
+        let pill = app.buttons["feed.filter"]
+        XCTAssertTrue(pill.waitForExistence(timeout: 5) && pill.isHittable, "Switches to the feed")
+        XCTAssertFalse(pill.label.contains("everything"), "Focused on \(title)")
+    }
+
+    @MainActor
+    func testWhileLockedOnlyTheFirstTopCategoryIsFree() throws {
+        let app = launch("-unlocked", "NO", "-showLibrary", "YES")
+        let rows = topCategoryRows(app)
+        XCTAssertTrue(rows.firstMatch.waitForExistence(timeout: 8), "Locked still shows the rows")
+        rows.element(boundBy: 1).tap()
+        let close = app.buttons["paywall.close"]
+        XCTAssertTrue(close.waitForExistence(timeout: 5), "The second row asks to unlock")
+        close.tap()
+        XCTAssertTrue(close.waitForNonExistence(timeout: 3))
+
+        rows.firstMatch.tap()
+        XCTAssertTrue(app.buttons["feed.filter"].waitForExistence(timeout: 5), "The first row is free and opens the feed")
+        XCTAssertFalse(close.exists)
     }
 
     // MARK: Settings
@@ -984,6 +1024,22 @@ final class photo_swiperUITests: XCTestCase {
         if notNow.exists { notNow.tap() } else { app.swipeDown(velocity: .fast) }
         XCTAssertTrue(title.waitForNonExistence(timeout: 3))
         XCTAssertTrue(raise.isHittable, "Dismissed, it's back on the Admin tab")
+    }
+
+    /// Feature availability has a Free and a Paid setting per feature, and Top Categories has its two tunables (JUN-87).
+    @MainActor
+    func testAdminShowsPerPlanFeatureAccessAndTopCategories() throws {
+        let app = launch()
+        openAdmin(app)
+        let free = app.descendants(matching: .any)["settings.features.feedFilters.free"]
+        scrollTo(free, in: app)
+        XCTAssertTrue(app.descendants(matching: .any)["settings.features.feedFilters.paid"].exists, "One setting per plan")
+        attachScreenshot(app, "admin feature availability")
+
+        let count = app.descendants(matching: .any)["settings.topCategories.count"]
+        scrollTo(count, in: app)
+        XCTAssertTrue(app.descendants(matching: .any)["settings.topCategories.freeRows"].exists)
+        attachScreenshot(app, "admin top categories")
     }
 
     // MARK: Progress

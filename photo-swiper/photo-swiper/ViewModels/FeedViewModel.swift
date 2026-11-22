@@ -144,6 +144,8 @@ final class FeedViewModel {
     let features: FeatureAvailabilityTunables
     /// The compression levels' settings, for the viewer's estimates and previews and the bin's exports.
     let compression: CompressionTunables
+    /// How many Top Categories the Library shows, and how many stay free while they're locked.
+    let topCategories: TopCategoriesTunables
     /// The allowance, the wall and the unlock purchase, and the free pile limit.
     let gate: SwipeGate
     /// The review prompt or unlock offer a delete earns.
@@ -165,6 +167,7 @@ final class FeedViewModel {
     ///   - progressLoadFailed: Saved progress couldn't be opened, so `store` is a stand-in. The user is told once.
     ///   - editor: Makes the bin's edited copies. Nil leaves edits waiting in the bin when it's cleared.
     ///   - compression: Live compression settings. Nil fixes them at the standard levels.
+    ///   - topCategories: Live Top Categories limits. Nil fixes them at the standard ones.
     init(
         library: any PhotoLibraryProviding,
         builder: any FeedBuilding,
@@ -182,10 +185,12 @@ final class FeedViewModel {
         dashboardCache: URL? = nil,
         editor: (any VideoEditing)? = nil,
         compression: CompressionTunables? = nil,
+        topCategories: TopCategoriesTunables? = nil,
         now: @escaping () -> Date = Date.init
     ) {
         self.editor = editor
         self.compression = compression ?? .fixed()
+        self.topCategories = topCategories ?? .fixed()
         self.library = library
         self.builder = builder
         self.store = store
@@ -222,11 +227,12 @@ final class FeedViewModel {
         features: FeatureAvailabilityTunables? = nil,
         notifier: RefillNotifier? = nil,
         editor: (any VideoEditing)? = nil,
-        compression: CompressionTunables? = nil
+        compression: CompressionTunables? = nil,
+        topCategories: TopCategoriesTunables? = nil
     ) {
         self.init(library: library, builder: builder, store: store, entitlements: entitlements, allowanceStore: allowanceStore,
                   allowanceTunables: allowanceTunables, freeTier: freeTier, features: features, notifier: notifier, editor: editor,
-                  compression: compression)
+                  compression: compression, topCategories: topCategories)
         libraryStats = stats
         apply(session)
         refreshTotals()

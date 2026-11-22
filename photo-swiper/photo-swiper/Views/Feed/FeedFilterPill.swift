@@ -87,6 +87,8 @@ struct FeedFilterMenu: View {
         let identifier = target?.identifier ?? "everything"
         return Button {
             close()
+            // The focus already on just closes the menu, locked or not.
+            guard !isCurrent else { return }
             if target != nil, access != .unlocked {
                 vm.requestUnlock(.feedFilters)
                 return

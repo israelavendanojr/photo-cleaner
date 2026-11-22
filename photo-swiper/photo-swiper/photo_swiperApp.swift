@@ -68,10 +68,11 @@ private extension FeedViewModel {
         if UserDefaults.standard.bool(forKey: "resetDevMode") {
             DevMode.shared.setEnabled(true)
         }
-        // `-resetTunables YES` drops Developer mode's saved free-limit and feature overrides, so UI tests run on the defaults.
+        // `-resetTunables YES` drops Developer mode's saved free-limit, feature and Top Categories overrides, so UI tests run on the defaults.
         if UserDefaults.standard.bool(forKey: "resetTunables") {
             FreeTierTunables.shared.resetToDefaults()
             FeatureAvailabilityTunables.shared.resetToDefaults()
+            TopCategoriesTunables.shared.resetToDefaults()
         }
         if LibraryServices.usesMock {
             let entitlements = EntitlementServices.make(mock: true)
@@ -82,13 +83,13 @@ private extension FeedViewModel {
             let allowance = debugSwipesLeft.map { SwipeAllowance(balance: $0, tunables: allowanceTunables, now: .now) }
             if let raw = UserDefaults.standard.string(forKey: "startAt"), let start = MockStart(rawValue: raw) {
                 return .mock(startingAt: start, entitlements: entitlements, allowance: allowance,
-                             freeTier: .shared, features: .shared, notifier: notifier, compression: .shared)
+                             freeTier: .shared, features: .shared, notifier: notifier, compression: .shared, topCategories: .shared)
             }
             return FeedViewModel(
                 library: MockPhotoLibrary(grantedAccess: UserDefaults.standard.bool(forKey: "limitedAccess") ? .limited : .full),
                 builder: MockFeedBuilder(), store: mockProgressStore(), entitlements: entitlements,
                 allowanceStore: SwipeAllowanceStore(initial: allowance), freeTier: .shared, features: .shared, notifier: notifier,
-                editor: MockVideoEditor(), compression: .shared
+                editor: MockVideoEditor(), compression: .shared, topCategories: .shared
             )
         }
         if let left = debugSwipesLeft {
@@ -112,7 +113,7 @@ private extension FeedViewModel {
             return FeedViewModel(
                 library: library, builder: PhotoKitFeedBuilder(), store: InMemoryProgressStore(), entitlements: entitlements,
                 allowanceStore: SwipeAllowanceStore(defaults: .standard), freeTier: .shared, features: .shared,
-                progressLoadFailed: true, editor: PhotoKitVideoEditor(), compression: .shared
+                progressLoadFailed: true, editor: PhotoKitVideoEditor(), compression: .shared, topCategories: .shared
             )
         }
         let store = SwiftDataProgressStore(container: container)
@@ -138,7 +139,7 @@ private extension FeedViewModel {
             notifier: RefillNotifier(center: SystemNotificationCenter(), defaults: .standard),
             dashboardCache: DashboardController.defaultCacheURL,
             editor: PhotoKitVideoEditor(),
-            compression: .shared
+            compression: .shared, topCategories: .shared
         )
     }
 
