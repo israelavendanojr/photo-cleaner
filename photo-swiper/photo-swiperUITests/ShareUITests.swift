@@ -27,6 +27,10 @@ final class ShareUITests: XCTestCase {
         let sheet = app.otherElements["ActivityListView"]
         XCTAssertTrue(sheet.waitForExistence(timeout: 8), "The share sheet opens once the file is ready")
         attachScreenshot(app, "sheet")
+        // The sheet attaches late while it loads its targets; that mustn't be taken for a refusal, which
+        // deletes the file under the open sheet and shows this toast.
+        let refused = app.staticTexts["Couldn't open the share sheet. Try again."]
+        XCTAssertFalse(refused.waitForExistence(timeout: 2), "An opened sheet isn't reported as refused")
 
         let close = app.buttons.matching(NSPredicate(format: "label == %@ OR identifier == %@", "Close", "Close")).firstMatch
         if close.waitForExistence(timeout: 2) {

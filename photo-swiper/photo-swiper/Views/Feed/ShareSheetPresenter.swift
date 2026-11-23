@@ -29,17 +29,19 @@ struct ShareSheetPresenter: UIViewControllerRepresentable {
         let sheet = UIActivityViewController(activityItems: [payload.url], applicationActivities: nil)
         sheet.popoverPresentationController?.sourceView = host.view
         sheet.completionWithItemsHandler = { _, _, _, _ in coordinator.finish(payload.id, presented: true) }
-        // After this update, so the host is in the window.
+        // After this update, so the host is in the window. UIKit refuses a presentation silently (and the
+        // completion handler then never runs) only when the root is off screen, already presenting, or
+        // mid-transition, so those are checked up front. Nothing is checked after `present`:
+        // `UIActivityViewController` loads its targets first and attaches later, so an early look sees it
+        // unpresented, and treating that as a refusal deleted the file under an open sheet.
         DispatchQueue.main.async {
-            guard let root = host.view.window?.rootViewController, root.presentedViewController == nil else {
+            guard let root = host.view.window?.rootViewController, root.viewIfLoaded?.window != nil,
+                  root.presentedViewController == nil, !root.isBeingPresented, !root.isBeingDismissed
+            else {
                 coordinator.finish(payload.id, presented: false)
                 return
             }
             root.present(sheet, animated: true)
-            // A refused presentation never calls the sheet's completion handler, so check it took.
-            DispatchQueue.main.async {
-                if sheet.presentingViewController == nil { coordinator.finish(payload.id, presented: false) }
-            }
         }
     }
 
