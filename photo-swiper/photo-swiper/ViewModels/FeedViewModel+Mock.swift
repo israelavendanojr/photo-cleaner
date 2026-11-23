@@ -61,6 +61,7 @@ extension FeedViewModel {
             notifier: notifier,
             editor: MockVideoEditor(),
             photoEditor: MockPhotoEditor(),
+            sharer: MockMediaSharer(),
             compression: compression,
             topCategories: topCategories
         )

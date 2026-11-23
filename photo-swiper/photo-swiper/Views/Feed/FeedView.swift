@@ -22,6 +22,7 @@ struct FeedView: View {
                     .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { topBarHeight = $0 }
                 CardStackView()
                     .overlay(alignment: .top) { trimToast }
+                    .overlay(alignment: .top) { shareToast }
                     .allowsHitTesting(!isFilterOpen)
                     .accessibilityHidden(isFilterOpen)
             }
@@ -38,6 +39,7 @@ struct FeedView: View {
             }
         }
         .animation(DS.Motion.calm, value: vm.trimToast)
+        .animation(DS.Motion.calm, value: vm.shareNotice)
         // Free users clear the pile to go on; the unlock is offered after the delete instead.
         .alert("Your pile is full", isPresented: Binding(get: { vm.isPileFullNoticePresented }, set: { if !$0 { vm.dismissPileFullNotice() } })) {
             Button("Review pile", action: onOpenPile)
@@ -67,6 +69,18 @@ struct FeedView: View {
             .transition(reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity))
             .id(toast.id)
             .accessibilityIdentifier("feed.trimToast")
+        }
+    }
+
+    /// Why a share didn't happen (offline, gone, export failed), over the top of the deck (JUN-8).
+    @ViewBuilder private var shareToast: some View {
+        if let notice = vm.shareNotice {
+            Toast(text: notice.text)
+                .padding(.horizontal, DS.Spacing.l)
+                .padding(.top, DS.Spacing.xs)
+                .transition(reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity))
+                .id(notice.id)
+                .accessibilityIdentifier("feed.shareToast")
         }
     }
 }

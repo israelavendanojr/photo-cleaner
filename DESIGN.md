@@ -11,7 +11,7 @@ For UI work, load the `ios-ui` skill. To check a diff against this file, load `u
 - **Calm motion.** Springs settle with little bounce. Nothing loops for attention, and every flourish has a still fallback under Reduce Motion.
 - **Serif for moments, system for work.** Newsreader (`dsSerif`) is for headlines and big numbers. SF in system text styles is for everything you read or tap.
 - **Plain words.** Copy is in sentence case and short sentences, with no exclamation marks and no dark patterns. Say what happens: "They'll stay in Recently Deleted for 30 days."
-- **Private by design.** Nothing on screen implies a cloud. Don't add account, sync or sharing affordances.
+- **Private by design.** Nothing on screen implies a cloud. Don't add account or sync affordances. Sharing goes out only through iOS's own share sheet, one photo or video at a time, when the user asks, and never carries its location.
 
 ## Color
 
@@ -149,6 +149,7 @@ All of these are in [`DesignSystem/Components/`](photo-swiper/photo-swiper/Desig
 | `PillButtonStyle`, applied as `.buttonStyle(.pill(_:))` | Any full-width action. `.ink` is the primary action, `.brick` is reserved for the destructive or paid primary (Delete N, Unlock), `.outline` is secondary, `.ghost` is tertiary ("Not now"). One brick button per screen at most. |
 | `CircleActionButton` | The feed's round action-bar buttons with a caption. `.destructive` (brick on tint) for Delete, `.neutral` (card with an `outline` ring) for Later, `.primary` (a filled `ink` disc with an `onInk` icon) for Keep. |
 | `CircleIconButton` | The 44pt icon button in top bars (Undo, Close, Settings): an ink icon on `card` with an `outline` ring. Requires `accessibilityLabel`. |
+| `FrostedIconButton` | A round 44pt icon button over media: a white icon on `.ultraThinMaterial`. The full-screen video's Close, volume and Compress, the compression popup's close, and the Share button on photo and video cards. `isActive` fills it `brickFill` (a compression level set); `isBusy` swaps the icon for a white spinner and stays tappable, so the same tap cancels. Requires `accessibilityLabel`. |
 | `PressScaleStyle` | The press-down scale for custom icon buttons. It also dims the button when disabled. |
 | `Chip` | Small rounded labels. `.brick` for counts tied to clearing, `.plain` for the feed's filter pill ("Videos ⌄", with `trailingSystemImage: "chevron.down"`, which takes the text color), `.onPhoto` for a label lying on a picture (Best pick, Keep): a pale slip with dark text in both appearances. `.frosted` for text over video. |
 | `PillTabBar` | The floating tab bar: text-only tabs (`DS.TabBar`), the selected one on an ink capsule. Its selection animates with `DS.Motion.tab` and fires `Haptics.tabChange`. |
@@ -172,6 +173,7 @@ Formatting goes through `Format` (`size`, `signedSize`, `percent`, `signedPercen
 - **The loose stack** (`SwipeDeck`, `StackedBehind`, `DS.Stack`): the next two cards lie behind the top one as real cards, each tilted a few degrees and a step dimmer, the nearer one nudged out from under the top. A card's tilt comes from its ID (`StackPose.tilt`), so it never changes between renders or launches. As the top card is dragged, the cards behind move a step forward in proportion: the next straightens and brightens. On fly-out it settles to 0° (`DS.Motion.stackSettle`) and a new card fades in at the back; undo runs it backward. With Reduce Motion the cards behind hold still during the drag. It's drawing only: the deck's order and which card a swipe decides are the view model's. Only the top card is in the accessibility tree.
 - **Action bar:** Delete (brick on tint), Later (smaller, ringed), Keep (the filled ink disc).
 - **Photo card:** the date in serif over the scrim, place and size under it. A flagged photo shows no flag on its card (`testFlaggedPhotoCardShowsNoFlag`).
+- **Share** (`CardShareButton`, JUN-8): a `FrostedIconButton` (`square.and.arrow.up`) inset `DS.Spacing.m` from the bottom-trailing corner of single photo and video cards in the main feed, never on bundles, in their reviews or in the full-screen viewers. The caption leaves room for it (`CardShareButton.captionClearance`), so the video's big size scales down rather than run under it. It spins while the file is prepared (a tap cancels) and then opens the system share sheet; a failure is a `Toast` over the deck. Locked, it looks the same and opens the paywall; off, it isn't there. VoiceOver reaches it as the card's "Share" action. A drag that starts on it still swipes the card, and a tap never decides.
 
 ### The paywall
 
@@ -276,7 +278,7 @@ These are known gaps in the code as of this file's first version. They're docume
   - 14/8 in `Chip`, and 6 in `PendingPileView` badges.
 - **58 literal `spacing:` values** in stacks across `Views/` and `DesignSystem/`.
 - **A radius with no token:** 8 in `PendingThumbnailGrid` (`thumb` is 12).
-- **Fixed-size fonts that don't scale with Dynamic Type:** 34 light in `LibraryAccessView`, 8 black in `SimilarShotsCardView`, 9 black and 20 in `PendingPileView`, and 18 and 26 on the preview buttons (`PhotoPreviewView`, `VideoPreviewView`).
+- **Fixed-size fonts that don't scale with Dynamic Type:** 34 light in `LibraryAccessView`, 8 black in `SimilarShotsCardView`, 9 black and 20 in `PendingPileView`, and 18 on the frosted buttons (`FrostedIconButton`, which the cards' Share button now uses too, and `PhotoPreviewView`'s close).
 - **Raw shadows outside the two modifiers:** black legibility shadows over media in `PendingPileView` and `VideoPreviewView`.
 - **Raw animations outside `DS.Motion`:** `RootView` (2), `PhotoAccessPrimerView` (2), `OnboardingView`, `NotificationsPrimerView` and `SwipeableCard` (2).
 - **Haptic outside `Haptics`:** `PendingPileView` uses `.sensoryFeedback(.selection, trigger:)`.

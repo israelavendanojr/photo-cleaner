@@ -27,7 +27,7 @@ struct FeatureAvailabilityTests {
         for feature in [TierFeature.feedFilters, .topCategories] {
             #expect(features.planAccess(feature) == PlanAccess(free: .locked, paid: .unlocked))
         }
-        for feature in [TierFeature.similarShots, .duplicates, .screenshotBatches, .videoTrimmer, .videoCompression] {
+        for feature in [TierFeature.similarShots, .duplicates, .screenshotBatches, .videoTrimmer, .videoCompression, .sharing] {
             #expect(features.planAccess(feature) == .everyone)
         }
         #expect(features.visible(isUnlocked: false) == Set(TierFeature.allCases), "Locked still shows")

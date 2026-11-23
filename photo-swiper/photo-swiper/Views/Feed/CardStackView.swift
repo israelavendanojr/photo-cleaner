@@ -27,8 +27,10 @@ struct CardStackView: View {
             waitingText: vm.isFindingMore ? "Finding more…" : nil,
             onEdit: edit,
             videoEditOptions: vm.videoEditOptions,
-            photoEditOptions: vm.photoEditOptions
+            photoEditOptions: vm.photoEditOptions,
+            allowsShare: true
         )
+        .background { ShareSheetPresenter(payload: vm.sharePayload, onFinish: vm.shareFinished) }
         #if DEBUG
         .overlay(alignment: .top) { CurrentCardMarker() }
         #endif

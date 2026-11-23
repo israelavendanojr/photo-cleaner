@@ -40,9 +40,14 @@ final class FeedViewModel {
 
     private(set) var phase: FeedPhase = .loading
     private(set) var session: Session? {
-        didSet { cardsRevision &+= 1 }
+        didSet {
+            cardsRevision &+= 1
+            dropShareIfOffTop()
+        }
     }
-    private(set) var index = 0
+    private(set) var index = 0 {
+        didSet { dropShareIfOffTop() }
+    }
     private(set) var decisions: [LibraryItem.ID: Decision] = [:]
     private(set) var deleteChip: DeleteChip?
     /// The last swipe queued a trim. Its Undo is the feed's undo; anything decided after it hides it.
@@ -70,6 +75,12 @@ final class FeedViewModel {
     private(set) var lockedPrompt: LockedPrompt?
     /// Something about the last delete the user should know, e.g. items the system refused.
     private(set) var deleteNotice: String?
+    /// The item whose file is being prepared for the share sheet (JUN-8). Its card's button shows a spinner.
+    private(set) var sharePreparingID: LibraryItem.ID?
+    /// A prepared file: the share sheet is up, or about to be.
+    private(set) var sharePayload: SharePayload?
+    /// Why the last share didn't happen, shown for a few seconds.
+    private(set) var shareNotice: ShareNotice?
     /// Clearing the bin is making the edited copies. Nil otherwise.
     private(set) var editProgress: EditProgress?
     /// Saved progress couldn't be opened at launch, so this launch runs on a throwaway store.
@@ -113,6 +124,10 @@ final class FeedViewModel {
     private var libraryStats = LibraryStats(totalItems: 0, reviewedItems: 0, freedBytes: 0)
     private var chipTask: Task<Void, Never>?
     private var trimToastTask: Task<Void, Never>?
+    private var shareTask: Task<Void, Never>?
+    /// Names the share being prepared, so one that was cancelled can't land after a newer one started.
+    private var shareAttempt: UUID?
+    private var shareNoticeTask: Task<Void, Never>?
     private var changesTask: Task<Void, Never>?
     /// A refill landed while no deck could take the strongest cards first; the next one dealt does.
     private var refilledSinceDeal = false
@@ -133,6 +148,8 @@ final class FeedViewModel {
     private let editor: (any VideoEditing)?
     /// Makes the bin's flattened Live Photos' stills. Nil in tests that don't need one.
     private let photoEditor: (any PhotoEditing)?
+    /// Prepares files for the share sheet. Nil shows no Share button.
+    private let sharer: (any MediaSharing)?
     private let builder: any FeedBuilding
     private let store: any ProgressStoring
     private let entitlements: any EntitlementStore
@@ -174,6 +191,7 @@ final class FeedViewModel {
     ///   - progressLoadFailed: Saved progress couldn't be opened, so `store` is a stand-in. The user is told once.
     ///   - editor: Makes the bin's edited copies. Nil leaves edits waiting in the bin when it's cleared.
     ///   - photoEditor: Makes the bin's flattened stills. Nil leaves flattens waiting in the bin when it's cleared.
+    ///   - sharer: Prepares a card's photo or video for the share sheet. Nil shows no Share button.
     ///   - compression: Live compression settings. Nil fixes them at the standard levels.
     ///   - topCategories: Live Top Categories limits. Nil fixes them at the standard ones.
     init(
@@ -193,12 +211,14 @@ final class FeedViewModel {
         dashboardCache: URL? = nil,
         editor: (any VideoEditing)? = nil,
         photoEditor: (any PhotoEditing)? = nil,
+        sharer: (any MediaSharing)? = nil,
         compression: CompressionTunables? = nil,
         topCategories: TopCategoriesTunables? = nil,
         now: @escaping () -> Date = Date.init
     ) {
         self.editor = editor
         self.photoEditor = photoEditor
+        self.sharer = sharer
         self.compression = compression ?? .fixed()
         self.topCategories = topCategories ?? .fixed()
         self.library = library
@@ -238,12 +258,13 @@ final class FeedViewModel {
         notifier: RefillNotifier? = nil,
         editor: (any VideoEditing)? = nil,
         photoEditor: (any PhotoEditing)? = nil,
+        sharer: (any MediaSharing)? = nil,
         compression: CompressionTunables? = nil,
         topCategories: TopCategoriesTunables? = nil
     ) {
         self.init(library: library, builder: builder, store: store, entitlements: entitlements, allowanceStore: allowanceStore,
                   allowanceTunables: allowanceTunables, freeTier: freeTier, features: features, notifier: notifier, editor: editor,
-                  photoEditor: photoEditor, compression: compression, topCategories: topCategories)
+                  photoEditor: photoEditor, sharer: sharer, compression: compression, topCategories: topCategories)
         libraryStats = stats
         apply(session)
         refreshTotals()
@@ -1128,6 +1149,107 @@ final class FeedViewModel {
     func requestUnlock(_ feature: TierFeature) {
         guard featureAccess(feature) == .locked else { return }
         lockedPrompt = LockedPrompt(feature: feature, cardID: nil)
+    }
+
+    // MARK: Sharing
+
+    /// What `item`'s Share button shows, or nil for no button: sharing is off for this user, there's no
+    /// sharer, or it's an Admin Tools mock card, which isn't in the library.
+    func shareButton(for item: LibraryItem) -> ShareButtonState? {
+        guard sharer != nil, !item.isAdminMock else { return nil }
+        switch featureAccess(.sharing) {
+        case .off: return nil
+        case .locked: return .locked
+        case .unlocked: return sharePreparingID == item.id ? .preparing : .ready
+        }
+    }
+
+    /// The Share button on `item`'s card was tapped. Locked opens the paywall (no card, like the filter pill).
+    /// Otherwise the file is prepared first and the sheet shown once it's ready (`sharePayload`); a second
+    /// tap while preparing cancels, and taps while another share is under way are ignored.
+    ///
+    /// Takes the item that was tapped, never `currentCard`. Sharing decides nothing, charges no swipe, adds
+    /// no undo step, writes nothing and doesn't move the deck: keeping what was shared is the user's call.
+    func share(_ item: LibraryItem) {
+        guard let state = shareButton(for: item), let sharer else { return }
+        switch state {
+        case .locked:
+            requestUnlock(.sharing)
+        case .preparing:
+            cancelShare()
+        case .ready:
+            guard sharePreparingID == nil, sharePayload == nil else { return }
+            let attempt = UUID()
+            shareAttempt = attempt
+            sharePreparingID = item.id
+            shareTask = Task { [weak self] in
+                let result: Result<URL, any Error>
+                do { result = .success(try await sharer.prepare(item)) } catch { result = .failure(error) }
+                guard let self else {
+                    if case .success(let url) = result { ShareFiles.remove(url) }
+                    return
+                }
+                finishPreparingShare(of: item, attempt: attempt, result: result)
+            }
+        }
+    }
+
+    /// Stops preparing a share. A file that arrives anyway is removed.
+    func cancelShare() {
+        shareTask?.cancel()
+        shareAttempt = nil
+        sharePreparingID = nil
+    }
+
+    /// The share sheet closed, sent or not: its file goes.
+    func shareFinished() {
+        guard let payload = sharePayload else { return }
+        sharePayload = nil
+        ShareFiles.remove(payload.url)
+    }
+
+    /// Waits for the share being prepared, if any. For tests.
+    func waitForShare() async {
+        await shareTask?.value
+    }
+
+    /// The sheet opens only for the share still wanted, while its item is still on top.
+    private func finishPreparingShare(of item: LibraryItem, attempt: UUID, result: Result<URL, any Error>) {
+        let isWanted = shareAttempt == attempt
+        if isWanted {
+            shareAttempt = nil
+            sharePreparingID = nil
+        }
+        switch result {
+        case .success(let url):
+            guard isWanted, currentCard?.items.contains(where: { $0.id == item.id }) == true else {
+                ShareFiles.remove(url)
+                return
+            }
+            sharePayload = SharePayload(itemID: item.id, url: url)
+        case .failure(let error):
+            guard isWanted, !(error is CancellationError) else { return }
+            let shareError = error as? ShareError ?? .exportFailed
+            Self.log.notice("Share couldn't be prepared: \(String(describing: shareError), privacy: .public)")
+            showShareNotice(shareError.message)
+        }
+    }
+
+    /// Swiping the card away (or anything else that takes it off the top) cancels its share.
+    private func dropShareIfOffTop() {
+        guard let id = sharePreparingID, currentCard?.items.contains(where: { $0.id == id }) != true else { return }
+        cancelShare()
+    }
+
+    private func showShareNotice(_ text: String) {
+        let notice = ShareNotice(text: text)
+        shareNotice = notice
+        shareNoticeTask?.cancel()
+        shareNoticeTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(4))
+            guard !Task.isCancelled, self?.shareNotice == notice else { return }
+            self?.shareNotice = nil
+        }
     }
 
     /// The paywall from `lockedPrompt` closed. Unlocked meanwhile, the card stays a bundle and can be
