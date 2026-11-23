@@ -71,19 +71,32 @@ private final class FakeSharer: MediaSharing {
         waiting?.resume(with: result)
     }
 
-    /// Waits until `count` prepares have started and the latest is waiting.
-    func waitForPrepare(_ count: Int = 1) async {
-        for _ in 0..<1000 {
-            if state.withLock({ $0.prepared.count >= count && $0.waiting[count - 1] != nil }) { return }
-            await Task.yield()
+    /// Waits until `count` prepares have started and the latest is waiting. Returning before that would
+    /// let `finish` find nothing to resume and leave the prepare (and the test) suspended forever.
+    func waitForPrepare(_ count: Int = 1, sourceLocation: SourceLocation = #_sourceLocation) async {
+        await poll(sourceLocation: sourceLocation) {
+            self.state.withLock { $0.prepared.count >= count && $0.waiting[count - 1] != nil }
         }
     }
 }
 
-/// Yields until `condition` holds, for work the test can't await directly.
+/// Polls until `condition` holds, for work the test can't await directly.
 @MainActor
-private func eventually(_ condition: () -> Bool) async {
-    for _ in 0..<1000 where !condition() { await Task.yield() }
+private func eventually(sourceLocation: SourceLocation = #_sourceLocation, _ condition: () -> Bool) async {
+    await poll(sourceLocation: sourceLocation, condition)
+}
+
+/// Bounded by time, not by a count of yields: under load (a simulator busy with other suites) a fixed
+/// number of yields can run out before the work does. A timeout fails the test rather than hanging it.
+private func poll(timeout: Duration = .seconds(10), sourceLocation: SourceLocation, _ condition: () -> Bool) async {
+    let deadline = ContinuousClock.now + timeout
+    while !condition() {
+        guard ContinuousClock.now < deadline else {
+            Issue.record("Timed out waiting", sourceLocation: sourceLocation)
+            return
+        }
+        try? await Task.sleep(for: .milliseconds(1))
+    }
 }
 
 /// Sharing a card's photo or video (JUN-8) is gated like any `TierFeature`, prepares the file before the
