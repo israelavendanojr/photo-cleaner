@@ -3,7 +3,8 @@ import Synchronization
 import Testing
 @testable import photo_swiper
 
-/// Deals one fixed deck, then nothing, so paging never changes what's on the table.
+/// Deals one fixed deck, then nothing, so paging never changes what's on the table. Unchecked like
+/// `LockedFeatureTests`' builder: the view model calls it from one task at a time.
 private final class ShareDeckBuilder: FeedBuilding, @unchecked Sendable {
     private let cards: [FeedCard]
     private var dealt = false

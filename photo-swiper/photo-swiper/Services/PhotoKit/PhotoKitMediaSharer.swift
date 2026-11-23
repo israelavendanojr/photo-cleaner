@@ -33,7 +33,7 @@ struct PhotoKitMediaSharer: MediaSharing {
     }
 
     /// What a photo request delivers, carried across PhotoKit's callback.
-    private struct PhotoResult: @unchecked Sendable {
+    private struct PhotoResult: Sendable {
         let data: Data?
         let type: String?
         let needsDownload: Bool
@@ -64,7 +64,9 @@ struct PhotoKitMediaSharer: MediaSharing {
         return url
     }
 
-    /// The export session PhotoKit sets up, carried across its callback.
+    /// The export session PhotoKit sets up, carried across its callback. Unchecked because the session
+    /// isn't Sendable: it's handed over once, from PhotoKit's callback to the one task awaiting it, and
+    /// only that task touches it afterwards.
     private struct SessionResult: @unchecked Sendable {
         let session: AVAssetExportSession?
         let needsDownload: Bool
