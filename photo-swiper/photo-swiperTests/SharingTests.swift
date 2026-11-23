@@ -3,29 +3,30 @@ import Synchronization
 import Testing
 @testable import photo_swiper
 
-/// Deals one fixed deck, then nothing, so paging never changes what's on the table. Unchecked like
-/// `LockedFeatureTests`' builder: the view model calls it from one task at a time.
+/// Deals its pages in order, then nothing, so paging never changes what's on the table unexpectedly.
+/// Unchecked like `LockedFeatureTests`' builder: the view model calls it from one task at a time.
 private final class ShareDeckBuilder: FeedBuilding, @unchecked Sendable {
-    private let cards: [FeedCard]
-    private var dealt = false
+    private var pages: [[FeedCard]]
 
-    init(_ cards: [FeedCard]) {
-        self.cards = cards
+    init(_ pages: [[FeedCard]]) {
+        self.pages = pages
     }
 
     func makeSession(number: Int, options: FeedOptions) async -> Session {
-        defer { dealt = true }
-        return Session(number: number, cards: dealt ? [] : cards)
+        Session(number: number, cards: pages.isEmpty ? [] : pages.removeFirst())
     }
 }
 
-/// Prepares nothing until the test says how it ends, so a share can be caught mid-download.
+/// Prepares nothing until the test says how each prepare ends, so a share can be caught mid-download.
+/// With `ignoresCancel`, a cancelled prepare keeps waiting, as a PhotoKit request may, so a test can
+/// deliver its file late.
 private final class FakeSharer: MediaSharing {
     private struct State {
         var prepared: [LibraryItem.ID] = []
         var cancellations = 0
-        var waiting: CheckedContinuation<URL, Error>?
-        var cancelled = false
+        var ignoresCancel = false
+        var waiting: [Int: CheckedContinuation<URL, Error>] = [:]
+        var cancelled: Set<Int> = []
     }
 
     private let state = Mutex(State())
@@ -33,13 +34,20 @@ private final class FakeSharer: MediaSharing {
     var prepared: [LibraryItem.ID] { state.withLock { $0.prepared } }
     var cancellations: Int { state.withLock { $0.cancellations } }
 
+    func ignoreCancel() {
+        state.withLock { $0.ignoresCancel = true }
+    }
+
     func prepare(_ item: LibraryItem) async throws -> URL {
-        state.withLock { $0.prepared.append(item.id); $0.cancelled = false }
+        let number = state.withLock { state in
+            state.prepared.append(item.id)
+            return state.prepared.count - 1
+        }
         return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
                 let cancelled = state.withLock { state in
-                    if state.cancelled { return true }
-                    state.waiting = continuation
+                    if state.cancelled.contains(number), !state.ignoresCancel { return true }
+                    state.waiting[number] = continuation
                     return false
                 }
                 if cancelled { continuation.resume(throwing: CancellationError()) }
@@ -47,19 +55,18 @@ private final class FakeSharer: MediaSharing {
         } onCancel: {
             let waiting = state.withLock { state in
                 state.cancellations += 1
-                state.cancelled = true
-                defer { state.waiting = nil }
-                return state.waiting
+                state.cancelled.insert(number)
+                return state.ignoresCancel ? nil : state.waiting.removeValue(forKey: number)
             }
             waiting?.resume(throwing: CancellationError())
         }
     }
 
-    /// Ends the prepare that's waiting.
-    func finish(_ result: Result<URL, Error>) {
+    /// Ends prepare number `number` (counting from 0), or the latest one waiting.
+    func finish(_ result: Result<URL, Error>, prepare number: Int? = nil) {
         let waiting = state.withLock { state in
-            defer { state.waiting = nil }
-            return state.waiting
+            guard let key = number ?? state.waiting.keys.max() else { return nil as CheckedContinuation<URL, Error>? }
+            return state.waiting.removeValue(forKey: key)
         }
         waiting?.resume(with: result)
     }
@@ -67,10 +74,16 @@ private final class FakeSharer: MediaSharing {
     /// Waits until `count` prepares have started and the latest is waiting.
     func waitForPrepare(_ count: Int = 1) async {
         for _ in 0..<1000 {
-            if state.withLock({ $0.prepared.count >= count && $0.waiting != nil }) { return }
+            if state.withLock({ $0.prepared.count >= count && $0.waiting[count - 1] != nil }) { return }
             await Task.yield()
         }
     }
+}
+
+/// Yields until `condition` holds, for work the test can't await directly.
+@MainActor
+private func eventually(_ condition: () -> Bool) async {
+    for _ in 0..<1000 where !condition() { await Task.yield() }
 }
 
 /// Sharing a card's photo or video (JUN-8) is gated like any `TierFeature`, prepares the file before the
@@ -92,6 +105,7 @@ struct SharingTests {
 
     private func started(
         _ cards: [FeedCard]? = nil,
+        later: [[FeedCard]] = [],
         access: PlanAccess = .everyone,
         entitlements: TestEntitlements = TestEntitlements(isUnlocked: false),
         store: InMemoryProgressStore = InMemoryProgressStore(),
@@ -99,7 +113,7 @@ struct SharingTests {
     ) async -> FeedViewModel {
         let vm = FeedViewModel(
             library: FakeLibrary(),
-            builder: ShareDeckBuilder(cards ?? [.photo(photo), .photo(other), .video(video)]),
+            builder: ShareDeckBuilder([cards ?? [.photo(photo), .photo(other), .video(video)]] + later),
             store: store,
             entitlements: entitlements,
             defaults: freshDefaults(),
@@ -257,8 +271,9 @@ struct SharingTests {
         #expect(vm.decisions == [photo.id: .keep], "The swipe decided; sharing didn't")
     }
 
-    @Test func aFileThatArrivesAfterTheCardLeftIsThrownAway() async throws {
+    @Test func aFileThatArrivesAfterACancelIsThrownAway() async throws {
         let sharer = FakeSharer()
+        sharer.ignoreCancel()
         let vm = await started(sharer: sharer)
         vm.share(photo)
         await sharer.waitForPrepare()
@@ -267,6 +282,90 @@ struct SharingTests {
         vm.cancelShare()
         sharer.finish(.success(file))
         await vm.waitForShare()
+        #expect(vm.sharePayload == nil)
+        #expect(!FileManager.default.fileExists(atPath: file.deletingLastPathComponent().path), "Its share folder is removed")
+    }
+
+    @Test func aCancelledShareThatLandsLateLeavesTheNewOneAlone() async throws {
+        let sharer = FakeSharer()
+        sharer.ignoreCancel()
+        let vm = await started(sharer: sharer)
+        vm.share(photo)
+        await sharer.waitForPrepare(1)
+        vm.share(photo)
+        #expect(vm.sharePreparingID == nil, "The second tap cancelled")
+        vm.share(photo)
+        await sharer.waitForPrepare(2)
+
+        let late = try preparedFile()
+        sharer.finish(.success(late), prepare: 0)
+        await eventually { !FileManager.default.fileExists(atPath: late.deletingLastPathComponent().path) }
+        #expect(!FileManager.default.fileExists(atPath: late.deletingLastPathComponent().path), "The stale file is removed")
+        #expect(vm.sharePayload == nil, "The stale file never opens the sheet")
+        #expect(vm.sharePreparingID == photo.id, "The newer share is still being prepared")
+
+        let file = try preparedFile()
+        sharer.finish(.success(file), prepare: 1)
+        await vm.waitForShare()
+        #expect(vm.sharePayload?.url == file)
+        vm.shareFinished()
+    }
+
+    @Test func aFailureAfterACancelShowsNothing() async throws {
+        let sharer = FakeSharer()
+        sharer.ignoreCancel()
+        let vm = await started(sharer: sharer)
+        vm.share(photo)
+        await sharer.waitForPrepare()
+        vm.cancelShare()
+
+        sharer.finish(.failure(ShareError.downloadFailed))
+        await vm.waitForShare()
+        #expect(vm.shareNotice == nil)
+    }
+
+    @Test func aPageLandingWhileSharingDoesntCancelIt() async throws {
+        let sharer = FakeSharer()
+        let first = (0..<40).map { FeedCard.photo(item("P\($0)")) }
+        let second = (40..<50).map { FeedCard.photo(item("P\($0)")) }
+        let vm = await started(first, later: [second], entitlements: TestEntitlements(isUnlocked: true), sharer: sharer)
+        for _ in 0..<35 { vm.decideCurrent(.right) }
+        let top = try #require(vm.currentCard?.items.first)
+        #expect(top.id == "P35")
+
+        // The last swipe started the next page; it lands while the file is prepared, and trims the
+        // decided cards behind (more than `keptBehind`), which shifts the deck under the top card.
+        vm.share(top)
+        await sharer.waitForPrepare()
+        await vm.waitForPage()
+        #expect(vm.cards.count < 50, "Cards behind were trimmed")
+        #expect(vm.currentCard?.items.first?.id == top.id)
+        #expect(sharer.cancellations == 0)
+        #expect(vm.sharePreparingID == top.id)
+        vm.cancelShare()
+    }
+
+    @Test func onlyTheTopCardCanShare() async throws {
+        let sharer = FakeSharer()
+        let vm = await started(sharer: sharer)
+        vm.share(other)
+        await vm.waitForShare()
+        #expect(sharer.prepared.isEmpty)
+        #expect(vm.sharePreparingID == nil)
+    }
+
+    @Test func aSecondTapCancelsEvenIfThePlanLockedMeanwhile() async throws {
+        let sharer = FakeSharer()
+        let entitlements = TestEntitlements(isUnlocked: true)
+        let vm = await started(access: PlanAccess(free: .locked, paid: .unlocked), entitlements: entitlements, sharer: sharer)
+        vm.share(photo)
+        await sharer.waitForPrepare()
+
+        entitlements.isUnlocked = false
+        vm.share(photo)
+        await vm.waitForShare()
+        #expect(sharer.cancellations == 1)
+        #expect(vm.lockedPrompt == nil, "A cancel, not the paywall")
         #expect(vm.sharePayload == nil)
     }
 
@@ -312,6 +411,22 @@ struct SharingTests {
     }
 
     // MARK: Cleanup
+
+    @Test func aSheetThatCouldntOpenSaysSoAndDeletesTheFile() async throws {
+        let sharer = FakeSharer()
+        let vm = await started(sharer: sharer)
+        vm.share(photo)
+        await sharer.waitForPrepare()
+        let file = try preparedFile()
+        sharer.finish(.success(file))
+        await vm.waitForShare()
+
+        vm.shareCouldNotPresent()
+        #expect(vm.sharePayload == nil)
+        #expect(vm.shareNotice != nil)
+        #expect(!FileManager.default.fileExists(atPath: file.deletingLastPathComponent().path))
+        #expect(vm.shareButton(for: photo) == .ready, "It can be tried again")
+    }
 
     @Test func finishingTheSheetDeletesTheFile() async throws {
         let sharer = FakeSharer()

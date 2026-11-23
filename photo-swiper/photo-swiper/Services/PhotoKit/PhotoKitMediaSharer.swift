@@ -92,16 +92,17 @@ struct PhotoKitMediaSharer: MediaSharing {
         try Task.checkCancellation()
         guard let result, let session = result.session else { throw result?.needsDownload == true ? ShareError.downloadFailed : .exportFailed }
 
-        session.metadata = ShareMetadata.withoutLocation(try await session.asset.load(.metadata))
         let original = PHAssetResource.assetResources(for: asset).first { $0.type == .video }?.originalFilename
         let url = folder.appending(path: ShareFiles.fileName(original: original, type: .quickTimeMovie, fallback: "Video"))
-        try await session.export(to: url, as: .mov)
+        try await ShareMetadata.exportWithoutLocation(session, to: url, creationDate: asset.creationDate)
         return url
     }
 
-    /// The request failed because the item is in iCloud, or a download was tried and failed.
+    /// The request failed because the item is in iCloud and couldn't be downloaded, so "check your
+    /// connection" is the right advice. Any other failure is an export failure.
     private static func needsDownload(_ info: [AnyHashable: Any]?) -> Bool {
-        (info?[PHImageResultIsInCloudKey] as? Bool) == true || info?[PHImageErrorKey] != nil
+        if (info?[PHImageResultIsInCloudKey] as? Bool) == true { return true }
+        return (info?[PHImageErrorKey] as? NSError)?.domain == NSURLErrorDomain
     }
 
     private static let log = Logger.app(category: "share")

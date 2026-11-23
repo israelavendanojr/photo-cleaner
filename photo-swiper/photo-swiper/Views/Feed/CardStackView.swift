@@ -30,7 +30,7 @@ struct CardStackView: View {
             photoEditOptions: vm.photoEditOptions,
             allowsShare: true
         )
-        .background { ShareSheetPresenter(payload: vm.sharePayload, onFinish: vm.shareFinished) }
+        .background { ShareSheetPresenter(payload: vm.sharePayload, onFinish: vm.shareFinished, onCouldNotPresent: vm.shareCouldNotPresent) }
         #if DEBUG
         .overlay(alignment: .top) { CurrentCardMarker() }
         #endif

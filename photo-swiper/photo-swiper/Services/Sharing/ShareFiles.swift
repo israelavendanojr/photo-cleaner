@@ -5,7 +5,7 @@ import UniformTypeIdentifiers
 /// Where shared files live while the share sheet is up (JUN-8): one `share-<UUID>` folder per share in the
 /// temp directory, holding the file under its original name, so the recipient sees `IMG_1234.HEIC` and not
 /// an id. The view model removes the folder when the sheet closes; the launch sweep catches any a crash
-/// left behind, so no copy of a photo lingers on disk.
+/// left behind (or one whose sheet was still up when the app quit), so no copy of a photo lingers on disk.
 enum ShareFiles {
     static let prefix = "share-"
 

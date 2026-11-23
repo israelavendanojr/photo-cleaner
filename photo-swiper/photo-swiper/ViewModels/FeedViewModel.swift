@@ -128,6 +128,8 @@ final class FeedViewModel {
     /// Names the share being prepared, so one that was cancelled can't land after a newer one started.
     private var shareAttempt: UUID?
     private var shareNoticeTask: Task<Void, Never>?
+    /// `trimBehind` is shifting `session` and `index` together, so the top card hasn't really changed.
+    private var isRebasingDeck = false
     private var changesTask: Task<Void, Never>?
     /// A refill landed while no deck could take the strongest cards first; the next one dealt does.
     private var refilledSinceDeal = false
@@ -1171,6 +1173,11 @@ final class FeedViewModel {
     /// Takes the item that was tapped, never `currentCard`. Sharing decides nothing, charges no swipe, adds
     /// no undo step, writes nothing and doesn't move the deck: keeping what was shared is the user's call.
     func share(_ item: LibraryItem) {
+        // A second tap always cancels, even if the plan changed to locked meanwhile.
+        if sharePreparingID == item.id {
+            cancelShare()
+            return
+        }
         guard let state = shareButton(for: item), let sharer else { return }
         switch state {
         case .locked:
@@ -1178,7 +1185,9 @@ final class FeedViewModel {
         case .preparing:
             cancelShare()
         case .ready:
-            guard sharePreparingID == nil, sharePayload == nil else { return }
+            // Only the top card's button is live; anything else would be downloaded only to be thrown away.
+            guard sharePreparingID == nil, sharePayload == nil, currentCard?.items.contains(where: { $0.id == item.id }) == true
+            else { return }
             let attempt = UUID()
             shareAttempt = attempt
             sharePreparingID = item.id
@@ -1206,6 +1215,14 @@ final class FeedViewModel {
         guard let payload = sharePayload else { return }
         sharePayload = nil
         ShareFiles.remove(payload.url)
+    }
+
+    /// The share sheet couldn't be shown (a viewer or another sheet was up when the file was ready, or the
+    /// feed wasn't on screen). The file goes, and the user is told rather than left wondering.
+    func shareCouldNotPresent() {
+        guard sharePayload != nil else { return }
+        shareFinished()
+        showShareNotice("Couldn't open the share sheet. Try again.")
     }
 
     /// Waits for the share being prepared, if any. For tests.
@@ -1237,7 +1254,7 @@ final class FeedViewModel {
 
     /// Swiping the card away (or anything else that takes it off the top) cancels its share.
     private func dropShareIfOffTop() {
-        guard let id = sharePreparingID, currentCard?.items.contains(where: { $0.id == id }) != true else { return }
+        guard !isRebasingDeck, let id = sharePreparingID, currentCard?.items.contains(where: { $0.id == id }) != true else { return }
         cancelShare()
     }
 
@@ -1571,8 +1588,13 @@ final class FeedViewModel {
         let cardIDs = Set(gone.map(\.id))
         carriedPending += gone.flatMap(\.items).filter { decisions[$0.id] == .delete && !settledIDs.contains($0.id) }
         current.cards.removeFirst(drop)
+        // Between these two writes `currentCard` points past the card on top; a share being prepared for
+        // it mustn't be cancelled for that.
+        isRebasingDeck = true
         session = current
         index -= drop
+        isRebasingDeck = false
+        dropShareIfOffTop()
         decisions = decisions.filter { !ids.contains($0.key) }
         marks = marks.filter { !cardIDs.contains($0.key) }
         drafts = drafts.filter { !cardIDs.contains($0.key) }
