@@ -1,9 +1,13 @@
 import SwiftUI
 
 /// A video still with duration and a prominent file size. Large videos are the biggest wins.
+/// A Share button sits bottom-trailing when sharing is on (JUN-8); the size scales down to clear it.
 struct VideoCardView: View {
     let item: LibraryItem
     var onPlay: () -> Void = {}
+    /// The Share button's state; nil shows none.
+    var share: ShareButtonState?
+    var onShare: () -> Void = {}
 
     var body: some View {
         ItemImage(item.image)
@@ -18,12 +22,14 @@ struct VideoCardView: View {
                 }
             }
             .overlay(alignment: .bottomLeading) { caption }
+            .cardShareButton(share, action: onShare)
             .rankDebugBadge(for: item)
             .clipShape(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
             .cardShadow()
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(accessibilityText)
             .accessibilityAction(named: "Play video", onPlay)
+            .cardShareAction(share, action: onShare)
     }
 
     private var caption: some View {
@@ -42,7 +48,8 @@ struct VideoCardView: View {
             }
         }
         .foregroundStyle(.white)
-        .padding(.horizontal, 22)
+        .padding(.leading, 22)
+        .padding(.trailing, share == nil ? 22 : CardShareButton.captionClearance)
         .padding(.bottom, 24)
     }
 
@@ -59,5 +66,12 @@ struct VideoCardView: View {
     VideoCardView(item: PreviewSamples.video)
         .padding(14)
         .paperBackground()
+}
+
+#Preview("Share, large text") {
+    VideoCardView(item: PreviewSamples.video, share: .ready)
+        .padding(14)
+        .paperBackground()
+        .dynamicTypeSize(.xxLarge)
 }
 #endif

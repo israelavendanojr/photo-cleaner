@@ -48,6 +48,29 @@ struct TrimToast: Equatable {
     var isFlatten = false
 }
 
+/// What a card's Share button shows (JUN-8). No button at all is nil: the feature is off, or it's an Admin
+/// Tools mock card that isn't in the library.
+enum ShareButtonState: Equatable {
+    case ready
+    /// Tapping opens the paywall.
+    case locked
+    /// The file is being prepared; tapping again cancels.
+    case preparing
+}
+
+/// A prepared file waiting for the share sheet. Its folder is removed when the sheet closes (`shareFinished`).
+struct SharePayload: Identifiable, Equatable {
+    let id = UUID()
+    let itemID: LibraryItem.ID
+    let url: URL
+}
+
+/// Why a share didn't happen, shown as a toast for a few seconds.
+struct ShareNotice: Equatable {
+    let id = UUID()
+    let text: String
+}
+
 /// Where clearing the bin is in making the edited copies: copy `index` of `count` (a video's or a flattened still), `fraction` of the way through it.
 struct EditProgress: Equatable {
     let index: Int

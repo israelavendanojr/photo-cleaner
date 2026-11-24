@@ -18,6 +18,8 @@ enum TierFeature: String, CaseIterable, Identifiable, Sendable {
     case feedFilters
     /// The Library's Top Categories rows (JUN-88).
     case topCategories
+    /// The Share button on single photo and video cards (JUN-8). Off hides it; locked opens the paywall.
+    case sharing
 
     var id: Self { self }
 
@@ -31,6 +33,7 @@ enum TierFeature: String, CaseIterable, Identifiable, Sendable {
         case .livePhotoFlatten: "Live Photo flatten"
         case .feedFilters: "Feed filters"
         case .topCategories: "Top categories"
+        case .sharing: "Share"
         }
     }
 
@@ -44,6 +47,7 @@ enum TierFeature: String, CaseIterable, Identifiable, Sendable {
         case .livePhotoFlatten: "livephoto"
         case .feedFilters: "line.3.horizontal.decrease"
         case .topCategories: "chart.bar"
+        case .sharing: "square.and.arrow.up"
         }
     }
 
@@ -118,7 +122,8 @@ extension [TierFeature: PlanAccess] {
         Dictionary(uniqueKeysWithValues: TierFeature.allCases.map { feature in
             switch feature {
             case .feedFilters, .topCategories: (feature, PlanAccess(free: .locked, paid: .unlocked))
-            case .similarShots, .duplicates, .screenshotBatches, .videoTrimmer, .videoCompression, .livePhotoFlatten: (feature, .everyone)
+            case .similarShots, .duplicates, .screenshotBatches, .videoTrimmer, .videoCompression, .livePhotoFlatten, .sharing:
+                (feature, .everyone)
             }
         })
     }

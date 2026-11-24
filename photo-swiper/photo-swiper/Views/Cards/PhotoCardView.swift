@@ -1,9 +1,12 @@
 import SwiftUI
 
-/// Full-bleed single photo with date, place, and size.
+/// Full-bleed single photo with date, place, and size, and a Share button when sharing is on (JUN-8).
 struct PhotoCardView: View {
     let item: LibraryItem
     var onOpen: () -> Void = {}
+    /// The Share button's state; nil shows none.
+    var share: ShareButtonState?
+    var onShare: () -> Void = {}
 
     var body: some View {
         ItemImage(item.image)
@@ -12,12 +15,14 @@ struct PhotoCardView: View {
                 CardCenterButton(accessibilityLabel: "View full screen", action: onOpen)
             }
             .overlay(alignment: .bottomLeading) { caption }
+            .cardShareButton(share, action: onShare)
             .rankDebugBadge(for: item)
             .clipShape(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
             .cardShadow()
             .accessibilityElement(children: .combine)
             .accessibilityLabel(accessibilityText)
             .accessibilityAction(named: "View full screen", onOpen)
+            .cardShareAction(share, action: onShare)
     }
 
     private var caption: some View {
@@ -34,7 +39,8 @@ struct PhotoCardView: View {
             .opacity(0.9)
         }
         .foregroundStyle(.white)
-        .padding(.horizontal, DS.Spacing.l)
+        .padding(.leading, DS.Spacing.l)
+        .padding(.trailing, share == nil ? DS.Spacing.l : CardShareButton.captionClearance)
         .padding(.bottom, DS.Spacing.l)
     }
 
@@ -71,5 +77,18 @@ struct BottomScrim: View {
     PhotoCardView(item: PreviewSamples.plainPhoto)
         .padding(DS.Spacing.cardInset)
         .paperBackground()
+}
+
+#Preview("Share") {
+    PhotoCardView(item: PreviewSamples.plainPhoto, share: .ready)
+        .padding(DS.Spacing.cardInset)
+        .paperBackground()
+}
+
+#Preview("Share, large text") {
+    PhotoCardView(item: PreviewSamples.plainPhoto, share: .preparing)
+        .padding(DS.Spacing.cardInset)
+        .paperBackground()
+        .dynamicTypeSize(.xxLarge)
 }
 #endif

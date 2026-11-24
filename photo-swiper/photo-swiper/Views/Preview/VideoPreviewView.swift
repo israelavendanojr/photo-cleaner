@@ -531,29 +531,6 @@ struct VideoPreviewView: View {
     }
 }
 
-/// A round frosted button over the video: close, volume, compression, and the compression popup's close.
-/// Active (a level set) fills it brick, as trimming turns the strip brick: space to clear.
-struct FrostedIconButton: View {
-    let systemImage: String
-    let accessibilityLabel: String
-    var isActive = false
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            Image(systemName: systemImage)
-                .font(.system(size: 18, weight: .medium))
-                .foregroundStyle(.white)
-                .contentTransition(.symbolEffect(.replace))
-                .frame(width: DS.Tap.minimum, height: DS.Tap.minimum)
-                .background(isActive ? AnyShapeStyle(DS.Palette.brickFill) : AnyShapeStyle(.ultraThinMaterial), in: Circle())
-                .contentShape(Circle())
-        }
-        .buttonStyle(PressScaleStyle())
-        .accessibilityLabel(accessibilityLabel)
-    }
-}
-
 /// Reset and Save beside the edit summary, and the compression popup's Apply: a frosted capsule, or brick
 /// for the primary one, the space it clears.
 struct TrimButtonStyle: ButtonStyle {

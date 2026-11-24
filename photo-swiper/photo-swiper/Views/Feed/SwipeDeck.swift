@@ -36,6 +36,8 @@ struct SwipeDeck: View {
     var videoEditOptions = VideoEditOptions()
     /// What the full-screen photo offers a Live Photo (Flatten).
     var photoEditOptions = PhotoEditOptions()
+    /// Single photo and video cards show a Share button (the main feed only, JUN-8).
+    var allowsShare = false
 
     /// How far the top card is toward committing, 0...1.
     @State private var progress = 0.0
@@ -94,7 +96,8 @@ struct SwipeDeck: View {
                             card: card,
                             onOpenReview: onOpenReview,
                             onPlayVideo: { previewingVideo = $0 },
-                            onOpenPhoto: { previewingPhoto = $0 }
+                            onOpenPhoto: { previewingPhoto = $0 },
+                            allowsShare: allowsShare
                         )
                     }
                     .modifier(StackedBehind(depth: depth, tilt: StackPose.tilt(for: card.id), progress: progress))
