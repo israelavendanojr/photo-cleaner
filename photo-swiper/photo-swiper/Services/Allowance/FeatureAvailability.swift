@@ -16,6 +16,8 @@ enum TierFeature: String, CaseIterable, Identifiable, Sendable {
     case livePhotoFlatten
     /// The feed's filter pill and its menu (JUN-87).
     case feedFilters
+    /// The feed's sort pill and its menu (JUN-125). Off hides it; locked opens the paywall for any sort but Recommended.
+    case feedSort
     /// The Library's Top Categories rows (JUN-88).
     case topCategories
     /// The Share button on single photo and video cards (JUN-8). Off hides it; locked opens the paywall.
@@ -32,6 +34,7 @@ enum TierFeature: String, CaseIterable, Identifiable, Sendable {
         case .videoCompression: "Video Compression"
         case .livePhotoFlatten: "Live Photo flatten"
         case .feedFilters: "Feed filters"
+        case .feedSort: "Feed sort"
         case .topCategories: "Top categories"
         case .sharing: "Share"
         }
@@ -46,6 +49,7 @@ enum TierFeature: String, CaseIterable, Identifiable, Sendable {
         case .videoCompression: "arrow.down.right.and.arrow.up.left"
         case .livePhotoFlatten: "livephoto"
         case .feedFilters: "line.3.horizontal.decrease"
+        case .feedSort: "arrow.up.arrow.down"
         case .topCategories: "chart.bar"
         case .sharing: "square.and.arrow.up"
         }
@@ -116,12 +120,12 @@ struct PlanAccess: Equatable, Sendable {
 }
 
 extension [TierFeature: PlanAccess] {
-    /// The hardcoded defaults. The filter pill and Top Categories are a reason to unlock, so free users
+    /// The hardcoded defaults. The filter and sort pills and Top Categories are a reason to unlock, so free users
     /// see them locked; everything older works for everyone, as it did before JUN-87.
     static var standard: Self {
         Dictionary(uniqueKeysWithValues: TierFeature.allCases.map { feature in
             switch feature {
-            case .feedFilters, .topCategories: (feature, PlanAccess(free: .locked, paid: .unlocked))
+            case .feedFilters, .feedSort, .topCategories: (feature, PlanAccess(free: .locked, paid: .unlocked))
             case .similarShots, .duplicates, .screenshotBatches, .videoTrimmer, .videoCompression, .livePhotoFlatten, .sharing:
                 (feature, .everyone)
             }

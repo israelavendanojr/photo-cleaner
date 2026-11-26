@@ -61,6 +61,13 @@ final class FeedViewModel {
     /// Items dealt since the feed was last focused. Focused on saved for later, the cooldown doesn't keep
     /// items out, so this does: each comes up once per focus, even if saved for later again.
     private var dealtWhileFocused: Set<LibraryItem.ID> = []
+    /// The sort the user picked from the sort pill. Not saved: a relaunch is back to Recommended.
+    private var chosenSort: FeedSort = .recommended
+    /// How far the index had got for the latest page, nil once complete. The sort menu says Largest is
+    /// still sizing the library while it's set.
+    private(set) var libraryScanPercent: Int?
+    /// The index hasn't sized the whole library yet, so Largest can only sort part of it.
+    var isSizingLibrary: Bool { libraryScanPercent != nil }
     /// Goes up each time something asks for the Feed tab. RootView switches tabs when it changes.
     private(set) var feedRequests = 0
     /// The system access prompt is up.
@@ -1064,22 +1071,65 @@ final class FeedViewModel {
         guard focus != feedFocus else { return }
         feedFocus = focus
         dealtWhileFocused = Set(session?.items.map(\.id) ?? [])
-        if let focus, var current = session, current.cards.count > index {
+        if let focus {
             let only = focus == .savedForLater ? store.laterIDs() : nil
-            let top = currentCard?.id
-            current.cards = Array(current.cards.prefix(index))
-                + current.cards.dropFirst(index).filter { $0.matches(focus, only: only) }
-            session = current
-            // An undone card that was just dropped mustn't slide back in like an undo if a page brings it.
-            if currentCard?.id != top { returningCard = nil }
-            // Partial reviews of dropped cards go with them. Undo only reaches the cards before the current one.
-            let kept = Set(current.cards.map(\.id))
-            drafts = drafts.filter { kept.contains($0.key) }
-            draftEdits = draftEdits.filter { kept.contains($0.key) }
-            marks = marks.filter { kept.contains($0.key) }
-            saveProgress()
+            dropUpcoming { !$0.matches(focus, only: only) }
         }
         // A page on its way was built for the old focus.
+        dealAgain()
+    }
+
+    // MARK: Sort
+
+    /// The order the feed deals in (JUN-125). It's the user's pick only while the sort is unlocked for them;
+    /// otherwise Recommended, so a downgrade or a Developer mode change never leaves a locked sort in use.
+    var feedSort: FeedSort {
+        featureAccess(.feedSort) == .unlocked ? chosenSort : .recommended
+    }
+
+    /// Deals the feed in `sort`'s order. Keeps the focus; changing the focus keeps the sort.
+    ///
+    /// Like a focus change (`focusFeed`), it drops the current card and every card after it, so the first card
+    /// in the new order ends up on top. Cards before it, which undo reaches, are untouched, and nothing is
+    /// decided: the dropped cards come back in later pages, and a decision still naming one is refused
+    /// (`currentCard(matching:)`). A page being built in the old order is thrown away. While the sort is
+    /// locked, any sort but Recommended asks to unlock instead.
+    func sortFeed(by sort: FeedSort) {
+        guard sort != feedSort else { return }
+        guard sort == .recommended || featureAccess(.feedSort) == .unlocked else {
+            requestUnlock(.feedSort)
+            return
+        }
+        chosenSort = sort
+        let dropped = dropUpcoming { _ in true }
+        // While focused, what was dealt stays out of later pages; these must come back, in the new order.
+        dealtWhileFocused.subtract(dropped)
+        dealAgain()
+    }
+
+    /// Drops the current card and the cards after it that `shouldDrop` picks, with their partial reviews,
+    /// and returns the dropped items. Cards before the current one, which undo reaches, stay.
+    @discardableResult
+    private func dropUpcoming(where shouldDrop: (FeedCard) -> Bool) -> Set<LibraryItem.ID> {
+        guard var current = session, current.cards.count > index else { return [] }
+        let top = currentCard?.id
+        let upcoming = current.cards.dropFirst(index)
+        current.cards = Array(current.cards.prefix(index)) + upcoming.filter { !shouldDrop($0) }
+        session = current
+        // An undone card that was just dropped mustn't slide back in like an undo if a page brings it.
+        if currentCard?.id != top { returningCard = nil }
+        // Partial reviews of dropped cards go with them. Undo only reaches the cards before the current one.
+        let kept = Set(current.cards.map(\.id))
+        drafts = drafts.filter { kept.contains($0.key) }
+        draftEdits = draftEdits.filter { kept.contains($0.key) }
+        marks = marks.filter { kept.contains($0.key) }
+        saveProgress()
+        return Set(upcoming.filter(shouldDrop).flatMap(\.items).map(\.id))
+    }
+
+    /// Throws away a page built for the old focus or sort, then deals again: the next page, or a fresh deck
+    /// when caught up.
+    private func dealAgain() {
         deckGeneration += 1
         pageTask?.cancel()
         pageTask = nil
@@ -1467,6 +1517,8 @@ final class FeedViewModel {
     /// Moves the strongest cards still to come to right after the current one, or leaves it to the
     /// next deck dealt.
     private func frontLoad() {
+        // A sort is a plain order the user picked; nothing jumps ahead for engagement.
+        guard feedSort == .recommended else { return }
         guard deckPhase == .feed, var current = session else {
             refilledSinceDeal = true
             return
@@ -1570,9 +1622,10 @@ final class FeedViewModel {
         current.cards += fresh
         if feedFocus != nil { dealtWhileFocused.formUnion(fresh.flatMap(\.items).map(\.id)) }
         if refilledSinceDeal {
-            current.cards = FrontLoad.reordered(current.cards, from: frontLoadStart)
+            if feedSort == .recommended { current.cards = FrontLoad.reordered(current.cards, from: frontLoadStart) }
             refilledSinceDeal = false
         }
+        libraryScanPercent = page.scanPercentAtStart
         session = current
         trimBehind()
         saveProgress()
@@ -1741,6 +1794,7 @@ final class FeedViewModel {
     /// isn't over (the user asked for them), but each only once per focus.
     private func pageOptions() -> FeedOptions {
         var options = FeedOptions(skipFavorites: skipFavorites, excluding: store.excludedFromNewSession(asOf: now()), focus: feedFocus)
+        options.sort = feedSort
         if feedFocus == .savedForLater {
             let later = store.laterIDs()
             options.only = later
@@ -1761,9 +1815,10 @@ final class FeedViewModel {
     private func apply(_ next: Session) {
         var next = next
         if refilledSinceDeal {
-            next.cards = FrontLoad.reordered(next.cards, from: 0)
+            if feedSort == .recommended { next.cards = FrontLoad.reordered(next.cards, from: 0) }
             refilledSinceDeal = false
         }
+        libraryScanPercent = next.scanPercentAtStart
         deckGeneration += 1
         pageTask?.cancel()
         pageTask = nil

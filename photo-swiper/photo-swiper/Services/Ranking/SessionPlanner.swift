@@ -20,7 +20,8 @@ struct PlannedGroup: Hashable, Sendable {
 /// week, placed where that week's best-ranked screenshot landed. Similar groups compete as one card,
 /// ranked by what clearing all but the keeper would free; duplicate sets the same way, plus a bonus
 /// since clearing a copy loses nothing. A grouped photo never shows as a single card, even when its
-/// group waits for a later session. Pure, so it's testable without PhotoKit.
+/// group waits for a later session. A `FeedSort` other than Recommended replaces the ranking with a
+/// plain order. Pure, so it's testable without PhotoKit.
 struct SessionPlanner: Sendable {
     enum Slot: Hashable, Sendable {
         case single(LibraryItem.ID)
@@ -66,7 +67,12 @@ struct SessionPlanner: Sendable {
     var similarWithin = 5
 
     /// Duplicate sets' photos should already be left out of `groups`; they never show as singles either.
-    func plan(_ candidates: [RankCandidate], groups: [PlannedGroup] = [], duplicates: [PlannedGroup] = [], now: Date) -> [Slot] {
+    ///
+    /// Under any `sort` but Recommended, entries are taken in that order instead of by score (a group by all
+    /// its members' bytes, or its oldest or newest member), Newest and Oldest leave out what has no date,
+    /// and the result isn't arranged: the user asked for a plain order.
+    func plan(_ candidates: [RankCandidate], groups: [PlannedGroup] = [], duplicates: [PlannedGroup] = [],
+              sort: FeedSort = .recommended, now: Date) -> [Slot] {
         let grouped = Set(groups.flatMap(\.ids)).union(duplicates.flatMap(\.ids))
         let features = Dictionary(candidates.map { ($0.id, $0.features) }, uniquingKeysWith: { first, _ in first })
         let singles = candidates.filter { !grouped.contains($0.id) }.map { Ranked.single($0, ranker.score($0.features, now: now).total) }
@@ -74,11 +80,13 @@ struct SessionPlanner: Sendable {
         let copies = duplicates.compactMap { group in
             score(group, features).map { Ranked.duplicates(group, $0 + groupWeights.duplicateBonus, newest(group, features)) }
         }
-        let ranked = (singles + bundles + copies).sorted { a, b in
-            if a.score != b.score { return a.score > b.score }
-            if a.createdAt != b.createdAt { return a.createdAt > b.createdAt }
-            return a.id < b.id
-        }
+        let ranked = sort == .recommended
+            ? (singles + bundles + copies).sorted { a, b in
+                if a.score != b.score { return a.score > b.score }
+                if a.createdAt != b.createdAt { return a.createdAt > b.createdAt }
+                return a.id < b.id
+            }
+            : sorted(singles + bundles + copies, by: sort, features)
 
         var slots: [Slot] = []
         var slotForWeek: [Date: Int] = [:]
@@ -125,7 +133,7 @@ struct SessionPlanner: Sendable {
             }
             return [slot]
         }
-        return arranged(flattened)
+        return sort == .recommended ? arranged(flattened) : flattened
     }
 
     // MARK: Internals
@@ -150,12 +158,30 @@ struct SessionPlanner: Sendable {
             }
         }
 
+        var ids: [LibraryItem.ID] {
+            switch self {
+            case .single(let candidate, _): [candidate.id]
+            case .group(let group, _, _), .duplicates(let group, _, _): group.ids
+            }
+        }
+
         var id: LibraryItem.ID {
             switch self {
             case .single(let candidate, _): candidate.id
             case .group(let group, _, _), .duplicates(let group, _, _): group.ids.first ?? ""
             }
         }
+    }
+
+    /// `entries` in `sort`'s order, without what it doesn't show. See `FeedSort.precedes`.
+    private func sorted(_ entries: [Ranked], by sort: FeedSort, _ features: [LibraryItem.ID: AssetFeatures]) -> [Ranked] {
+        entries
+            .map { entry in
+                (entry, FeedSort.Key(id: entry.id, members: entry.ids.compactMap { features[$0].map { ($0.bytes, $0.createdAt) } }))
+            }
+            .filter { sort.includes($0.1) }
+            .sorted { sort.precedes($0.1, $1.1) }
+            .map(\.0)
     }
 
     /// Nil when the group can't be shown: a member isn't among the candidates, or the keeper isn't in it.

@@ -38,6 +38,13 @@ struct CaughtUpView: View {
                     .accessibilityHint("Stops showing only \(focus.phrase)")
                     .accessibilityIdentifier("caughtUp.showEverything")
             }
+            if vm.feedSort == .newest || vm.feedSort == .oldest {
+                // Items with no date taken only show under Recommended and Largest.
+                Button("Sort by Recommended") { vm.sortFeed(by: .recommended) }
+                    .buttonStyle(.pill(.ghost))
+                    .accessibilityHint("Also shows items with no date")
+                    .accessibilityIdentifier("caughtUp.sortRecommended")
+            }
         }
         .multilineTextAlignment(.center)
         .padding(.horizontal, DS.Spacing.xxl)

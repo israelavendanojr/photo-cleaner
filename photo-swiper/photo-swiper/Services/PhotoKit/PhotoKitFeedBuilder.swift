@@ -10,7 +10,7 @@ import OSLog
 /// `BestPick` then turn the remaining near-identical indexed photos into similar groups, so a photo
 /// is never in both.
 /// `FeedRanker` scores the rest and `SessionPlanner` takes the top `photosPerSession`, batching
-/// screenshots by week. Items in `FeedOptions.excluding`, such as ones already decided, are skipped.
+/// screenshots by week, or orders them by `FeedOptions.sort`. Items in `FeedOptions.excluding`, such as ones already decided, are skipped.
 ///
 /// The library comes through `catalog` and place names through `geocoder`, so tests build whole
 /// pages without PhotoKit or the network.
@@ -111,7 +111,8 @@ actor PhotoKitFeedBuilder: FeedBuilding {
         let planning = signposts.beginInterval("plan")
         let focused = FeedFocus.apply(.init(candidates: pool.candidates, duplicates: groups.duplicates, similar: groups.similar),
                                       focus: options.focus, only: pool.only)
-        let slots = planner.plan(focused.candidates, groups: focused.similar, duplicates: focused.duplicates, now: .now)
+        let slots = planner.plan(focused.candidates, groups: focused.similar, duplicates: focused.duplicates,
+                                 sort: options.sort, now: .now)
         signposts.endInterval("plan", planning)
         similarGroupsLeft = groups.similar.count - slots.filter(\.isSimilar).count
         lastGroups = (groups.duplicates, groups.similar)

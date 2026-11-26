@@ -818,6 +818,39 @@ final class photo_swiperUITests: XCTestCase {
         XCTAssertTrue(pill.waitForExistence(timeout: 3))
     }
 
+    // MARK: Feed sort (JUN-125)
+
+    @MainActor
+    func testTheSortPillOpensTheMenuAndSortsTheFeed() throws {
+        let app = launch("-unlocked", "YES")
+        let pill = app.buttons["feed.sort"]
+        XCTAssertTrue(pill.waitForExistence(timeout: 5))
+        XCTAssertEqual(pill.label, "Sorted by recommended")
+        XCTAssertTrue(app.buttons["feed.filter"].exists, "Beside the filter pill")
+
+        pill.tap()
+        let menu = app.descendants(matching: .any)["feed.sort.menu"]
+        XCTAssertTrue(menu.waitForExistence(timeout: 3), "The menu opens")
+        XCTAssertTrue(app.buttons["feed.sort.option.recommended"].isSelected, "Recommended is checked")
+        XCTAssertFalse(app.descendants(matching: .any)["feed.filter.menu"].exists, "One menu at a time")
+        attachScreenshot(app, "sort menu open")
+
+        app.buttons["feed.sort.option.oldest"].tap()
+        XCTAssertTrue(menu.waitForNonExistence(timeout: 3), "Choosing closes it")
+        XCTAssertTrue(waitForLabel(pill, containing: "oldest", timeout: 3), "The pill names the sort")
+        attachScreenshot(app, "sorted oldest first")
+    }
+
+    @MainActor
+    func testALockedSortPillOpensThePaywall() throws {
+        let app = launch("-unlocked", "NO")
+        let pill = app.buttons["feed.sort"]
+        XCTAssertTrue(pill.waitForExistence(timeout: 5), "Locked still shows the pill")
+        pill.tap()
+        XCTAssertTrue(app.buttons["paywall.close"].waitForExistence(timeout: 5), "The paywall, not the menu")
+        XCTAssertFalse(app.descendants(matching: .any)["feed.sort.menu"].exists)
+    }
+
     // MARK: Top Categories (JUN-88)
 
     @MainActor
@@ -1034,6 +1067,9 @@ final class photo_swiperUITests: XCTestCase {
         let free = app.descendants(matching: .any)["settings.features.feedFilters.free"]
         scrollTo(free, in: app)
         XCTAssertTrue(app.descendants(matching: .any)["settings.features.feedFilters.paid"].exists, "One setting per plan")
+        let sortFree = app.descendants(matching: .any)["settings.features.feedSort.free"]
+        scrollTo(sortFree, in: app)
+        XCTAssertTrue(sortFree.exists, "The feed sort is listed on its own (JUN-125)")
         attachScreenshot(app, "admin feature availability")
 
         let count = app.descendants(matching: .any)["settings.topCategories.count"]

@@ -57,7 +57,8 @@ struct MockFeedBuilder: FeedBuilding {
             if focus == .livePhotos, case .photo = card { return offset.isMultiple(of: 2) }
             return card.matches(focus, only: options.only)
         }.map(\.element)
-        return Session(number: number, cards: cards, scanPercentAtStart: number == 1 ? 38 : nil)
+        // The sort holds within each page, enough for the demo and the tests.
+        return Session(number: number, cards: options.sort.ordered(cards), scanPercentAtStart: number == 1 ? 38 : nil)
     }
 }
 

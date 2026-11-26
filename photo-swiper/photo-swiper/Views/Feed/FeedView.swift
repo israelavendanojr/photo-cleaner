@@ -5,8 +5,8 @@ struct FeedView: View {
     @Environment(FeedViewModel.self) private var vm
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var onOpenPile: () -> Void = {}
-    /// The filter's menu is open: it sits over the deck, swipes are off, and a tap outside closes it.
-    @State private var isFilterOpen = false
+    /// The filter's or sort's menu is open: it sits over the deck, swipes are off, and a tap outside closes it.
+    @State private var openMenu: FeedMenuKind?
     /// Where the deck starts, so the menu opens just under the top bar.
     @State private var topBarHeight: CGFloat = 0
 
@@ -15,7 +15,7 @@ struct FeedView: View {
             VStack(spacing: 0) {
                 FeedTopBar(onUndo: {
                     withAnimation(DS.Motion.calm) { vm.undo() }
-                }, onOpenPile: onOpenPile, isFilterOpen: $isFilterOpen)
+                }, onOpenPile: onOpenPile, openMenu: $openMenu)
                     .padding(.horizontal, DS.Spacing.l)
                     .padding(.top, DS.Spacing.xxs)
                     .padding(.bottom, DS.Spacing.l)
@@ -23,19 +23,24 @@ struct FeedView: View {
                 CardStackView()
                     .overlay(alignment: .top) { trimToast }
                     .overlay(alignment: .top) { shareToast }
-                    .allowsHitTesting(!isFilterOpen)
-                    .accessibilityHidden(isFilterOpen)
+                    .allowsHitTesting(openMenu == nil)
+                    .accessibilityHidden(openMenu != nil)
             }
-            if isFilterOpen {
+            if let menu = openMenu {
                 Color.clear
                     .contentShape(Rectangle())
-                    .onTapGesture { withAnimation(DS.Motion.calm) { isFilterOpen = false } }
+                    .onTapGesture { withAnimation(DS.Motion.calm) { openMenu = nil } }
                     .accessibilityHidden(true)
-                FeedFilterMenu(isOpen: $isFilterOpen)
-                    .padding(.horizontal, DS.Spacing.l)
-                    .padding(.top, max(0, topBarHeight - DS.Spacing.s))
-                    .padding(.bottom, DS.Spacing.l)
-                    .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.95, anchor: .topLeading)))
+                Group {
+                    switch menu {
+                    case .filter: FeedFilterMenu(isOpen: isOpen(.filter))
+                    case .sort: FeedSortMenu(isOpen: isOpen(.sort))
+                    }
+                }
+                .padding(.horizontal, DS.Spacing.l)
+                .padding(.top, max(0, topBarHeight - DS.Spacing.s))
+                .padding(.bottom, DS.Spacing.l)
+                .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.95, anchor: .topLeading)))
             }
         }
         .animation(DS.Motion.calm, value: vm.trimToast)
@@ -54,6 +59,10 @@ struct FeedView: View {
             try? await Task.sleep(for: .seconds(max(0.5, next.timeIntervalSinceNow)))
             vm.refreshAllowance()
         }
+    }
+
+    private func isOpen(_ menu: FeedMenuKind) -> Binding<Bool> {
+        Binding(get: { openMenu == menu }, set: { if !$0, openMenu == menu { openMenu = nil } })
     }
 
     /// "Edit queued · saves ~335 MB · Undo" ("Flatten queued" for a Live Photo), over the top of the deck after
