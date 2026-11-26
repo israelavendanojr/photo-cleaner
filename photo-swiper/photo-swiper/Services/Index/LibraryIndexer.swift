@@ -14,9 +14,10 @@ struct IndexProgress: Hashable, Sendable {
 /// Computes features for the whole library once and keeps them current.
 ///
 /// Each `run()` diffs the library against the stored records. Its work queue is every item with no
-/// record, an outdated `featureVersion`, or a changed modification date, newest first. Rebuilding
-/// the queue from that diff is what makes runs resumable: cancel at any point and the next run picks
-/// up where this one stopped, with no cursor to keep. Records for items that left the library are
+/// record, an outdated `featureVersion`, or a changed modification date: videos first, since they're
+/// metadata only and sizing them early lets the feed's Largest sort reach them soon (JUN-125), then
+/// everything else newest first. Rebuilding the queue from that diff is what makes runs resumable:
+/// cancel at any point and the next run picks up where this one stopped, with no cursor to keep. Records for items that left the library are
 /// removed, but only when `canPrune` says the app sees the whole library: under limited access,
 /// everything outside the selection looks gone. Work is saved in batches; photos get image analysis,
 /// screenshots and videos metadata only.
@@ -74,12 +75,14 @@ actor LibraryIndexer {
         await index.remove(gone)
 
         var edited = 0, outdated = 0
-        let queue = assets.filter { asset in
+        let stale = assets.filter { asset in
             guard let stamp = stamps[asset.id] else { return true }
             if IndexFreshness.isCurrent(stamp, assetModifiedAt: asset.modifiedAt, version: version) { return false }
             if stamp.version < version { outdated += 1 } else { edited += 1 }
             return true
         }
+        // Each half keeps newest first.
+        let queue = stale.filter { $0.kind == .video } + stale.filter { $0.kind != .video }
         progress = IndexProgress(indexed: assets.count - queue.count, total: assets.count)
         let started = Date.now
         var done = 0
