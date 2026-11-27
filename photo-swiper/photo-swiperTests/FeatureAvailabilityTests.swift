@@ -22,9 +22,9 @@ struct FeatureAvailabilityTests {
         #expect(!FeatureAccess.off.isVisible)
     }
 
-    @Test func theFilterPillAndTopCategoriesAreLockedForFreeAndTheRestWorkForEveryone() {
+    @Test func theFilterAndSortPillsAndTopCategoriesAreLockedForFreeAndTheRestWorkForEveryone() {
         let features = tunables(defaults: freshDefaults())
-        for feature in [TierFeature.feedFilters, .topCategories] {
+        for feature in [TierFeature.feedFilters, .feedSort, .topCategories] {
             #expect(features.planAccess(feature) == PlanAccess(free: .locked, paid: .unlocked))
         }
         for feature in [TierFeature.similarShots, .duplicates, .screenshotBatches, .videoTrimmer, .videoCompression, .sharing] {

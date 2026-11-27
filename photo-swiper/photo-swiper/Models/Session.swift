@@ -36,4 +36,6 @@ struct FeedOptions: Sendable {
     /// For a focus by ID (`FocusTarget.isByID`), the items a page may offer: Live Photos, or what was saved
     /// for later. The builder fills in Live Photos itself; the view model passes what was saved for later.
     var only: Set<LibraryItem.ID>?
+    /// The order to deal in (the feed's sort pill). Recommended unless the user picked one and may use it.
+    var sort: FeedSort = .recommended
 }

@@ -1,14 +1,14 @@
 import SwiftUI
 
-/// Undo, the filter pill (unless the filter is off for this plan and nothing is focused), and the running
-/// "to clear" total.
+/// Undo, the filter pill (unless the filter is off for this plan and nothing is focused), the sort pill
+/// (unless the sort is off for this plan), and the running "to clear" total.
 /// For a free user, the pile's meter runs under them: how full the free pile is, in ticks.
 struct FeedTopBar: View {
     @Environment(FeedViewModel.self) private var vm
     let onUndo: () -> Void
     var onOpenPile: () -> Void = {}
-    /// The filter's menu, which FeedView draws over the deck.
-    @Binding var isFilterOpen: Bool
+    /// The open menu, filter or sort, which FeedView draws over the deck. Only one is open at a time.
+    @Binding var openMenu: FeedMenuKind?
 
     var body: some View {
         VStack(spacing: DS.Spacing.s) {
@@ -18,8 +18,13 @@ struct FeedTopBar: View {
                 // a wider feed would widen the Library tab too.
                 // Off hides it, unless the feed is focused: then it shows what's focused, and the way back.
                 if vm.featureAccess(.feedFilters).isVisible || vm.feedFocus != nil {
-                    FeedFilterPill(isMenuOpen: $isFilterOpen)
+                    FeedFilterPill(isMenuOpen: isOpen(.filter))
                         .layoutPriority(-1)
+                }
+                if vm.featureAccess(.feedSort).isVisible {
+                    // Below the filter: where both names don't fit, the sort gives way to its icon first.
+                    FeedSortPill(isMenuOpen: isOpen(.sort))
+                        .layoutPriority(-2)
                 }
                 Spacer(minLength: 0)
                 Button(action: onOpenPile) {
@@ -51,6 +56,11 @@ struct FeedTopBar: View {
             addedBytes: vm.deleteChip?.bytes,
             addedID: vm.deleteChip?.id
         )
+    }
+
+    /// Opening one menu closes the other.
+    private func isOpen(_ menu: FeedMenuKind) -> Binding<Bool> {
+        Binding(get: { openMenu == menu }, set: { openMenu = $0 ? menu : (openMenu == menu ? nil : openMenu) })
     }
 
     private var undoButton: some View {
@@ -90,7 +100,7 @@ private struct FreePileMeter: View {
 
 #if DEBUG
 #Preview {
-    FeedTopBar(onUndo: {}, isFilterOpen: .constant(false))
+    FeedTopBar(onUndo: {}, openMenu: .constant(nil))
         .environment(FeedViewModel.mock())
         .padding(DS.Spacing.l)
         .paperBackground()

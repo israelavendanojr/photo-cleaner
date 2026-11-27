@@ -86,6 +86,21 @@ struct LibraryIndexerTests {
         #expect(await index.indexed()["p0"]?.features.sharpness == 300)
     }
 
+    /// Videos are metadata only, so they're sized first and Largest can sort them early (JUN-125).
+    @Test func queuesVideosFirstThenNewestFirst() async {
+        let videos = (0..<2).map {
+            IndexableAsset(id: "v\($0)", createdAt: base.addingTimeInterval(-Double(100 + $0) * 60), modifiedAt: base, kind: .video)
+        }
+        source.assets = photos(3) + videos
+        // Stops while analyzing the first photo; that batch is still saved.
+        analyzer.stopAfter = 1
+        let indexer = indexer(batchSize: 1)
+        await Task { await indexer.run() }.value
+
+        #expect(Set(await index.indexed().keys) == ["v0", "v1", "p0"])
+        #expect(source.imageRequests == ["p0"])
+    }
+
     @Test func resumesAfterAStopWithoutRedoingFinishedWork() async {
         source.assets = photos(7)
         analyzer.stopAfter = 3
